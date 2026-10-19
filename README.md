@@ -26,7 +26,12 @@
 - ฐานข้อมูลสถานที่ 56 จุดจากแท็บ DataBase Locations
 - หน้า “รายการรายเดือน” คัดลอกข้อมูลเป็นแถวพร้อมวางในตาราง Google Sheet
 
-### ไฟล์
+### เวอร์ชัน Vercel (ระบบจริง)
+
+[`web/`](web/README.md) — Next.js บน Vercel ใช้หน้าจอเดียวกับ demo เชื่อม Google Sheet ผ่าน Sheets API (service account) และเข้าสู่ระบบด้วยบัญชี Google + ผู้ดูแลอนุมัติ
+วิธีตั้งค่า Google, environment variables และขั้นตอน deploy อยู่ใน [web/README.md](web/README.md)
+
+### ไฟล์ (เวอร์ชัน Apps Script)
 
 ```
 apps-script/
