@@ -16,6 +16,16 @@
 
 ออกแบบหน้าจอไว้ที่ Claude Design: [Protection Fee App](https://claude.ai/artifact/Vs1tXgcwqZDCZonamLMZ7f)
 
+### ตัวอย่าง (Demo)
+
+[`demo/index.html`](demo/index.html) — ตัวอย่างระบบที่กดใช้งานได้จริงในไฟล์เดียว (ไม่ต่อฐานข้อมูล เก็บข้อมูลในเบราว์เซอร์) ใช้ทดลอง flow ก่อนทำระบบจริงบน Vercel
+เปิดดูได้ที่ [Protection Fee demo](https://claude.ai/artifact/6JjhU7L24N9JiTMgQKD1AJ)
+
+- บัญชีตัวอย่าง: `admin` / `admin1234` (ผู้ดูแลระบบ), `staff01` / `staff1234` (ผู้ใช้งาน)
+- มีผู้สมัครรออนุมัติ 1 คน (`staff02`) ให้ลองอนุมัติที่เมนู “สมาชิก”
+- ฐานข้อมูลสถานที่ 56 จุดจากแท็บ DataBase Locations
+- หน้า “รายการรายเดือน” คัดลอกข้อมูลเป็นแถวพร้อมวางในตาราง Google Sheet
+
 ### ไฟล์
 
 ```

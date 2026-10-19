@@ -1,0 +1,1167 @@
+<title>Protection Fee</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<style>
+/* Layout: เขียวป้ายทางด่วน + เส้นแบ่งเลนสีเหลือง, หัวแถบเต็มความกว้าง เนื้อหาไม่เกิน 1200px */
+:root {
+  --ground: #F5F6F2;
+  --card: #FFFFFF;
+  --ink: #14211B;
+  --ink-2: #33423A;
+  --muted: #56655D;
+  --line: #D9DED8;
+  --line-soft: #EDF0EC;
+  --field: #C2CBC3;
+  --field-bg: #FFFFFF;
+  --seg: #E6EAE4;
+  --seg-on: #FFFFFF;
+  --green: #0D5C3B;
+  --green-hover: #08402A;
+  --green-soft: #E3F0E8;
+  --green-ink: #0A4A2F;
+  --band: #0D5C3B;
+  --on-band: #FFFFFF;
+  --on-band-2: #D5E7DD;
+  --amber: #F2B01E;
+  --amber-soft: #FFF6DE;
+  --amber-ink: #4A3A0A;
+  --amber-line: #8A6200;
+  --blue-soft: #EEF2F7;
+  --danger: #B42318;
+  --danger-soft: #FEF3F2;
+  --toast: #14211B;
+  --toast-ink: #FFFFFF;
+  --font: 'IBM Plex Sans Thai', 'Noto Sans Thai', 'Leelawadee UI', Tahoma, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground: #0F1612; --card: #17211B; --ink: #E6ECE8; --ink-2: #C3CEC7; --muted: #98A69E;
+    --line: #2B3A31; --line-soft: #223029; --field: #3C4D43; --field-bg: #111A15; --seg: #223029; --seg-on: #2E3F35;
+    --green: #3FA877; --green-hover: #54BC8A; --green-soft: #183A29; --green-ink: #9FDDBD;
+    --band: #0B3F29; --on-band: #FFFFFF; --on-band-2: #B9D6C6;
+    --amber: #F2B01E; --amber-soft: #33290F; --amber-ink: #F6DE9C; --amber-line: #C9952A;
+    --blue-soft: #1B2633; --danger: #F97066; --danger-soft: #3A1B19; --toast: #E6ECE8; --toast-ink: #0F1612;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --ground: #0F1612; --card: #17211B; --ink: #E6ECE8; --ink-2: #C3CEC7; --muted: #98A69E;
+  --line: #2B3A31; --line-soft: #223029; --field: #3C4D43; --field-bg: #111A15; --seg: #223029; --seg-on: #2E3F35;
+  --green: #3FA877; --green-hover: #54BC8A; --green-soft: #183A29; --green-ink: #9FDDBD;
+  --band: #0B3F29; --on-band: #FFFFFF; --on-band-2: #B9D6C6;
+  --amber: #F2B01E; --amber-soft: #33290F; --amber-ink: #F6DE9C; --amber-line: #C9952A;
+  --blue-soft: #1B2633; --danger: #F97066; --danger-soft: #3A1B19; --toast: #E6ECE8; --toast-ink: #0F1612;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { margin: 0; background: var(--ground); color: var(--ink); font-family: var(--font); font-size: 16px; line-height: 1.5; }
+.wrap { max-width: 1200px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { margin: 0; line-height: 1.3; text-wrap: balance; }
+p { margin: 0; }
+a { color: var(--green); }
+button { font: inherit; cursor: pointer; color: inherit; }
+button:disabled { opacity: .6; cursor: progress; }
+input, select { font: inherit; color: var(--ink); }
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--amber) 70%, transparent); outline-offset: 2px; }
+.lane { height: 5px; background: repeating-linear-gradient(90deg, var(--amber) 0 28px, transparent 28px 44px); }
+.sign { width: 32px; height: 32px; border-radius: 8px; border: 2px solid var(--on-band); display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.tnum { font-variant-numeric: tabular-nums; }
+
+/* แถบโหมดตัวอย่าง */
+.demo-bar { background: var(--amber-soft); color: var(--amber-ink); border-bottom: 1px solid color-mix(in srgb, var(--amber) 45%, transparent); font-size: 14px; }
+.demo-bar .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; padding-block: 8px; }
+.demo-bar b { font-weight: 600; }
+.demo-bar .spacer { flex: 1 1 auto; }
+.link-btn { background: none; border: 0; padding: 4px 0; color: var(--amber-ink); text-decoration: underline; text-underline-offset: 3px; font-size: 14px; min-height: 32px; }
+
+/* ฟิลด์ ปุ่ม */
+.field { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 15px; min-width: 0; }
+.field .opt { font-weight: 400; color: var(--muted); }
+.field input, .field select { height: 46px; padding: 0 12px; border: 1.5px solid var(--field); border-radius: 10px; background: var(--field-bg); font-weight: 400; font-size: 16px; width: 100%; min-width: 0; }
+.field input:focus, .field select:focus { border-color: var(--green); }
+.row { display: flex; flex-wrap: wrap; gap: 16px; }
+.row > * { flex: 1 1 200px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.btn { min-height: 46px; padding: 0 20px; border-radius: 10px; border: 1.5px solid var(--field); background: var(--card); font-size: 16px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { border-color: var(--green); background: var(--green); color: #FFFFFF; font-weight: 600; }
+.btn.primary:hover { background: var(--green-hover); border-color: var(--green-hover); }
+:root[data-theme="dark"] .btn.primary, :root[data-theme="dark"] .pill[aria-pressed="true"] { color: #0B1A12; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .btn.primary, :root:not([data-theme="light"]) .pill[aria-pressed="true"] { color: #0B1A12; } }
+.btn.sm { min-height: 38px; padding: 0 12px; font-size: 14px; border-radius: 8px; }
+.btn.danger { border-color: var(--danger); color: var(--danger); }
+.btn.block { width: 100%; }
+.seg { display: flex; gap: 4px; padding: 4px; background: var(--seg); border-radius: 12px; }
+.seg button { min-height: 44px; padding: 0 16px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-weight: 500; flex: 1; white-space: nowrap; }
+.seg button[aria-pressed="true"], .seg button[aria-selected="true"] { background: var(--seg-on); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.pill { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1.5px solid var(--field); background: var(--card); font-size: 15px; }
+.pill[aria-pressed="true"] { border-color: var(--green); background: var(--green); color: #FFFFFF; font-weight: 600; }
+.chip { display: inline-flex; padding: 2px 10px; border-radius: 999px; background: var(--green-soft); color: var(--green-ink); font-weight: 500; font-size: 14px; }
+.status { display: inline-flex; padding: 2px 10px; border-radius: 999px; font-size: 14px; font-weight: 500; white-space: nowrap; }
+.status.active { background: var(--green-soft); color: var(--green-ink); }
+.status.pending { background: var(--amber-soft); color: var(--amber-ink); }
+.status.disabled, .status.rejected { background: var(--seg); color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; }
+.error { color: var(--danger); background: var(--danger-soft); border-radius: 10px; padding: 10px 14px; font-size: 15px; }
+.muted { color: var(--muted); }
+.sub { font-size: 13px; color: var(--muted); }
+
+/* หน้าเข้าสู่ระบบ */
+.auth { display: flex; justify-content: center; padding-block: 24px 40px; }
+.auth-shell { width: 100%; max-width: 440px; display: flex; flex-direction: column; border-radius: 20px; overflow: hidden; background: var(--ground); border: 1px solid var(--line); }
+.auth-hero { background: var(--band); color: var(--on-band); padding: 36px 28px 26px; display: flex; flex-direction: column; gap: 14px; }
+.auth-hero .sign { width: 52px; height: 52px; border-radius: 12px; }
+.auth-hero h1 { font-size: 30px; font-weight: 700; }
+.auth-hero p { color: var(--on-band-2); }
+.auth-body { padding: 22px 24px 26px; display: flex; flex-direction: column; gap: 18px; background: var(--card); }
+.auth-body form { display: flex; flex-direction: column; gap: 14px; }
+.samples { display: flex; flex-direction: column; gap: 8px; padding: 14px; border-radius: 12px; background: var(--amber-soft); color: var(--amber-ink); font-size: 14px; }
+.samples-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.samples button { min-height: 40px; padding: 0 12px; border-radius: 8px; border: 1.5px solid var(--amber-line); background: var(--card); color: var(--ink); font-size: 14px; text-align: left; }
+.samples button span { color: var(--muted); }
+.steps { display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.steps div { display: flex; gap: 10px; align-items: center; }
+.steps b { flex: none; width: 24px; height: 24px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 13px; background: var(--green); color: #FFFFFF; }
+.steps b.amber { background: var(--amber); color: #14211B; }
+.waiting { display: flex; flex-direction: column; gap: 14px; }
+.waiting dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 15px; }
+.waiting dt { color: var(--muted); }
+.waiting dd { margin: 0; font-weight: 500; }
+
+/* แอป */
+header.top { background: var(--band); color: var(--on-band); position: sticky; top: env(safe-area-inset-top, 0px); z-index: 3; }
+.top-inner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding-block: 10px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 18px; }
+nav.menu { display: flex; flex-wrap: wrap; gap: 4px; flex: 1 1 auto; }
+nav.menu button { min-height: 44px; padding: 0 14px; border-radius: 8px; border: 0; background: transparent; color: var(--on-band-2); white-space: nowrap; position: relative; }
+nav.menu button[aria-current="page"] { background: rgba(255,255,255,.14); color: var(--on-band); font-weight: 600; box-shadow: inset 0 -3px 0 var(--amber); }
+nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 6px; align-items: center; justify-content: center; border-radius: 999px; background: var(--amber); color: #14211B; font-size: 12px; font-weight: 700; }
+.me { display: flex; align-items: center; gap: 12px; }
+.me-name { display: flex; flex-direction: column; line-height: 1.25; text-align: right; }
+.me-name span:first-child { font-weight: 600; font-size: 15px; }
+.me-name span:last-child { font-size: 13px; color: var(--on-band-2); }
+.icon-btn { width: 44px; height: 44px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; color: var(--on-band); border: 1px solid rgba(255,255,255,.35); background: transparent; }
+main.page { padding-block: 28px 56px; display: flex; flex-direction: column; gap: 24px; }
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; }
+.page-head h1 { font-size: 28px; font-weight: 700; }
+.split { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.split > .main-col { flex: 999 1 560px; min-width: 0; }
+.split > .side-col { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+form.card, .pad { padding: 24px; display: flex; flex-direction: column; gap: 18px; }
+.autofill { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; color: var(--ink-2); }
+.panel-amber { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; background: var(--amber-soft); }
+.panel-blue { padding: 16px; border-radius: 12px; background: var(--blue-soft); }
+.fee-input { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+.fee-input input { width: 140px; font-family: var(--mono); font-size: 17px; }
+.quick { display: flex; flex-wrap: wrap; gap: 8px; }
+.quick button { min-height: 44px; padding: 0 16px; border-radius: 999px; border: 1.5px solid var(--amber-line); background: var(--card); color: var(--amber-ink); font-size: 14px; }
+.actions { display: flex; flex-wrap: wrap; gap: 12px; }
+.summary { background: var(--band); color: var(--on-band); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 14px; }
+.summary .label { font-size: 15px; color: var(--on-band-2); }
+.summary .nums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.summary .num { font-family: var(--mono); font-size: 34px; font-weight: 500; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.summary .num.amber { color: var(--amber); }
+.summary .unit { font-size: 14px; color: var(--on-band-2); }
+.tips { padding: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; color: var(--ink-2); }
+.tips strong { color: var(--ink); }
+.table-card { padding: 20px 0 8px; display: flex; flex-direction: column; gap: 12px; }
+.table-head { padding: 0 20px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+.table-head h2 { font-size: 20px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+th { text-align: left; color: var(--muted); font-size: 14px; font-weight: 600; padding: 10px 12px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 11px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+th:first-child, td:first-child { padding-left: 20px; }
+th:last-child, td:last-child { padding-right: 20px; }
+td.mono { font-family: var(--mono); font-size: 14px; font-variant-numeric: tabular-nums; }
+td.num, th.num { text-align: right; }
+td.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+td.nowrap { white-space: nowrap; }
+td.empty { text-align: center; color: var(--muted); padding: 28px; }
+tr.fresh td { background: var(--green-soft); }
+.code-tag { display: inline-flex; min-width: 40px; justify-content: center; padding: 2px 8px; border-radius: 6px; background: var(--green); color: #FFFFFF; font-family: var(--mono); font-size: 14px; }
+.ex-tag { display: inline-flex; margin-left: 6px; padding: 0 6px; border-radius: 4px; background: var(--seg); color: var(--muted); font-size: 12px; vertical-align: 1px; }
+.search { position: relative; flex: 1 1 240px; display: flex; }
+.search svg { position: absolute; left: 12px; top: 13px; color: var(--muted); }
+.search input { width: 100%; height: 46px; padding: 0 12px 0 40px; border: 1.5px solid var(--field); border-radius: 10px; background: var(--field-bg); }
+.filters { display: flex; flex-wrap: wrap; gap: 6px; }
+.side-form { padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+.side-form h2 { font-size: 20px; }
+.side-form .field { font-size: 14px; }
+.side-form .field input, .side-form .field select { height: 44px; font-size: 15px; }
+.pending-box { background: var(--amber-soft); border: 1.5px solid var(--amber); border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 12px; }
+.pending-box h2 { font-size: 18px; color: var(--amber-ink); }
+.pending-item { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; background: var(--card); border-radius: 12px; }
+.pending-item > div { flex: 1 1 220px; display: flex; flex-direction: column; min-width: 0; }
+td select { height: 38px; padding: 0 8px; border: 1.5px solid var(--field); border-radius: 8px; background: var(--field-bg); font-size: 15px; }
+.notice { display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 12px; background: var(--amber-soft); color: var(--amber-ink); font-size: 15px; }
+.temp-pass { font-family: var(--mono); font-size: 18px; background: var(--card); padding: 2px 10px; border-radius: 6px; }
+.month-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; }
+.month-bar .field { flex: 0 1 220px; }
+.totals { display: flex; flex-wrap: wrap; gap: 8px 24px; padding: 0 20px; font-size: 15px; color: var(--ink-2); }
+.totals b { font-family: var(--mono); font-variant-numeric: tabular-nums; color: var(--ink); }
+.confirm-row td { background: var(--danger-soft); }
+
+#toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 12px; background: var(--toast); color: var(--toast-ink); font-size: 15px; box-shadow: 0 8px 24px rgba(0,0,0,.2); z-index: 10; }
+#toast.err { background: var(--danger); color: #FFFFFF; }
+
+@media (max-width: 640px) {
+  .top-inner { gap: 6px 12px; padding-block: 8px 4px; }
+  .me { margin-left: auto; }
+  nav.menu { order: 3; flex: 1 1 100%; flex-wrap: nowrap; overflow-x: auto; }
+  .me-name { display: none; }
+  main.page { padding-block: 20px 48px; }
+  .page-head h1 { font-size: 24px; }
+  .page-head .seg { width: 100%; }
+  .seg button { padding: 0 10px; font-size: 15px; }
+  form.card, .pad { padding: 18px; }
+  .auth { padding-block: 0 24px; }
+  .auth-shell { border-radius: 0; border: 0; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  tr.fresh td { transition: background-color 1.2s ease; }
+}
+</style>
+
+<div class="demo-bar">
+  <div class="wrap">
+    <span><b>ตัวอย่างระบบ</b> — ข้อมูลที่กรอกเก็บไว้ในเบราว์เซอร์นี้เท่านั้น ระบบจริงจะเชื่อมกับ Google Sheet</span>
+    <span class="spacer"></span>
+    <button type="button" class="link-btn" id="btn-reset-demo">เริ่มตัวอย่างใหม่</button>
+  </div>
+</div>
+
+<!-- ============ เข้าสู่ระบบ / สมัครสมาชิก ============ -->
+<div id="auth" class="wrap auth">
+  <div class="auth-shell">
+    <div class="auth-hero">
+      <span class="sign"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></span>
+      <div>
+        <h1>Protection Fee</h1>
+        <p>ระบบบันทึกการใช้รถคุ้มครอง EXAT · BEM</p>
+      </div>
+    </div>
+    <div class="lane"></div>
+    <div class="auth-body">
+      <div id="auth-forms">
+        <div style="display:flex;flex-direction:column;gap:18px">
+          <div class="seg" role="tablist" aria-label="เข้าสู่ระบบหรือสมัครสมาชิก">
+            <button type="button" role="tab" id="tab-login" aria-selected="true" aria-controls="form-login">เข้าสู่ระบบ</button>
+            <button type="button" role="tab" id="tab-register" aria-selected="false" aria-controls="form-register">สมัครสมาชิก</button>
+          </div>
+
+          <form id="form-login" role="tabpanel" aria-labelledby="tab-login" novalidate>
+            <label class="field">ชื่อผู้ใช้
+              <input id="login-username" name="username" autocomplete="username" placeholder="เช่น staff01" required>
+            </label>
+            <label class="field">รหัสผ่าน
+              <input id="login-password" type="password" name="password" autocomplete="current-password" placeholder="อย่างน้อย 8 ตัวอักษร" required>
+            </label>
+            <div class="error" data-error hidden></div>
+            <button type="submit" class="btn primary block" style="min-height:50px">เข้าสู่ระบบ
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+            </button>
+            <div class="samples">
+              <span>บัญชีตัวอย่าง — กดเพื่อกรอกให้</span>
+              <div class="samples-list">
+                <button type="button" data-sample="admin">admin <span>· ผู้ดูแลระบบ</span></button>
+                <button type="button" data-sample="staff01">staff01 <span>· ผู้ใช้งาน</span></button>
+              </div>
+            </div>
+          </form>
+
+          <form id="form-register" role="tabpanel" aria-labelledby="tab-register" novalidate hidden>
+            <label class="field">ชื่อผู้ใช้
+              <input id="reg-username" name="username" autocomplete="username" placeholder="a-z, 0-9, . _ -" required>
+            </label>
+            <div class="grid2">
+              <label class="field">ชื่อ-นามสกุล
+                <input id="reg-fullname" name="fullName" autocomplete="name" required>
+              </label>
+              <label class="field">ชื่อเล่น
+                <input id="reg-nickname" name="nickname" placeholder="ใช้ในช่องผู้เข้างาน" required>
+              </label>
+            </div>
+            <label class="field"><span>เบอร์โทร <span class="opt">(ไม่บังคับ)</span></span>
+              <input id="reg-phone" type="tel" name="phone" autocomplete="tel" inputmode="tel">
+            </label>
+            <div class="grid2">
+              <label class="field">รหัสผ่าน
+                <input id="reg-password" type="password" name="password" autocomplete="new-password" placeholder="8 ตัวขึ้นไป" required>
+              </label>
+              <label class="field">ยืนยันรหัสผ่าน
+                <input id="reg-confirm" type="password" name="confirm" autocomplete="new-password" required>
+              </label>
+            </div>
+            <div class="error" data-error hidden></div>
+            <button type="submit" class="btn primary block" style="min-height:50px">สมัครสมาชิก</button>
+            <div class="steps">
+              <div><b>1</b><span>กรอกข้อมูลแล้วกดสมัครสมาชิก</span></div>
+              <div><b class="amber">2</b><span>รอผู้ดูแลระบบอนุมัติ แล้วจึงเข้าใช้งานได้</span></div>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div id="auth-waiting" class="waiting" hidden>
+        <h2 style="font-size:20px">ส่งใบสมัครแล้ว</h2>
+        <p class="muted" id="waiting-text">ผู้ดูแลระบบจะตรวจสอบและอนุมัติบัญชีของคุณ เมื่ออนุมัติแล้วเข้าสู่ระบบได้ทันที</p>
+        <dl id="waiting-info"></dl>
+        <div class="notice">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;margin-top:2px"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/></svg>
+          <div>ในตัวอย่างนี้ ลองเข้าสู่ระบบด้วยบัญชี <b>admin</b> แล้วไปที่เมนู “สมาชิก” เพื่ออนุมัติใบสมัครนี้</div>
+        </div>
+        <button type="button" class="btn" id="btn-back-login">กลับไปหน้าเข้าสู่ระบบ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ แอป ============ -->
+<div id="app" hidden>
+  <header class="top">
+    <div class="wrap top-inner">
+      <div class="brand">
+        <span class="sign"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z"/><path d="M9 12l2 2 4-4"/></svg></span>
+        Protection Fee
+      </div>
+      <nav class="menu" aria-label="เมนูหลัก">
+        <button type="button" data-page="entry">บันทึกการใช้รถ</button>
+        <button type="button" data-page="list">รายการรายเดือน</button>
+        <button type="button" data-page="locations">สถานที่</button>
+        <button type="button" data-page="members" data-admin>สมาชิก<span class="count" id="pending-count" hidden></span></button>
+        <button type="button" data-page="account">บัญชีของฉัน</button>
+      </nav>
+      <div class="me">
+        <div class="me-name"><span id="me-name"></span><span id="me-role"></span></div>
+        <button type="button" class="icon-btn" id="btn-logout" aria-label="ออกจากระบบ" title="ออกจากระบบ">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></svg>
+        </button>
+      </div>
+    </div>
+    <div class="lane"></div>
+  </header>
+
+  <!-- บันทึกการใช้รถ -->
+  <main class="wrap page" id="page-entry" hidden>
+    <div class="page-head">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <h1>บันทึกการใช้รถคุ้มครอง</h1>
+        <p class="muted" id="entry-subtitle"></p>
+      </div>
+      <div class="seg" role="group" aria-label="เลือกผู้ให้บริการรถคุ้มครอง">
+        <button type="button" data-mode="EXAT" aria-pressed="true">EXAT · ทดรองจ่าย</button>
+        <button type="button" data-mode="BEM" aria-pressed="false">BEM · เปิด PR</button>
+      </div>
+    </div>
+
+    <div class="split">
+      <form class="card main-col" id="form-entry" novalidate>
+        <div class="row">
+          <label class="field">วันที่
+            <input id="entry-date" type="date" name="date" required>
+          </label>
+          <label class="field">ผู้เข้างาน
+            <input id="entry-worker" name="worker" list="dl-workers" placeholder="ชื่อผู้รับผิดชอบหน้างาน" required>
+          </label>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <label class="field">สถานที่
+            <input id="entry-place" name="place" list="dl-places" placeholder="พิมพ์รหัสป้ายหรือชื่อจุด เช่น 4.3 หรือ ด่านดินแดง" required>
+          </label>
+          <div class="autofill" id="autofill" hidden>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color:var(--green)"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
+            <span>จากฐานข้อมูลป้าย เติมให้แล้ว:</span>
+            <span class="chip" id="autofill-exp"></span>
+            <span class="chip" id="autofill-proj"></span>
+          </div>
+        </div>
+        <div class="row">
+          <label class="field">สายทาง
+            <input id="entry-expressway" name="expressway" list="dl-expressways" placeholder="เช่น เฉลิมมหานคร" required>
+          </label>
+          <label class="field">โครงการ
+            <select id="entry-project" name="project" required>
+              <option>Flyover 2.0 EXAT</option>
+              <option>Flyover 2.0 BEM</option>
+              <option>Gateway EXAT</option>
+              <option>Gateway BEM</option>
+            </select>
+          </label>
+        </div>
+        <label class="field">ประเภทงาน
+          <input id="entry-job" name="jobType" list="dl-jobs" placeholder="เช่น ติดตั้งสินค้า, ตรวจสอบโครงสร้างประจำปี" required>
+        </label>
+
+        <div class="panel-amber" id="fields-exat">
+          <label class="field">ค่าอาหาร/รถคุ้มครอง
+            <span class="fee-input"><input id="entry-fee" type="number" name="fee" min="0" step="1" value="400" inputmode="numeric"><span>บาท</span></span>
+          </label>
+          <div class="quick">
+            <button type="button" data-fee="400">400 · จุดแรกของวัน</button>
+            <button type="button" data-fee="0">0 · จุดถัดไปในวันเดียวกัน</button>
+          </div>
+        </div>
+        <div class="panel-blue row" id="fields-bem" hidden>
+          <label class="field">ค่ารถคุ้มครอง
+            <input id="entry-feetext" name="feeText" list="dl-bemfees" placeholder="เช่น คิดค่ารถ 1 คืน">
+          </label>
+          <label class="field">การชำระเงิน
+            <select id="entry-payment" name="payment">
+              <option>รอดำเนินการ</option>
+              <option>เปิด PR แล้ว</option>
+              <option>เรียบร้อย</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="error" data-error hidden></div>
+        <div class="actions">
+          <button type="submit" class="btn primary">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
+            บันทึก
+          </button>
+          <button type="button" class="btn" id="btn-clear-entry">ล้างฟอร์ม</button>
+        </div>
+      </form>
+
+      <aside class="side-col">
+        <div class="summary">
+          <div class="label" id="sum-label"></div>
+          <div class="nums">
+            <div><div class="num" id="sum-count">0</div><div class="unit">ครั้ง</div></div>
+            <div><div class="num amber" id="sum-amount">0</div><div class="unit" id="sum-unit">บาท</div></div>
+          </div>
+        </div>
+        <div class="card tips">
+          <strong>วิธีกรอก</strong>
+          <div>เข้าหลายจุดในวันเดียวกัน ให้บันทึกทุกจุด แต่คิดค่าใช้จ่ายจุดแรกจุดเดียว</div>
+          <div>เลือกสถานที่จากรายการ ระบบเติมสายทางและโครงการให้เอง</div>
+        </div>
+      </aside>
+    </div>
+
+    <section class="card table-card">
+      <div class="table-head"><h2>รายการล่าสุด</h2><span class="sub" id="recent-note"></span></div>
+      <div class="table-wrap"><table style="min-width:860px"><thead id="recent-head"></thead><tbody id="recent-body"></tbody></table></div>
+    </section>
+  </main>
+
+  <!-- รายการรายเดือน -->
+  <main class="wrap page" id="page-list" hidden>
+    <div class="page-head">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <h1>รายการรายเดือน</h1>
+        <p class="muted">ดูรายการตามเดือน แล้วคัดลอกไปวางในตาราง Google Sheet</p>
+      </div>
+    </div>
+    <div class="month-bar">
+      <label class="field">เดือน
+        <select id="list-month"></select>
+      </label>
+      <div class="seg" role="group" aria-label="ผู้ให้บริการ">
+        <button type="button" data-list-mode="EXAT" aria-pressed="true">EXAT</button>
+        <button type="button" data-list-mode="BEM" aria-pressed="false">BEM</button>
+      </div>
+    </div>
+    <section class="card table-card">
+      <div class="table-head">
+        <h2 id="list-title"></h2>
+        <button type="button" class="btn sm" id="btn-copy">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>
+          คัดลอกไปวางใน Google Sheet
+        </button>
+      </div>
+      <div class="totals" id="list-totals"></div>
+      <div class="table-wrap"><table style="min-width:900px"><thead id="list-head"></thead><tbody id="list-body"></tbody></table></div>
+      <textarea id="copy-fallback" aria-label="ข้อมูลสำหรับคัดลอก" hidden style="margin:0 20px;height:120px;font-family:var(--mono);font-size:13px;border:1.5px solid var(--field);border-radius:8px;background:var(--field-bg);color:var(--ink)"></textarea>
+    </section>
+  </main>
+
+  <!-- สถานที่ -->
+  <main class="wrap page" id="page-locations" hidden>
+    <div class="page-head">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <h1>ฐานข้อมูลสถานที่</h1>
+        <p class="muted">ป้าย Flyover 2.0, Mainline และ Gateway Billboard จากแท็บ DataBase Locations</p>
+      </div>
+    </div>
+    <div class="split">
+      <section class="card table-card main-col">
+        <div class="table-head">
+          <label class="search">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+            <input type="search" id="loc-search" aria-label="ค้นหาสถานที่" placeholder="ค้นหารหัสป้าย ถนน หรือจุดนัดพบ">
+          </label>
+          <div class="filters" role="group" aria-label="กรองสถานที่">
+            <button type="button" class="pill" data-filter="all" aria-pressed="true">ทั้งหมด</button>
+            <button type="button" class="pill" data-filter="EXAT" aria-pressed="false">EXAT</button>
+            <button type="button" class="pill" data-filter="BEM" aria-pressed="false">BEM</button>
+            <button type="button" class="pill" data-filter="Gateway" aria-pressed="false">Gateway</button>
+          </div>
+        </div>
+        <div class="sub" style="padding:0 20px" id="loc-count"></div>
+        <div class="table-wrap">
+          <table style="min-width:760px">
+            <thead><tr><th>ป้าย</th><th>บริเวณ</th><th>ผู้ดูแล · สายทาง</th><th>ขนาด</th><th>จุดนัดพบ</th><th>สน.</th></tr></thead>
+            <tbody id="loc-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <form class="card side-form side-col" id="form-location" novalidate data-admin>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <h2>เพิ่มสถานที่</h2>
+          <span class="status pending">ผู้ดูแลระบบ</span>
+        </div>
+        <div class="grid2">
+          <label class="field">รหัสป้าย<input id="loc-code" name="code" placeholder="8.2" required></label>
+          <label class="field">ขนาด<input id="loc-size" name="size" placeholder="3 x 14 m."></label>
+        </div>
+        <label class="field">บริเวณ<input id="loc-area" name="area" placeholder="รหัส ชื่อจุด (English)" required></label>
+        <div class="grid2">
+          <label class="field">Media Site
+            <select id="loc-media" name="mediaSite">
+              <option>Flyover 2.0 EXAT</option>
+              <option>Flyover 2.0 BECL</option>
+              <option>Gateway Billboard EXAT</option>
+              <option>Gateway Billboard BECL</option>
+            </select>
+          </label>
+          <label class="field">ผู้ดูแล
+            <select id="loc-operator" name="operator"><option>EXAT</option><option>BEM</option></select>
+          </label>
+          <label class="field">สายทาง<input id="loc-expressway" name="expressway" list="dl-expressways"></label>
+          <label class="field">ถนน<input id="loc-road" name="road"></label>
+          <label class="field">จุดนัดพบ<input id="loc-meet" name="meetingPoint" placeholder="ด่านอโศก 1"></label>
+          <label class="field">สน.<input id="loc-police" name="police" placeholder="สน.ยานาวา"></label>
+        </div>
+        <div class="error" data-error hidden></div>
+        <button type="submit" class="btn primary block">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+          เพิ่มสถานที่
+        </button>
+      </form>
+    </div>
+  </main>
+
+  <!-- สมาชิก (admin) -->
+  <main class="wrap page" id="page-members" hidden>
+    <div class="page-head">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <h1>สมาชิก</h1>
+        <p class="muted">อนุมัติผู้สมัครใหม่ กำหนดสิทธิ์ ระงับบัญชี และรีเซ็ตรหัสผ่าน</p>
+      </div>
+    </div>
+    <div class="pending-box" id="pending-box" hidden>
+      <h2 id="pending-title"></h2>
+      <div id="pending-list" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+    <div class="notice" id="temp-pass-box" hidden></div>
+    <section class="card table-card">
+      <div class="table-head"><h2>สมาชิกทั้งหมด</h2></div>
+      <div class="table-wrap">
+        <table style="min-width:760px">
+          <thead><tr><th>สมาชิก</th><th>สิทธิ์</th><th>สถานะ</th><th>เข้าใช้ล่าสุด</th><th class="num">จัดการ</th></tr></thead>
+          <tbody id="members-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- บัญชีของฉัน -->
+  <main class="wrap page" id="page-account" hidden>
+    <div class="page-head">
+      <div style="display:flex;flex-direction:column;gap:4px">
+        <h1>บัญชีของฉัน</h1>
+        <p class="muted" id="account-info"></p>
+      </div>
+    </div>
+    <form class="card side-form" id="form-password" novalidate style="max-width:440px">
+      <h2>เปลี่ยนรหัสผ่าน</h2>
+      <label class="field">รหัสผ่านเดิม<input id="pw-old" type="password" name="oldPassword" autocomplete="current-password" required></label>
+      <label class="field">รหัสผ่านใหม่<input id="pw-new" type="password" name="newPassword" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร" required></label>
+      <label class="field">ยืนยันรหัสผ่านใหม่<input id="pw-confirm" type="password" name="confirm" autocomplete="new-password" required></label>
+      <div class="error" data-error hidden></div>
+      <button type="submit" class="btn primary block">เปลี่ยนรหัสผ่าน</button>
+    </form>
+  </main>
+</div>
+
+<datalist id="dl-places"></datalist>
+<datalist id="dl-expressways"></datalist>
+<datalist id="dl-jobs"></datalist>
+<datalist id="dl-workers"></datalist>
+<datalist id="dl-bemfees"><option value="คิดค่ารถ 1 คืน"></option></datalist>
+<div id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---------- ข้อมูลตั้งต้น ----------
+  // [รหัส, Media Site, บริเวณ, ผู้ดูแล, สายทาง, ขนาด, จำนวนป้าย, ถนน, เขต, จุดนัดพบ, สน.] จากแท็บ DataBase Locations
+  var LOCATION_ROWS = [["1.1","Flyover 2.0 BECL","1.1 ถนนสาทรใต้มุ่งหน้าสะพานสมเด็จพระเจ้าตากสิน (Sathorn - Charoen Krung)","BEM","ศรีรัช","3 x 14 m.",1,"สาทรใต้","สาทร","ด่านอโศก 1","สน.ยานาวา"],["1.2","Flyover 2.0 BECL","1.2 หัวลำโพงมุ่งหน้าแยกมหานคร (Hualampong - Mahanakorn)","BEM","ศรีรัช","3 x 14 m.",1,"พระราม4","ปทุมวัน","ด่านถนนจันทน์","สน.ปทุมวัน"],["1.3","Flyover 2.0 EXAT","1.3 รามอินทรา มุ่งหน้าซอยวัชรพล (Ramintra - Watcharaphol)","EXAT","ฉลองรัช","3 x 12 m.",1,"วัชรพล","บางเขน","พระราม 9-2","สน.คันนายาว"],["2.1","Flyover 2.0 EXAT","2.1 ถนนสุขุมวิท มุ่งถนนชิดลม (Sukhumvit - Ploenchit)","EXAT","เฉลิมมหานคร","3 x 12 m.",1,"สุขุมวิท","ปทุมวัน","ด่านอโศก 1","สน.ลุมพีนี"],["2.2","Flyover 2.0 BECL","2.2 แยกศรีอยุธยา (Phayathai - Rama 6)","BEM","ศรีรัช","3 x 14 m.",1,"ศรีอยุธยา","ราชเทวี","ด่านอโศก 1","สน.พญาไท"],["2.3","Flyover 2.0 EXAT","2.3 ถนนนราธิวาส มุ่งพระราม 3 (Ratchada - Rama 3)","EXAT","เฉลิมมหานคร","2.2 x 14 m.",1,"นราธิวาส","ยานนาวา","ด่านสาธุประดิษฐ์ 1","สน.ทุ่งมหเมฆ"],["3.1","Flyover 2.0 EXAT","3.1 ถนนพระรามสี่ บ่อนไก่ มุ่งสะพานไทยเบลเยี่ยม (Rama 4 Inbound)","EXAT","เฉลิมมหานคร","2.7 x 14 m.",1,"พระราม4","ปทุมวัน","ด่านอโศก 1","สน.ทุ่งมหเมฆ"],["3.2","Flyover 2.0 EXAT","3.2 ถนนดินแดง มุ่งหน้าอนุสาวรีย์ (Dindang - Victory monumrnt)","EXAT","เฉลิมมหานคร","3 x 9.4 m.",1,"ดินแดง","ดินแดง","ด่านดินแดง","สน.ดินแดง"],["3.3","Flyover 2.0 BECL","3.3 แยกพระรามเก้าเลียบทางด่วนรามอินทรามุ่งเอกมัย (Rama 9 - Ekamai)","BEM(EXAT)","ฉลองรัช","3 x 14 m.",1,"ประดิษฐ์มนูธรรม","ห้วยขวาง","ด่านพระราม 9(KPN)","สน.วังทองหลาง"],["4.1","Flyover 2.0 BECL","4.1 ถนนสีลมมุ่งหน้าเจริญกรุง (Silom - Charoenkrung)","BEM","ศรีรัช","3 x 14 m.",1,"สีลม","บางรัก","ด่านอโศก 1","สน.ยานาวา"],["4.2","Flyover 2.0 BECL","4.2 แยกมหานครมุ่งหน้าหัวลำโพง (Mahanakorn - Hualampong)","BEM","ศรีรัช","3 x 14 m.",1,"พระราม4","ปทุมวัน","ด่านอโศก 1","สน.ปทุมวัน"],["4.3","Flyover 2.0 EXAT","4.3 ถนนจตุรทิศมุ่งหน้าพญาไท (Chaturathit - Phayathai)","EXAT","เฉลิมมหานคร","2.5 x 14 m.",1,"จตุรทิศ","ดินแดง","ด่านฯดินแดง","สน.ดินแดง"],["5.1","Flyover 2.0 EXAT","5.1 แยกเพชรบุรีตัดวิทยุ (Petchburi - Chidlom)","EXAT","เฉลิมมหานคร","3 x 14 m.",1,"เพชรบุรี","ราชเทวี","ด่านอโศก 1","สน.พญาไท"],["5.2","Flyover 2.0 BECL","5.2 เสาวนีย์ (แยกศรีอยุธยา)มุ่งหน้าพญาไท (Sri Ayuthaya - Phayathai)","BEM","ศรีรัช","3 x 14 m.",1,"ศรีอยุธยา","ราชเทวี","ด่านถนนจันทน์","สน.พญาไท"],["5.3","Flyover 2.0 EXAT","5.3 ศูนย์สิริกิตต์ มุ่งพระราม 3 (Klong Toey - Rama 3)","EXAT","เฉลิมมหานคร","2.6 x 12 m.",1,"รัชดาภิเษก-คลองเตย","คลองเตย","ด่านสาธุประดิษฐ์ 1","สน.ทุ่งมหเมฆ"],["6.1","Flyover 2.0 EXAT","6.1 ถนนเพชรบุรี มุ่งท้ายซอยนานา (Petchburi - Nana)","EXAT","เฉลิมมหานคร","2.9 x 5.9 m.",1,"เพชรบุรี","ราชเทวี","ด่านพระราม 4-2","สน.พญาไท"],["6.2","Flyover 2.0 BECL","6.2 ถนนเอกมัยมุ่งพระรามเก้า (Ekamai - Rama 9)","BEM(EXAT)","ฉลองรัช","3 x 14 m.",1,"ประดิษฐ์มนูญธรรม","ห้วยขวาง","ด่านศรีนครินทร์","สน.มักกะสัน"],["6.3","Flyover 2.0 BECL","6.3 รัชโยธิน มุ่งหน้าด่านประชานุกูล พระราม 7 (Ratchayotthin - Rama 7)","BEM","ศรีรัช","3 x 14 m.",1,"รัชดาภิเษก","จตุจักร","ประชาชื่นขาเข้า","สน.ประชาชื่น"],["7.1","Flyover 2.0 EXAT","7.1 ถนนพระรามสี่ บ่อนไก่ มุ่งคลองเตย (Rama 4 Outbound)","EXAT","เฉลิมมหานคร","3 x 10.6 m.",1,"พระราม4","ปทุมวัน","ด่านสาธุประดิษฐ์ 1","สน.ทุ่งมหเมฆ"],["7.2","Flyover 2.0 BECL","7.2 สามเหลี่ยมดินแดงมุ่งหน้าอนุสาวรีย์ชัย (Victory Monument)","BEM","ศรีรัช","3 x 14 m.",1,"ดินแดง","พญาไท","ด่านพหล 1ตรงข้ามอนุสาวรีย์","สน.ดินแดง"],["7.3","Flyover 2.0 EXAT","7.3 ถนนนราธิวาสฯ มุ่งหน้าถนนจันทน์ (Narathiwas - Chant)","EXAT","เฉลิมมหานคร","2.1 x 14 m.",1,"นราธิวาส","ยานนาวา","ด่านอโศก 1","สน.บางโพงพาง"],["8.1","Flyover 2.0 EXAT","8.1 ถนนประดิษฐ์มนูธรรม มุ่งหน้าแยกพระราม 9 (Pradit Manutham - RAMA 9)","EXAT","ฉลองรัช","3 x 14 m.",1,"ประดิษฐ์มนูธรรม","ห้วยขวาง","ด่านฯประชาอุทิศ","สน.วังทองหลาง"],["M1","Flyover 2.0 EXAT","Mainline สุขุมวิท มุ่งหน้า บางนา-ดาวคะนอง","EXAT","เฉลิมมหานคร","3 x 9 m.",1,"","","",""],["M2","Flyover 2.0 EXAT","Mainline สาธุประดิษฐ์ มุ่งหน้า บางนา-ดินแดง","EXAT","เฉลิมมหานคร","3 x 9 m.",1,"","","",""],["M3","Flyover 2.0 EXAT","Mainline ท่าเรือ มุ่งหน้า ดินแดง-ดาวคะนอง","EXAT","เฉลิมมหานคร","3 x 9 m.",1,"","","",""],["M4","Flyover 2.0 BECL","Mainline พระราม 9 มุ่งหน้า ดินแดง-ศรีนครินทร์","BEM","ฉลองรัช","3 x 9 m.",1,"","","",""],["M5","Flyover 2.0 BECL","Mainline อนุเสาวรีย์ฯ มุ่งหน้าต่างระดับพญาไท","BEM","ศรีรัช","3 x 9 m.",1,"","","",""],["M6","Flyover 2.0 BECL","Mainline พระราม 6 มุ่งหน้าต่างระดับพญาไท","BEM","ศรีรัช","3 x 9 m.",1,"","","",""],["M7","Flyover 2.0 BECL","Mainline ยมราช มุ่งหน้าต่างระดับพญาไท","BEM","ศรีรัช","3 x 9 m.",1,"","","",""],["M8","Flyover 2.0 BECL","Mainline อโศก มุ่งหน้าต่างระดับมักกะสัน","BEM","ศรีรัช","3 x 9 m.",1,"","","",""],["G1","Gateway Billboard EXAT","ด่านดาวคะนอง","EXAT","เฉลิมมหานคร","15x4.8",2,"","","",""],["G2","Gateway Billboard EXAT","ด่านดินแดง","EXAT","เฉลิมมหานคร","15x4.8",2,"","","",""],["G3","Gateway Billboard EXAT","ด่านบางนา","EXAT","เฉลิมมหานคร","14x4.8",2,"","","",""],["G4","Gateway Billboard EXAT","ด่านสุขสวัสดิ์","EXAT","เฉลิมมหานคร","15x4.8",1,"","","",""],["G5","Gateway Billboard EXAT","ด่านรามอินทรา","EXAT","ฉลองรัช","15x4.8",1,"","","",""],["G6","Gateway Billboard EXAT","ด่านพระราม 4-1","EXAT","เฉลิมมหานคร","8x3",1,"","","",""],["G7","Gateway Billboard EXAT","ด่านพระราม 4-2","EXAT","เฉลิมมหานคร","9x3",1,"","","",""],["G8","Gateway Billboard EXAT","ด่านสุขุมวิท 62","EXAT","เฉลิมมหานคร","12x4.8",1,"","","",""],["G9","Gateway Billboard EXAT","ด่านสุขุมวิท-เพลินจิต","EXAT","เฉลิมมหานคร","8x3",1,"","","",""],["G10","Gateway Billboard EXAT","ด่านเลียบแม่น้ำ","EXAT","เฉลิมมหานคร","2x3",4,"","","",""],["G11","Gateway Billboard EXAT","ด่านสาธุประดิษฐ์","EXAT","เฉลิมมหานคร","15x4.8",2,"","","",""],["G12","Gateway Billboard EXAT","ด่านพระราม 9-2","EXAT","ฉลองรัช","15x4.8",1,"","","",""],["G13","Gateway Billboard BECL","ด่านอโศก 4","BEM","ศรีรัช","12x4.8",2,"","","",""],["G14","Gateway Billboard BECL","ด่านจันทน์","BEM","ศรีรัช","5x4.8",1,"","","",""],["G15","Gateway Billboard BECL","ด่านย่านพหลโยธิน","BEM","ศรีรัช","8x4.8",1,"","","",""],["G16","Gateway Billboard BECL","ด่านประชาชื่นขาเข้า","BEM","ศรีรัช","24x4.8",1,"","","",""],["G17","Gateway Billboard BECL","ด่านศรีนครินทร์","BEM","ศรีรัช","12x4.8",2,"","","",""],["G18","Gateway Billboard BECL","ด่านสะพานสว่าง","BEM","ศรีรัช","14x4.8",1,"","","",""],["G19","Gateway Billboard BECL","ด่านอโศก 3","BEM","ศรีรัช","12.5x4.8",2,"","","",""],["G20","Gateway Billboard BECL","ด่านสาทร","BEM","ศรีรัช","10x4.8",1,"","","",""],["G21","Gateway Billboard BECL","ด่านอโศก 1","BEM","ศรีรัช","14x4.8",1,"","","",""],["G22","Gateway Billboard BECL","ด่านประชาชื่นขาออก","BEM","ศรีรัช","24x4.8",1,"","","",""],["G23","Gateway Billboard BECL","ด่านยมราช","BEM","ศรีรัช","12x4.8",1,"","","",""],["G24","Gateway Billboard BECL","ด่านหัวลำโพง","BEM","ศรีรัช","12x4.8",1,"","","",""],["G25","Gateway Billboard BECL","ด่านพระราม9","BEM","ฉลองรัช","9x3",1,"","","",""],["G26","Gateway Billboard EXAT","ด่านประชาอุทิศ","EXAT","ฉลองรัช","9x4",1,"","","",""]];
+  var SAMPLE_ENTRIES = [
+    ['EXAT', 691, '2026-08-25', 'เฉลิมมหานคร', 'Flyover 2.0 EXAT', '7.1 ถนนพระรามสี่ บ่อนไก่ มุ่งคลองเตย (Rama 4 Outbound)', 'ตรวจสอบโครงสร้างประจำปี 2569 ครั้งที่ 3', 'คุณโจ', 0],
+    ['EXAT', 692, '2026-08-25', 'เฉลิมมหานคร', 'Flyover 2.0 EXAT', '6.1 ถนนเพชรบุรี มุ่งท้ายซอยนานา (Petchburi - Nana)', 'ตรวจสอบโครงสร้างประจำปี 2569 ครั้งที่ 3', 'คุณโจ', 0],
+    ['EXAT', 693, '2026-08-26', 'ฉลองรัช', 'Flyover 2.0 EXAT', '1.3 รามอินทรา มุ่งหน้าซอยวัชรพล (Ramintra - Watcharaphol)', 'ตรวจสอบโครงสร้างประจำปี 2569 ครั้งที่ 3', 'คุณโจ', 400],
+    ['EXAT', 694, '2026-08-26', 'ฉลองรัช', 'Flyover 2.0 EXAT', 'Mainline พระราม 9 มุ่งหน้า ดินแดง-ศรีนครินทร์', 'ตรวจสอบโครงสร้างประจำปี 2569 ครั้งที่ 3', 'คุณโจ', 0],
+    ['EXAT', 695, '2026-08-28', 'เฉลิมมหานคร', 'Gateway EXAT', 'ด่านดินแดง', 'ติดตั้งสินค้า LYO Silver Block', 'คุณเท่ง', 400],
+    ['EXAT', 696, '2026-09-01', 'เฉลิมมหานคร', 'Flyover 2.0 EXAT', '7.3 ถนนนราธิวาสฯ มุ่งหน้าถนนจันทน์ (Narathiwas - Chant)', 'ติดตั้ง สินค้า TOYOTA (ATIV Yaris Thaiconic Duo)', 'คุณเท่ง', 400],
+    ['EXAT', 697, '2026-09-11', 'เฉลิมมหานคร', 'Flyover 2.0 EXAT', '2.1 ถนนสุขุมวิท มุ่งถนนชิดลม (Sukhumvit - Ploenchit)', 'ติดตั้ง สินค้า Omoda', 'คุณเท่ง', 400],
+    ['EXAT', 698, '2026-09-11', 'เฉลิมมหานคร', 'Flyover 2.0 EXAT', '7.1 ถนนพระรามสี่ บ่อนไก่ มุ่งคลองเตย (Rama 4 Outbound)', 'ติดตั้ง สินค้า Omoda', 'คุณเท่ง', 0],
+    ['EXAT', 699, '2026-09-16', 'เฉลิมมหานคร', 'Gateway EXAT', 'ด่านดินแดง', 'ติดตั้งสินค้า Shell', 'คุณเท่ง', 400],
+    ['EXAT', 700, '2026-09-24', 'เฉลิมมหานคร', 'Flyover 2.0 EXAT', '4.3 ถนนจตุรทิศมุ่งหน้าพญาไท (Chaturathit - Phayathai)', 'กลับหน้าขาว สินค้า ททท.', 'คุณเท่ง', 400],
+    ['BEM', 1, '2022-05-03', 'ศรีรัช', 'Flyover 2.0 BEM', 'Mainline พระราม 6 มุ่งหน้าต่างระดับพญาไท', 'งานตรวจสอบระบบป้ายอัจฉริยะและแก้ไขระบบไฟฟ้า+ตรวจสอบโครงสร้าง', 'แม็กกลางคืน', 'คิดค่ารถ 1 คืน', 'เรียบร้อย'],
+    ['BEM', 2, '2022-05-03', 'ศรีรัช', 'Flyover 2.0 BEM', 'Mainline ยมราช มุ่งหน้าต่างระดับพญาไท', 'งานตรวจสอบระบบป้ายอัจฉริยะและแก้ไขระบบไฟฟ้า+ตรวจสอบโครงสร้าง', 'แม็กกลางคืน', '', 'เรียบร้อย']
+  ];
+  // บัญชีตัวอย่าง (รหัสผ่านแสดงไว้เพื่อทดลองเท่านั้น)
+  var SAMPLE_USERS = [
+    { username: 'admin', password: 'admin1234', fullName: 'ผู้ดูแลระบบ (ตัวอย่าง)', nickname: 'แอดมิน', role: 'admin', status: 'active' },
+    { username: 'staff01', password: 'staff1234', fullName: 'พนักงานหน้างาน (ตัวอย่าง)', nickname: 'คุณเท่ง', role: 'user', status: 'active' },
+    { username: 'staff02', password: 'staff1234', fullName: 'ผู้สมัครใหม่ (ตัวอย่าง)', nickname: 'คุณโจ', phone: '08x-xxx-xxxx', role: 'user', status: 'pending' }
+  ];
+  var STORE_KEY = 'pf-demo-v1';
+  var THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  var THAI_MONTHS_LONG = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  var EN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  var MODE_TEXT = {
+    EXAT: { subtitle: 'การทางพิเศษแห่งประเทศไทย — จ่ายแบบทดรองจ่าย', note: 'ตาราง รถคุ้มครอง EXAT (ทดรองจ่าย)' },
+    BEM: { subtitle: 'บมจ.ทางด่วนและรถไฟฟ้ากรุงเทพ — จ่ายแบบเปิด PR', note: 'ตาราง รถคุ้มครอง BEM (เปิด PR)' }
+  };
+  var STATUS_LABEL = { active: 'ใช้งาน', pending: 'รออนุมัติ', disabled: 'ระงับ', rejected: 'ไม่อนุมัติ' };
+
+  // ---------- helper ----------
+  function $(s, r) { return (r || document).querySelector(s); }
+  function $$(s, r) { return Array.prototype.slice.call((r || document).querySelectorAll(s)); }
+  function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
+  function norm(s) { return String(s || '').replace(/\s+/g, '').toLowerCase(); }
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function todayIso() { var d = new Date(); return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function parts(iso) { var p = iso.split('-').map(Number); return { y: p[0], m: p[1] - 1, d: p[2] }; }
+  function thaiShort(iso) { var p = parts(iso); return p.d + ' ' + THAI_MONTHS[p.m] + ' ' + pad2((p.y + 543) % 100); }
+  function sheetMonth(iso) { var p = parts(iso); return EN_MONTHS[p.m] + '-' + pad2(p.y % 100); }
+  function monthLong(ym) { var p = ym.split('-').map(Number); return THAI_MONTHS_LONG[p[1] - 1] + ' ' + (p[0] + 543); }
+  function nowStamp() { var d = new Date(); return pad2(d.getDate()) + '/' + pad2(d.getMonth() + 1) + '/' + (d.getFullYear() + 543) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes()); }
+  function money(n) { return Number(n || 0).toLocaleString('th-TH'); }
+  function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function uniq(arr) { var seen = {}, out = []; arr.forEach(function (v) { v = String(v || '').trim(); if (v && !seen[v]) { seen[v] = 1; out.push(v); } }); return out; }
+
+  async function hashPw(password, salt) {
+    var text = salt + ':' + password;
+    try {
+      var buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+      return Array.prototype.map.call(new Uint8Array(buf), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+    } catch (e) {
+      var h = 2166136261;
+      for (var i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return 'f' + (h >>> 0).toString(16);
+    }
+  }
+
+  // ---------- ที่เก็บข้อมูล (เบราว์เซอร์นี้) ----------
+  var DB = null;
+  var memoryOnly = false;
+  function save() {
+    if (memoryOnly) return;
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(DB)); } catch (e) { memoryOnly = true; }
+  }
+  function load() {
+    try { var raw = localStorage.getItem(STORE_KEY); return raw ? JSON.parse(raw) : null; } catch (e) { memoryOnly = true; return null; }
+  }
+  async function seed() {
+    var users = [];
+    for (var i = 0; i < SAMPLE_USERS.length; i++) {
+      var u = SAMPLE_USERS[i], salt = uid();
+      users.push({ username: u.username, fullName: u.fullName, nickname: u.nickname, phone: u.phone || '', role: u.role, status: u.status, salt: salt, hash: await hashPw(u.password, salt), createdAt: '19/10/2569 08:00', lastLogin: '', sample: true });
+    }
+    return {
+      v: 1,
+      users: users,
+      locations: LOCATION_ROWS.map(function (r) {
+        return { code: r[0], mediaSite: r[1], area: r[2], operator: r[3], expressway: r[4], size: r[5], count: r[6], road: r[7], district: r[8], meetingPoint: r[9], police: r[10] };
+      }),
+      entries: SAMPLE_ENTRIES.map(function (r) {
+        var e = { id: uid(), provider: r[0], no: r[1], date: r[2], expressway: r[3], project: r[4], place: r[5], jobType: r[6], worker: r[7], createdBy: 'staff01', sample: true };
+        if (r[0] === 'EXAT') e.fee = r[8]; else { e.feeText = r[8]; e.payment = r[9]; }
+        return e;
+      }),
+      session: null
+    };
+  }
+  function findUser(name) { name = String(name || '').trim().toLowerCase(); return DB.users.find(function (u) { return u.username === name; }); }
+
+  // ---------- UI helper ----------
+  var toastTimer;
+  function toast(msg, isErr) {
+    var el = $('#toast');
+    el.textContent = msg; el.className = isErr ? 'err' : ''; el.hidden = false;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { el.hidden = true; }, 3600);
+  }
+  function showError(form, msg) { var el = $('[data-error]', form); el.textContent = msg || ''; el.hidden = !msg; }
+  function val(id) { return $(id).value.trim(); }
+
+  // ================= สมัคร / เข้าสู่ระบบ =================
+  var S = { user: null, mode: 'EXAT', listMode: 'EXAT', page: 'entry', locFilter: 'all', freshId: null, confirmDelete: null };
+
+  function authTab(which) {
+    var login = which === 'login';
+    $('#tab-login').setAttribute('aria-selected', String(login));
+    $('#tab-register').setAttribute('aria-selected', String(!login));
+    $('#form-login').hidden = !login;
+    $('#form-register').hidden = login;
+  }
+  $('#tab-login').addEventListener('click', function () { authTab('login'); });
+  $('#tab-register').addEventListener('click', function () { authTab('register'); });
+  $$('[data-sample]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var u = SAMPLE_USERS.find(function (x) { return x.username === b.dataset.sample; });
+      $('#login-username').value = u.username;
+      $('#login-password').value = u.password;
+      showError($('#form-login'), '');
+    });
+  });
+
+  function showWaiting(user) {
+    $('#auth-forms').hidden = true;
+    $('#auth-waiting').hidden = false;
+    var rejected = user.status === 'rejected';
+    $('#auth-waiting h2').textContent = rejected ? 'ใบสมัครไม่ได้รับอนุมัติ' : 'ส่งใบสมัครแล้ว';
+    $('#waiting-text').textContent = rejected
+      ? 'ติดต่อผู้ดูแลระบบหากคิดว่าเป็นความผิดพลาด'
+      : 'ผู้ดูแลระบบจะตรวจสอบและอนุมัติบัญชีของคุณ เมื่ออนุมัติแล้วเข้าสู่ระบบได้ทันที';
+    $('#waiting-info').innerHTML =
+      '<dt>ชื่อผู้ใช้</dt><dd>' + esc(user.username) + '</dd>' +
+      '<dt>ชื่อ-นามสกุล</dt><dd>' + esc(user.fullName) + '</dd>' +
+      '<dt>ชื่อเล่น</dt><dd>' + esc(user.nickname) + '</dd>' +
+      '<dt>สถานะ</dt><dd><span class="status ' + esc(user.status) + '">' + esc(STATUS_LABEL[user.status]) + '</span></dd>';
+  }
+  $('#btn-back-login').addEventListener('click', function () {
+    $('#auth-waiting').hidden = true;
+    $('#auth-forms').hidden = false;
+    authTab('login');
+  });
+
+  $('#form-register').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var form = e.target;
+    var username = val('#reg-username').toLowerCase();
+    var fullName = val('#reg-fullname'), nickname = val('#reg-nickname');
+    var pw = $('#reg-password').value, confirmPw = $('#reg-confirm').value;
+    if (!/^[a-z0-9._-]{3,30}$/.test(username)) return showError(form, 'ชื่อผู้ใช้ใช้ได้เฉพาะ a-z, 0-9, . _ - ยาว 3–30 ตัว');
+    if (!fullName) return showError(form, 'กรอกชื่อ-นามสกุล');
+    if (!nickname) return showError(form, 'กรอกชื่อเล่น ใช้เป็นชื่อในช่องผู้เข้างาน');
+    if (pw.length < 8) return showError(form, 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร');
+    if (pw !== confirmPw) return showError(form, 'รหัสผ่านสองช่องไม่ตรงกัน');
+    if (findUser(username)) return showError(form, 'ชื่อผู้ใช้ “' + username + '” มีคนใช้แล้ว ลองชื่ออื่น');
+    showError(form, '');
+    var salt = uid();
+    var user = { username: username, fullName: fullName, nickname: nickname, phone: val('#reg-phone'), role: 'user', status: 'pending', salt: salt, hash: await hashPw(pw, salt), createdAt: nowStamp(), lastLogin: '' };
+    DB.users.push(user);
+    save();
+    form.reset();
+    showWaiting(user);
+  });
+
+  $('#form-login').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var form = e.target;
+    var user = findUser(val('#login-username'));
+    var pw = $('#login-password').value;
+    if (!user || (await hashPw(pw, user.salt)) !== user.hash) return showError(form, 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    showError(form, '');
+    if (user.status === 'pending' || user.status === 'rejected') { form.reset(); return showWaiting(user); }
+    if (user.status !== 'active') return showError(form, 'บัญชีนี้ถูกระงับ ติดต่อผู้ดูแลระบบ');
+    user.lastLogin = nowStamp();
+    DB.session = user.username;
+    save();
+    form.reset();
+    startApp(user);
+  });
+
+  $('#btn-logout').addEventListener('click', function () {
+    DB.session = null; save();
+    S.user = null;
+    $('#app').hidden = true;
+    $('#auth').hidden = false;
+    authTab('login');
+    window.scrollTo(0, 0);
+  });
+
+  var resetArmed = false, resetTimer;
+  $('#btn-reset-demo').addEventListener('click', async function () {
+    var b = this;
+    if (!resetArmed) {
+      resetArmed = true;
+      b.textContent = 'กดอีกครั้งเพื่อล้างข้อมูลที่กรอกทั้งหมด';
+      resetTimer = setTimeout(function () { resetArmed = false; b.textContent = 'เริ่มตัวอย่างใหม่'; }, 4000);
+      return;
+    }
+    clearTimeout(resetTimer); resetArmed = false; b.textContent = 'เริ่มตัวอย่างใหม่';
+    DB = await seed(); save();
+    S.user = null;
+    $('#app').hidden = true; $('#auth').hidden = false;
+    $('#auth-waiting').hidden = true; $('#auth-forms').hidden = false;
+    authTab('login');
+    toast('เริ่มตัวอย่างใหม่แล้ว');
+  });
+
+  // ================= แอป =================
+  function isAdmin() { return S.user && S.user.role === 'admin'; }
+
+  function startApp(user) {
+    S.user = user;
+    $('#auth').hidden = true;
+    $('#app').hidden = false;
+    $$('[data-admin]').forEach(function (el) { el.hidden = !isAdmin(); });
+    $('#me-name').textContent = user.nickname || user.fullName;
+    $('#me-role').textContent = isAdmin() ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน';
+    $('#account-info').textContent = user.fullName + ' · ' + user.username + ' · ' + (isAdmin() ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน');
+    renderOptions();
+    clearEntry();
+    setMode(S.mode);
+    renderPendingCount();
+    showPage('entry');
+  }
+
+  function showPage(page) {
+    if (page === 'members' && !isAdmin()) page = 'entry';
+    S.page = page;
+    $$('nav.menu button').forEach(function (b) { if (b.dataset.page === page) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    ['entry', 'list', 'locations', 'members', 'account'].forEach(function (p) { $('#page-' + p).hidden = p !== page; });
+    if (page === 'list') renderList();
+    if (page === 'locations') renderLocations();
+    if (page === 'members') renderMembers();
+    window.scrollTo(0, 0);
+  }
+  $$('nav.menu button').forEach(function (b) { b.addEventListener('click', function () { showPage(b.dataset.page); }); });
+
+  function fillList(sel, values) { $(sel).innerHTML = values.map(function (v) { return '<option value="' + esc(v) + '"></option>'; }).join(''); }
+  function renderOptions() {
+    fillList('#dl-places', uniq(DB.locations.map(function (l) { return l.area; }).concat(DB.entries.map(function (e) { return e.place; }))));
+    fillList('#dl-expressways', uniq(['เฉลิมมหานคร', 'ศรีรัช', 'ฉลองรัช', 'บูรพาวิถี', 'กาญจนาภิเษก', 'อุดรรัถยา'].concat(DB.locations.map(function (l) { return l.expressway; }))));
+    fillList('#dl-jobs', uniq(DB.entries.slice().reverse().map(function (e) { return e.jobType; })));
+    fillList('#dl-workers', uniq(DB.users.filter(function (u) { return u.status === 'active'; }).map(function (u) { return u.nickname; }).concat(DB.entries.map(function (e) { return e.worker; }))));
+  }
+
+  // ---------- บันทึกการใช้รถ ----------
+  function setMode(mode) {
+    S.mode = mode;
+    $$('[data-mode]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.mode === mode)); });
+    $('#entry-subtitle').textContent = MODE_TEXT[mode].subtitle;
+    $('#recent-note').textContent = MODE_TEXT[mode].note;
+    $('#fields-exat').hidden = mode !== 'EXAT';
+    $('#fields-bem').hidden = mode !== 'BEM';
+    var proj = $('#entry-project');
+    if (mode === 'BEM') proj.value = proj.value.replace(/EXAT$/, 'BEM');
+    else proj.value = proj.value.replace(/BEM$/, 'EXAT');
+    renderRecent();
+  }
+  $$('[data-mode]').forEach(function (b) { b.addEventListener('click', function () { setMode(b.dataset.mode); }); });
+
+  function projectFor(loc) {
+    var op = /^BEM/.test(loc.operator) ? 'BEM' : 'EXAT';
+    return (/gateway/i.test(loc.mediaSite) ? 'Gateway ' : 'Flyover 2.0 ') + op;
+  }
+  function onPlace() {
+    var v = val('#entry-place');
+    var loc = DB.locations.find(function (l) { return l.area === v; });
+    if (!loc) { $('#autofill').hidden = true; return; }
+    var proj = projectFor(loc);
+    if (loc.expressway) $('#entry-expressway').value = loc.expressway;
+    $('#entry-project').value = proj;
+    $('#autofill-exp').textContent = loc.expressway || '—';
+    $('#autofill-proj').textContent = proj;
+    $('#autofill').hidden = false;
+    var op = proj.slice(-4).trim() === 'BEM' ? 'BEM' : 'EXAT';
+    if (op !== S.mode) setMode(op);
+  }
+  $('#entry-place').addEventListener('input', onPlace);
+  $('#entry-place').addEventListener('change', onPlace);
+  $$('[data-fee]').forEach(function (b) { b.addEventListener('click', function () { $('#entry-fee').value = b.dataset.fee; }); });
+
+  function clearEntry(keep) {
+    $('#form-entry').reset();
+    $('#entry-date').value = (keep && keep.date) || todayIso();
+    $('#entry-worker').value = (keep && keep.worker) || (S.user && S.user.nickname) || '';
+    $('#autofill').hidden = true;
+    showError($('#form-entry'), '');
+    setMode(S.mode);
+  }
+  $('#btn-clear-entry').addEventListener('click', function () { clearEntry(); });
+
+  $('#form-entry').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var form = e.target;
+    var d = {
+      date: $('#entry-date').value, worker: val('#entry-worker'), place: val('#entry-place'),
+      expressway: val('#entry-expressway'), project: $('#entry-project').value, jobType: val('#entry-job')
+    };
+    var labels = { date: 'วันที่', worker: 'ผู้เข้างาน', place: 'สถานที่', expressway: 'สายทาง', jobType: 'ประเภทงาน' };
+    for (var k in labels) { if (!d[k]) { showError(form, 'กรอก' + labels[k] + 'ก่อนบันทึก'); $('#entry-' + ({ date: 'date', worker: 'worker', place: 'place', expressway: 'expressway', jobType: 'job' })[k]).focus(); return; } }
+    var entry = { id: uid(), provider: S.mode, date: d.date, expressway: d.expressway, project: d.project, place: d.place, jobType: d.jobType, worker: d.worker, createdBy: S.user.username };
+    if (S.mode === 'EXAT') {
+      var fee = Number($('#entry-fee').value);
+      if (!isFinite(fee) || fee < 0 || $('#entry-fee').value === '') return showError(form, 'ค่าอาหาร/รถคุ้มครองต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป');
+      entry.fee = fee;
+    } else {
+      entry.feeText = val('#entry-feetext');
+      entry.payment = $('#entry-payment').value;
+    }
+    var nos = DB.entries.filter(function (x) { return x.provider === S.mode; }).map(function (x) { return x.no; });
+    entry.no = (nos.length ? Math.max.apply(null, nos) : 0) + 1;
+    DB.entries.push(entry);
+    save();
+    S.freshId = entry.id;
+    renderOptions();
+    clearEntry({ date: d.date, worker: d.worker });
+    toast('บันทึกแล้ว — ' + S.mode + ' ลำดับที่ ' + entry.no);
+  });
+
+  function sortEntries(list) {
+    return list.slice().sort(function (a, b) { return a.date === b.date ? b.no - a.no : (a.date < b.date ? 1 : -1); });
+  }
+  function entryCols(mode) {
+    var cols = [
+      ['no', 'ลำดับ', 'mono'], ['date', 'วันที่', 'nowrap'], ['place', 'สถานที่', ''], ['project', 'โครงการ', 'nowrap'],
+      ['jobType', 'ประเภทงาน', ''], ['worker', 'ผู้เข้างาน', 'nowrap']
+    ];
+    if (mode === 'EXAT') cols.push(['fee', 'ค่าอาหาร/รถ (บาท)', 'num']);
+    else cols.push(['feeText', 'ค่ารถคุ้มครอง', 'nowrap'], ['payment', 'การชำระเงิน', 'nowrap']);
+    return cols;
+  }
+  function cellText(e, key) {
+    if (key === 'date') return thaiShort(e.date);
+    if (key === 'fee') return money(e.fee);
+    return e[key] == null ? '' : e[key];
+  }
+  function rowsHtml(list, cols, withActions) {
+    return list.map(function (e) {
+      var confirming = S.confirmDelete === e.id;
+      var cells = cols.map(function (c) {
+        var t = esc(cellText(e, c[0]));
+        if (c[0] === 'place' && e.sample) t += '<span class="ex-tag">ตัวอย่าง</span>';
+        return '<td class="' + c[2] + '">' + t + '</td>';
+      }).join('');
+      var act = '';
+      if (withActions) {
+        var can = isAdmin() || e.createdBy === S.user.username;
+        act = '<td class="num nowrap">' + (!can ? '' : confirming
+          ? '<button type="button" class="btn sm danger" data-del-yes="' + e.id + '">ยืนยันลบ</button> <button type="button" class="btn sm" data-del-no="1">ยกเลิก</button>'
+          : '<button type="button" class="btn sm" data-del="' + e.id + '">ลบ</button>') + '</td>';
+      }
+      return '<tr class="' + (e.id === S.freshId ? 'fresh' : '') + (confirming ? ' confirm-row' : '') + '">' + cells + act + '</tr>';
+    }).join('');
+  }
+  function headHtml(cols, withActions) {
+    return '<tr>' + cols.map(function (c) { return '<th class="' + (c[2] === 'num' ? 'num' : '') + '">' + esc(c[1]) + '</th>'; }).join('') + (withActions ? '<th class="num">จัดการ</th>' : '') + '</tr>';
+  }
+
+  function renderRecent() {
+    if (!DB || !S.user) return;
+    var list = sortEntries(DB.entries.filter(function (e) { return e.provider === S.mode; })).slice(0, 10);
+    var cols = entryCols(S.mode);
+    $('#recent-head').innerHTML = headHtml(cols, false);
+    $('#recent-body').innerHTML = list.length ? rowsHtml(list, cols, false) : '<tr><td class="empty" colspan="' + cols.length + '">ยังไม่มีรายการ ' + S.mode + ' — กรอกฟอร์มด้านบนเพื่อเพิ่มรายการแรก</td></tr>';
+
+    var month = list.length ? list[0].date.slice(0, 7) : todayIso().slice(0, 7);
+    var inMonth = DB.entries.filter(function (e) { return e.provider === S.mode && e.date.slice(0, 7) === month; });
+    $('#sum-label').textContent = S.mode + ' · ' + monthLong(month);
+    $('#sum-count').textContent = inMonth.length;
+    if (S.mode === 'EXAT') {
+      $('#sum-amount').textContent = money(inMonth.reduce(function (s, e) { return s + (Number(e.fee) || 0); }, 0));
+      $('#sum-unit').textContent = 'บาท';
+    } else {
+      $('#sum-amount').textContent = inMonth.filter(function (e) { return e.payment !== 'เรียบร้อย'; }).length;
+      $('#sum-unit').textContent = 'ยังไม่ชำระ';
+    }
+  }
+
+  // ---------- รายการรายเดือน ----------
+  $$('[data-list-mode]').forEach(function (b) {
+    b.addEventListener('click', function () { S.listMode = b.dataset.listMode; S.confirmDelete = null; renderList(true); });
+  });
+  $('#list-month').addEventListener('change', function () { S.confirmDelete = null; renderList(); });
+
+  function renderList(resetMonth) {
+    var mode = S.listMode;
+    $$('[data-list-mode]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.listMode === mode)); });
+    var all = DB.entries.filter(function (e) { return e.provider === mode; });
+    var months = uniq(sortEntries(all).map(function (e) { return e.date.slice(0, 7); }));
+    var sel = $('#list-month');
+    var current = resetMonth ? '' : sel.value;
+    sel.innerHTML = months.map(function (m) { return '<option value="' + m + '">' + esc(monthLong(m)) + '</option>'; }).join('');
+    if (current && months.indexOf(current) >= 0) sel.value = current;
+    var month = sel.value;
+    var list = sortEntries(all.filter(function (e) { return e.date.slice(0, 7) === month; })).reverse();
+    var cols = entryCols(mode);
+    $('#list-title').textContent = month ? mode + ' · ' + monthLong(month) : mode;
+    $('#list-head').innerHTML = headHtml(cols, true);
+    $('#list-body').innerHTML = list.length ? rowsHtml(list, cols, true) : '<tr><td class="empty" colspan="' + (cols.length + 1) + '">ยังไม่มีรายการ</td></tr>';
+    var totals = '<span>รายการ <b>' + list.length + '</b></span>';
+    if (mode === 'EXAT') totals += '<span>รวมค่าใช้จ่าย <b>' + money(list.reduce(function (s, e) { return s + (Number(e.fee) || 0); }, 0)) + '</b> บาท</span>';
+    else totals += '<span>ยังไม่ชำระ <b>' + list.filter(function (e) { return e.payment !== 'เรียบร้อย'; }).length + '</b> รายการ</span>';
+    $('#list-totals').innerHTML = totals;
+    $('#btn-copy').disabled = !list.length;
+    $('#copy-fallback').hidden = true;
+  }
+
+  $('#list-body').addEventListener('click', function (e) {
+    var b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.del) { S.confirmDelete = b.dataset.del; renderList(); return; }
+    if (b.dataset.delNo) { S.confirmDelete = null; renderList(); return; }
+    if (b.dataset.delYes) {
+      DB.entries = DB.entries.filter(function (x) { return x.id !== b.dataset.delYes; });
+      S.confirmDelete = null; save(); renderList(); renderRecent();
+      toast('ลบรายการแล้ว');
+    }
+  });
+
+  function tsvFor(list, mode) {
+    // เรียงคอลัมน์ตามตารางใน Google Sheet (ไม่รวมลำดับ ให้ชีทนับเอง)
+    return list.map(function (e) {
+      var row = [sheetMonth(e.date), thaiShort(e.date), mode, e.expressway, e.project, e.place, e.jobType, e.worker];
+      if (mode === 'EXAT') row.push(e.fee); else row.push(e.feeText || '', e.payment || '');
+      return row.map(function (v) { return String(v == null ? '' : v).replace(/[\t\n]/g, ' '); }).join('\t');
+    }).join('\n');
+  }
+  $('#btn-copy').addEventListener('click', function () {
+    var mode = S.listMode, month = $('#list-month').value;
+    var list = sortEntries(DB.entries.filter(function (e) { return e.provider === mode && e.date.slice(0, 7) === month; })).reverse();
+    var text = tsvFor(list, mode);
+    var fb = $('#copy-fallback');
+    function fallback() { fb.value = text; fb.hidden = false; fb.focus(); fb.select(); toast('คัดลอกอัตโนมัติไม่ได้ — กด Ctrl+C เพื่อคัดลอกข้อความที่เลือกไว้'); }
+    try {
+      navigator.clipboard.writeText(text).then(function () { toast('คัดลอก ' + list.length + ' แถวแล้ว — วางในคอลัมน์ “เดือน” ของแท็บ ' + mode); }, fallback);
+    } catch (err) { fallback(); }
+  });
+
+  // ---------- สถานที่ ----------
+  function renderLocations() {
+    var q = norm($('#loc-search').value), f = S.locFilter;
+    var list = DB.locations.filter(function (l) {
+      if (f === 'Gateway' && !/gateway/i.test(l.mediaSite)) return false;
+      if ((f === 'EXAT' || f === 'BEM') && l.operator.indexOf(f) !== 0) return false;
+      return !q || norm([l.code, l.area, l.road, l.district, l.meetingPoint, l.police, l.expressway, l.mediaSite].join(' ')).indexOf(q) >= 0;
+    });
+    $('#loc-count').textContent = 'แสดง ' + list.length + ' จาก ' + DB.locations.length + ' จุด';
+    $('#loc-body').innerHTML = list.length ? list.map(function (l) {
+      var sub = [l.mediaSite, l.road && 'ถนน' + l.road, l.district && 'เขต' + l.district].filter(Boolean).join(' · ');
+      return '<tr><td><span class="code-tag">' + esc(l.code) + '</span></td>' +
+        '<td><div style="font-weight:500">' + esc(l.area) + '</div><div class="sub">' + esc(sub) + '</div></td>' +
+        '<td class="nowrap">' + esc([l.operator, l.expressway].filter(Boolean).join(' · ')) + '</td>' +
+        '<td class="nowrap mono">' + esc(l.size) + (l.count > 1 ? ' ×' + esc(l.count) : '') + '</td>' +
+        '<td class="nowrap">' + esc(l.meetingPoint || '—') + '</td>' +
+        '<td class="nowrap">' + esc(l.police || '—') + '</td></tr>';
+    }).join('') : '<tr><td class="empty" colspan="6">ไม่พบสถานที่ที่ค้นหา</td></tr>';
+  }
+  $('#loc-search').addEventListener('input', renderLocations);
+  $$('[data-filter]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      S.locFilter = b.dataset.filter;
+      $$('[data-filter]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      renderLocations();
+    });
+  });
+  $('#form-location').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var form = e.target;
+    var code = val('#loc-code'), area = val('#loc-area');
+    if (!code || !area) return showError(form, 'กรอกรหัสป้ายและบริเวณ');
+    if (DB.locations.some(function (l) { return l.code === code; })) return showError(form, 'มีรหัสป้าย ' + code + ' อยู่แล้ว');
+    showError(form, '');
+    DB.locations.push({ code: code, mediaSite: $('#loc-media').value, area: area, operator: $('#loc-operator').value, expressway: val('#loc-expressway'), size: val('#loc-size'), count: 1, road: val('#loc-road'), district: '', meetingPoint: val('#loc-meet'), police: val('#loc-police') });
+    save(); form.reset(); renderOptions(); renderLocations();
+    toast('เพิ่มสถานที่ ' + code + ' แล้ว');
+  });
+
+  // ---------- สมาชิก ----------
+  function renderPendingCount() {
+    var n = DB.users.filter(function (u) { return u.status === 'pending'; }).length;
+    var el = $('#pending-count');
+    el.textContent = n; el.hidden = !n || !isAdmin();
+  }
+  function renderMembers() {
+    var me = S.user.username;
+    var pending = DB.users.filter(function (u) { return u.status === 'pending'; });
+    var others = DB.users.filter(function (u) { return u.status !== 'pending'; });
+    $('#pending-box').hidden = !pending.length;
+    $('#pending-title').textContent = 'รออนุมัติ ' + pending.length + ' คน';
+    $('#pending-list').innerHTML = pending.map(function (u) {
+      return '<div class="pending-item"><div><span style="font-weight:600">' + esc(u.fullName) + ' (' + esc(u.nickname) + ')</span>' +
+        '<span class="sub">' + esc(u.username) + (u.phone ? ' · ' + esc(u.phone) : '') + ' · สมัคร ' + esc(u.createdAt) + '</span></div>' +
+        '<button type="button" class="btn primary sm" data-act="approve" data-user="' + esc(u.username) + '">อนุมัติ</button>' +
+        '<button type="button" class="btn sm" data-act="reject" data-user="' + esc(u.username) + '">ไม่อนุมัติ</button></div>';
+    }).join('');
+    $('#members-body').innerHTML = others.map(function (u) {
+      var self = u.username === me;
+      return '<tr><td><div style="font-weight:600">' + esc(u.fullName) + (self ? ' <span class="sub">(คุณ)</span>' : '') + '</div><div class="sub">' + esc(u.username) + ' · ' + esc(u.nickname) + '</div></td>' +
+        '<td><select data-act="role" data-user="' + esc(u.username) + '" aria-label="สิทธิ์ของ ' + esc(u.username) + '"' + (self ? ' disabled' : '') + '>' +
+          '<option value="user"' + (u.role === 'user' ? ' selected' : '') + '>ผู้ใช้งาน</option><option value="admin"' + (u.role === 'admin' ? ' selected' : '') + '>ผู้ดูแลระบบ</option></select></td>' +
+        '<td><span class="status ' + esc(u.status) + '">' + esc(STATUS_LABEL[u.status] || u.status) + '</span></td>' +
+        '<td class="nowrap mono">' + esc(u.lastLogin || '—') + '</td>' +
+        '<td class="num nowrap"><button type="button" class="btn sm" data-act="reset" data-user="' + esc(u.username) + '">รีเซ็ตรหัสผ่าน</button>' +
+          (self ? '' : ' <button type="button" class="btn sm' + (u.status === 'active' ? ' danger' : '') + '" data-act="toggle" data-user="' + esc(u.username) + '">' + (u.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน') + '</button>') +
+        '</td></tr>';
+    }).join('');
+    renderPendingCount();
+  }
+  $('#page-members').addEventListener('click', async function (e) {
+    var b = e.target.closest('button[data-act]');
+    if (!b) return;
+    var u = findUser(b.dataset.user);
+    if (!u || u.username === S.user.username && b.dataset.act !== 'reset') return;
+    var act = b.dataset.act;
+    if (act === 'approve') { u.status = 'active'; toast('อนุมัติ ' + u.username + ' แล้ว — เข้าสู่ระบบได้ทันที'); }
+    if (act === 'reject') { u.status = 'rejected'; toast('ไม่อนุมัติ ' + u.username); }
+    if (act === 'toggle') { u.status = u.status === 'active' ? 'disabled' : 'active'; toast((u.status === 'active' ? 'เปิดใช้งาน ' : 'ระงับ ') + u.username + ' แล้ว'); }
+    if (act === 'reset') {
+      var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789', temp = '';
+      var rnd = new Uint32Array(10);
+      try { crypto.getRandomValues(rnd); } catch (err) { for (var i = 0; i < 10; i++) rnd[i] = Math.random() * 4294967295; }
+      for (var j = 0; j < 10; j++) temp += chars[rnd[j] % chars.length];
+      u.salt = uid(); u.hash = await hashPw(temp, u.salt);
+      var box = $('#temp-pass-box');
+      box.innerHTML = '<div>รหัสผ่านชั่วคราวของ <b>' + esc(u.username) + '</b>: <span class="temp-pass">' + esc(temp) + '</span><br>แจ้งผู้ใช้ แล้วให้เปลี่ยนรหัสผ่านที่เมนู “บัญชีของฉัน”</div>';
+      box.hidden = false;
+    }
+    save(); renderMembers(); renderOptions();
+  });
+  $('#page-members').addEventListener('change', function (e) {
+    var s = e.target.closest('select[data-act="role"]');
+    if (!s) return;
+    var u = findUser(s.dataset.user);
+    if (!u || u.username === S.user.username) return;
+    u.role = s.value; save();
+    toast('เปลี่ยนสิทธิ์ ' + u.username + ' เป็น' + (u.role === 'admin' ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน') + 'แล้ว');
+  });
+
+  // ---------- บัญชีของฉัน ----------
+  $('#form-password').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var form = e.target, u = S.user;
+    if ((await hashPw($('#pw-old').value, u.salt)) !== u.hash) return showError(form, 'รหัสผ่านเดิมไม่ถูกต้อง');
+    var n = $('#pw-new').value;
+    if (n.length < 8) return showError(form, 'รหัสผ่านใหม่ต้องยาวอย่างน้อย 8 ตัวอักษร');
+    if (n !== $('#pw-confirm').value) return showError(form, 'รหัสผ่านใหม่สองช่องไม่ตรงกัน');
+    showError(form, '');
+    u.salt = uid(); u.hash = await hashPw(n, u.salt); save();
+    form.reset();
+    toast('เปลี่ยนรหัสผ่านแล้ว');
+  });
+
+  // ---------- เริ่มต้น ----------
+  (async function init() {
+    DB = load();
+    if (!DB || DB.v !== 1) { DB = await seed(); save(); }
+    var u = DB.session && findUser(DB.session);
+    if (u && u.status === 'active') startApp(u);
+  })();
+})();
+</script>
