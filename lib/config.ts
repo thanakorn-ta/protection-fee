@@ -39,6 +39,19 @@ export function googleClientId(): string {
   return (process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
 }
 
+/** เว็บแอป Apps Script ที่ต่อกับชีทจริงแล้ว — ใช้แทนเมื่อเว็บนี้ยังไม่ได้ตั้งค่า Google */
+const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/a/macros/planbmedia.co.th/s/AKfycbyyfHHkyzEEIcIKX5VGJL3l_tIcUVR1Og8vzQO7Ac2eo278zbDBkGisGhg-FsoosgnxWQ/exec';
+
+export function appsScriptUrl(): string {
+  return (process.env.APPS_SCRIPT_URL || '').trim() || DEFAULT_APPS_SCRIPT_URL;
+}
+
+/** ตั้งค่าครบพอให้เว็บนี้ทำงานเองได้หรือยัง (Google Sign-In + service account + session) */
+export function webAppReady(): boolean {
+  if (useMock()) return !!googleClientId() || devLoginEnabled();
+  return !!googleClientId() && !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON && (process.env.SESSION_SECRET || '').length >= 32;
+}
+
 /** ปุ่มเข้าสู่ระบบทดสอบ (ไม่ต้องใช้ Google) — เปิดได้เฉพาะ `npm run dev` */
 export function devLoginEnabled(): boolean {
   return !isProd && process.env.DEV_LOGIN === '1';

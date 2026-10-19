@@ -57,6 +57,8 @@
 
 ## Deploy บน Vercel
 
+> ถ้ายังไม่ได้ใส่ `GOOGLE_CLIENT_ID`, `GOOGLE_SERVICE_ACCOUNT_JSON` และ `SESSION_SECRET` ครบ หน้าแรกของเว็บจะ**ส่งต่อไประบบ Apps Script** ที่ต่อชีทจริงอยู่แล้ว (เปลี่ยนปลายทางได้ด้วย env `APPS_SCRIPT_URL`) — ใส่ครบแล้ว Redeploy เว็บจะใช้แอป Next.js ของตัวเองทันที
+
 ไม่ต้องติดตั้ง Node.js ในเครื่อง — Vercel build ให้จาก GitHub
 
 1. push repo นี้ขึ้น GitHub
