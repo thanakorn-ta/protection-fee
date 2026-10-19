@@ -1,6 +1,16 @@
 .local-test/
 .clasprc.json
-node_modules/
 File Accrue/
 File Clear/
 *.xlsx
+
+# Next.js / Vercel
+node_modules/
+.next/
+out/
+.vercel/
+.mock/
+.env
+.env*.local
+next-env.d.ts
+*.tsbuildinfo

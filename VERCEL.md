@@ -1,6 +1,6 @@
-# Protection Fee — เว็บแอปบน Vercel
+# Protection Fee — เว็บแอปบน Vercel (Next.js)
 
-เวอร์ชันจริงของ [demo](../demo/index.html) — Next.js (App Router + Route Handlers) ใช้ Google Sheet เป็นฐานข้อมูลผ่าน Google Sheets API (service account) และเข้าสู่ระบบด้วยบัญชี Google
+เวอร์ชันจริงของ [demo](demo/index.html) — Next.js (App Router + Route Handlers) ใช้ Google Sheet เป็นฐานข้อมูลผ่าน Google Sheets API (service account) และเข้าสู่ระบบด้วยบัญชี Google
 
 | หน้า | ใครใช้ได้ | ทำอะไร |
 |---|---|---|
@@ -61,7 +61,7 @@
 
 1. push repo นี้ขึ้น GitHub
 2. [vercel.com/new](https://vercel.com/new) → Import repository `protection-fee`
-3. **Root Directory: `web`** (สำคัญ — โค้ดเว็บอยู่ในโฟลเดอร์นี้) · Framework Preset: Next.js (ตรวจเจอเอง)
+3. ไม่ต้องตั้ง Root Directory — แอปอยู่ที่ราก repo และ `vercel.json` ระบุ framework เป็น Next.js ไว้แล้ว
 4. ใส่ Environment Variables ตามตารางด้านบน → **Deploy**
 5. นำโดเมนที่ได้ (`https://xxx.vercel.app`) ไปใส่ใน Authorized JavaScript origins ของ OAuth Client (ข้อ 5) ถ้ายังไม่ได้ใส่
 6. เปิดเว็บ → Sign in with Google ด้วยอีเมลใน `ADMIN_EMAILS` → กรอกใบสมัคร → เข้าใช้ได้ทันทีในฐานะผู้ดูแล
@@ -72,13 +72,12 @@
 ## รันในเครื่อง (ไม่บังคับ — ต้องมี Node.js 20+)
 
 ```bash
-cd web
 npm install
 cp .env.example .env.local   # แล้วแก้ค่า
 npm run dev                   # http://localhost:3000
 ```
 
-- ถ้า**ไม่ใส่** `GOOGLE_SERVICE_ACCOUNT_JSON` ระบบใช้**ชีทจำลอง** (`web/.mock/sheet.json` สร้างจากข้อมูลตัวอย่างของ demo — ลบไฟล์เพื่อเริ่มใหม่)
+- ถ้า**ไม่ใส่** `GOOGLE_SERVICE_ACCOUNT_JSON` ระบบใช้**ชีทจำลอง** (`.mock/sheet.json` สร้างจากข้อมูลตัวอย่างของ demo — ลบไฟล์เพื่อเริ่มใหม่)
 - ตั้ง `DEV_LOGIN=1` เพื่อเข้าสู่ระบบด้วยอีเมลโดยไม่ใช้ Google (ใช้ได้เฉพาะ `npm run dev` ไม่มีผลบน Vercel)
 - `npm run typecheck` ตรวจ TypeScript
 
@@ -91,7 +90,7 @@ npm run dev                   # http://localhost:3000
 ## ไฟล์
 
 ```
-web/
+(ราก repo)
 ├── app/
 │   ├── page.tsx, layout.tsx, globals.css   # หน้าเว็บ (CSS เดียวกับ demo)
 │   └── api/                                # Route Handlers
