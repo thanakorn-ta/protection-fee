@@ -40,7 +40,7 @@ export function googleClientId(): string {
 }
 
 /** เว็บแอป Apps Script ที่ต่อกับชีทจริงแล้ว — ใช้แทนเมื่อเว็บนี้ยังไม่ได้ตั้งค่า Google */
-const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/a/macros/planbmedia.co.th/s/AKfycbyyfHHkyzEEIcIKX5VGJL3l_tIcUVR1Og8vzQO7Ac2eo278zbDBkGisGhg-FsoosgnxWQ/exec';
+const DEFAULT_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyyfHHkyzEEIcIKX5VGJL3l_tIcUVR1Og8vzQO7Ac2eo278zbDBkGisGhg-FsoosgnxWQ/exec';
 
 export function appsScriptUrl(): string {
   return (process.env.APPS_SCRIPT_URL || '').trim() || DEFAULT_APPS_SCRIPT_URL;

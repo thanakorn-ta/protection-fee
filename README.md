@@ -6,7 +6,8 @@
 
 เว็บแอปสร้างด้วย **Google Apps Script** อ่าน/เขียนข้อมูลลง Google Sheet โดยตรง ไม่ต้องมีเซิร์ฟเวอร์ ใช้ได้ทั้งมือถือและคอมพิวเตอร์
 
-**ใช้งานได้ที่:** [Protection Fee (Apps Script web app)](https://script.google.com/a/macros/planbmedia.co.th/s/AKfycbyyfHHkyzEEIcIKX5VGJL3l_tIcUVR1Og8vzQO7Ac2eo278zbDBkGisGhg-FsoosgnxWQ/exec) — เปิดได้เฉพาะบัญชี @planbmedia.co.th
+**ใช้งานได้ที่:** [protectionfee.vercel.app](https://protectionfee.vercel.app) (หน้าเว็บบน Vercel เรียก Apps Script ผ่าน /api/rpc) หรือเปิด Apps Script ตรง ๆ ที่ [web app](https://script.google.com/macros/s/AKfycbyyfHHkyzEEIcIKX5VGJL3l_tIcUVR1Og8vzQO7Ac2eo278zbDBkGisGhg-FsoosgnxWQ/exec)
+> การทำให้ใช้งานได้ของ Apps Script ต้องตั้ง **ผู้ที่มีสิทธิ์เข้าถึง: ทุกคน** — ไม่งั้นเซิร์ฟเวอร์ Vercel เรียกไม่ได้ (ตอบ 401) ข้อมูลยังปลอดภัยเพราะทุกคำสั่งต้องเข้าสู่ระบบก่อน ยกเว้นสมัครสมาชิก/เข้าสู่ระบบ
 โปรเจกต์ Apps Script: [Prorection-fee](https://script.google.com/u/0/home/projects/1Dfzp4iYTOrlvXYnI7RNBSSr3L0mj9j0fGj12V1y7lS0Q44JbDiRj3fi4/edit) · ชีท: [ตารางสรุปการใช้รถคุ้มครอง (รายเดือน)2026](https://docs.google.com/spreadsheets/d/1GZimBywY01PTFBtHd_Is5J4G-ZXguTrgIeH8U8_vC_E/edit)
 
 | หน้า | ใครใช้ได้ | ทำอะไร |
