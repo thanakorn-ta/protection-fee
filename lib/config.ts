@@ -10,6 +10,13 @@ export function useMock(): boolean {
   return !isProd && !process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
 }
 
+/** ชีท "ตารางสรุปการใช้รถคุ้มครอง (รายเดือน)2026" — เปลี่ยนได้ด้วย env SPREADSHEET_ID (เช่นชีทสำเนาสำหรับทดสอบ) */
+const DEFAULT_SPREADSHEET_ID = '1GZimBywY01PTFBtHd_Is5J4G-ZXguTrgIeH8U8_vC_E';
+
+export function spreadsheetId(): string {
+  return (process.env.SPREADSHEET_ID || '').trim() || DEFAULT_SPREADSHEET_ID;
+}
+
 let client: SheetsApi | null = null;
 
 export function sheets(): SheetsApi {
@@ -18,9 +25,7 @@ export function sheets(): SheetsApi {
     if (isProd && process.env.ALLOW_MOCK_IN_PRODUCTION !== '1') throw new Error('ห้ามใช้ชีทจำลองบน production — ตั้งค่า GOOGLE_SERVICE_ACCOUNT_JSON');
     client = createFileMock();
   } else {
-    const id = (process.env.SPREADSHEET_ID || '').trim();
-    if (!id) throw new Error('ยังไม่ได้ตั้งค่า SPREADSHEET_ID');
-    client = createGoogleSheets(id);
+    client = createGoogleSheets(spreadsheetId());
   }
   return client;
 }

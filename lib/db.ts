@@ -4,7 +4,7 @@
  */
 import { sheets, SHEET_NAMES, USERS_SHEET, AUDIT_SHEET } from './config';
 import { a1, a1Open, a1Rows, sheetRange, type Cell, type SheetInfo } from './sheets/types';
-import { parseIso, parseSheetDate, parseSheetMonth, sheetMonthText, thaiShort, toIso, toSerial, nowStamp, type Ymd } from './dates';
+import { parseIso, parseSheetDate, parseSheetMonth, monthTextLike, dateTextLike, toIso, toSerial, nowStamp, type Ymd } from './dates';
 
 export type LogKey = 'exat' | 'bem';
 type TableKey = LogKey | 'locations';
@@ -18,8 +18,13 @@ const HEADER_SCAN_ROWS = 20;
 
 export const PROJECTS = ['Flyover 2.0 EXAT', 'Flyover 2.0 BEM', 'Gateway EXAT', 'Gateway BEM'];
 export const EXPRESSWAYS = ['เฉลิมมหานคร', 'ศรีรัช', 'ฉลองรัช', 'บูรพาวิถี', 'กาญจนาภิเษก', 'อุดรรัถยา'];
-export const BEM_FEES = ['คิดค่ารถ 1 คืน'];
-export const PAYMENT_STATUSES = ['รอดำเนินการ', 'เปิด PR แล้ว', 'เรียบร้อย'];
+export const BEM_FEES = ['คิดค่ารถ 1 คืน', 'BEM ไม่ได้คิดค่ารถ'];
+export const PAYMENT_STATUSES = ['รอออก PR', 'เรียบร้อย', 'ฟรี'];
+
+/** ยังไม่ชำระ = สถานะที่ขึ้นต้นด้วย "รอ" (เช่น รอออก PR) — ช่องว่างคือจุดถัดไปในคืนเดียวกัน ไม่นับ */
+export function isUnpaid(payment: string): boolean {
+  return /^\s*รอ/.test(payment);
+}
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
@@ -285,8 +290,8 @@ export async function addEntry(key: LogKey, form: EntryInput, email: string): Pr
       const prevDate = prev ? prev[c('วันที่')] : undefined;
       const monthAsText = typeof prevMonth === 'string' && prevMonth !== '';
       const dateAsText = typeof prevDate === 'string' && prevDate !== '';
-      set('เดือน', monthAsText ? sheetMonthText(date) : toSerial({ ...date, d: 1 }));
-      set('วันที่', dateAsText ? thaiShort(date) : toSerial(date));
+      set('เดือน', monthAsText ? monthTextLike(String(prevMonth), date) : toSerial({ ...date, d: 1 }));
+      set('วันที่', dateAsText ? dateTextLike(String(prevDate), date) : toSerial(date));
       set('รถคุ้มครอง', key === 'exat' ? 'EXAT' : 'BEM');
       set('สายทาง', text(form.expressway));
       set('โครงการ', text(form.project));
@@ -297,7 +302,7 @@ export async function addEntry(key: LogKey, form: EntryInput, email: string): Pr
         set('ค่าอาหาร/รถคุ้มครอง', fee);
       } else {
         set('ค่ารถคุ้มครอง', text(form.feeText));
-        set('การชำระเงิน', text(form.payment) || PAYMENT_STATUSES[0]);
+        set('การชำระเงิน', text(form.payment)); // เว้นว่างได้ — จุดถัดไปในคืนเดียวกัน
       }
 
       // ตรวจซ้ำก่อนเขียน เผื่อมีคนอื่นเขียนแถวนี้ไปแล้ว (Vercel รันหลายเครื่องพร้อมกันได้)

@@ -78,20 +78,52 @@ export function parseSheetDate(raw: unknown): Ymd | null {
   return null;
 }
 
-/** อ่านเดือนจากคอลัมน์ "เดือน" — serial number หรือ "Sep-26" → "2026-09" */
+/** อ่านเดือนจากคอลัมน์ "เดือน" — serial number, "Sep-26" หรือ "พ.ค.-22" → "2026-09" */
 export function parseSheetMonth(raw: unknown): string {
   if (typeof raw === 'number' && isFinite(raw) && raw > 1000) {
     const p = fromSerial(raw);
     return p.y + '-' + pad2(p.m);
   }
   const s = String(raw ?? '').trim();
-  const m = /^([A-Za-z]{3})[A-Za-z]*[-\s/](\d{2,4})$/.exec(s);
+  const m = /^([^\d\s-/]+)\s*[-\s/]\s*(\d{2,4})$/.exec(s);
   if (m) {
-    const mo = EN_MONTHS.findIndex(t => t.toLowerCase() === m[1].toLowerCase()) + 1;
+    const key = m[1].replace(/\./g, '').toLowerCase();
+    let mo = THAI_MONTHS.findIndex(t => t.replace(/\./g, '') === key) + 1;
+    if (!mo) mo = THAI_MONTHS_LONG.findIndex(t => t === m[1]) + 1;
+    if (!mo) mo = EN_MONTHS.findIndex(t => t.toLowerCase() === key.slice(0, 3)) + 1;
     if (mo) return normalizeYear(Number(m[2])) + '-' + pad2(mo);
   }
   const d = parseSheetDate(s);
   return d ? d.y + '-' + pad2(d.m) : '';
+}
+
+/* ---- เขียนเดือน/วันที่เป็นข้อความ ให้หน้าตาเหมือนแถวก่อนหน้า ---- */
+
+/** ปีท้ายข้อความเดิมเป็น พ.ศ. หรือ ค.ศ. กี่หลัก — "22" → ค.ศ. 2 หลัก, "69" → พ.ศ. 2 หลัก, "2569" → พ.ศ. 4 หลัก */
+function yearLike(prev: string, y: number): string {
+  const m = /(\d{2,4})\s*$/.exec(prev);
+  const digits = m ? m[1] : '';
+  const be = digits.length === 4 ? Number(digits) > 2400 : digits.length === 2 && Number(digits) >= 40;
+  const year = be ? y + 543 : y;
+  return digits.length === 4 ? String(year) : pad2(year % 100);
+}
+
+function monthNameLike(prev: string, m: number): string {
+  if (/[ก-๙]/.test(prev)) return THAI_MONTHS[m - 1];
+  return EN_MONTHS[m - 1];
+}
+
+/** คอลัมน์เดือน: "พ.ค.-22", "Sep-26" ฯลฯ ตามแบบของแถวก่อนหน้า */
+export function monthTextLike(prev: string, p: Ymd): string {
+  const sep = /\s/.test(prev.trim()) && !/-/.test(prev) ? ' ' : '-';
+  return monthNameLike(prev, p.m) + sep + yearLike(prev, p.y);
+}
+
+/** คอลัมน์วันที่: "5 พ.ค. 22", "1 ก.ย. 69" ฯลฯ ตามแบบของแถวก่อนหน้า */
+export function dateTextLike(prev: string, p: Ymd): string {
+  const slash = /^\d{1,2}\/\d{1,2}\/\d{2,4}$/.exec(prev.trim());
+  if (slash) return p.d + '/' + p.m + '/' + yearLike(prev, p.y);
+  return p.d + ' ' + monthNameLike(prev, p.m) + ' ' + yearLike(prev, p.y);
 }
 
 function valid(y: number, m: number, d: number): Ymd | null {

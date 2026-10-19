@@ -1,5 +1,5 @@
 import { publicUser, requireUser } from '@/lib/auth';
-import { BEM_FEES, EXPRESSWAYS, PAYMENT_STATUSES, PROJECTS, readLocations, readLogs, readUsers, uniq, type Entry } from '@/lib/db';
+import { BEM_FEES, EXPRESSWAYS, PAYMENT_STATUSES, PROJECTS, isUnpaid, readLocations, readLogs, readUsers, uniq, type Entry } from '@/lib/db';
 import { ok, route } from '@/lib/http';
 
 const RECENT_ROWS = 10;
@@ -17,7 +17,7 @@ export const GET = route(async () => {
       month,
       count: rows.length,
       amount: rows.reduce((s, e) => s + e.fee, 0),
-      unpaid: rows.filter(e => e.payment.trim() !== 'เรียบร้อย').length,
+      unpaid: rows.filter(e => isUnpaid(e.payment)).length,
     };
   };
 

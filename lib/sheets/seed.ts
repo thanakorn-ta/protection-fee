@@ -3,8 +3,8 @@ import type { MockBook, MockCell } from './mock';
 
 /**
  * ข้อมูลตั้งต้นของชีทจำลอง — โครงสร้างเหมือนชีทจริง:
- * แถว 1 เป็นชื่อตาราง, แถว 2 เป็นหัวคอลัมน์, EXAT เก็บวันที่เป็นวันที่ (มีเลขลำดับเตรียมไว้ล่วงหน้า),
- * BEM เก็บเดือน/วันที่เป็นข้อความ
+ * DataBase: แถว 1 ชื่อตาราง, แถว 2 หัวคอลัมน์ — EXAT และ BEM: แถว 1 ชื่อตาราง, แถว 2 ว่าง, แถว 3 หัวคอลัมน์
+ * EXAT เก็บวันที่เป็นวันที่ (มีเลขลำดับเตรียมไว้ล่วงหน้า), BEM เก็บเดือน/วันที่เป็นข้อความ เช่น "พ.ค.-22", "3 พ.ค. 22"
  */
 
 // [รหัส, Media Site, บริเวณ, ผู้ดูแล, สายทาง, ขนาด, จำนวนป้าย, ถนน, เขต, จุดนัดพบ, สน.] จากแท็บ DataBase Locations
@@ -52,13 +52,13 @@ export function mockSeed(): MockBook {
     c(e[1]), c(firstOfMonth(String(e[2])), 'mmm-yy'), c(serial(String(e[2])), 'd/m/yyyy'), c('EXAT'),
     c(e[3]), c(e[4]), c(e[5]), c(e[6]), c(e[7]), c(e[8]),
   ]);
-  const bem = SAMPLE_ENTRIES.filter(e => e[0] === 'BEM').map(e => row([e[1], 'May-22', '3 พ.ค. 65', 'BEM', e[3], e[4], e[5], e[6], e[7], e[8], e[9] ?? '']));
+  const bem = SAMPLE_ENTRIES.filter(e => e[0] === 'BEM').map(e => row([e[1], 'พ.ค.-22', '3 พ.ค. 22', 'BEM', e[3], e[4], e[5], e[6], e[7], e[8], e[9] ?? '']));
 
   return {
     sheets: [
       {
-        title: 'DataBase Locations', sheetId: 101, rows: [
-          [c('DataBase Locations Flyover 2.0 / Gateway Billboard')],
+        title: 'DataBase', sheetId: 101, rows: [
+          [c('Locations Flyover 2.0 / Gateway Billboard')],
           row(['Pack', 'ป้าย', 'Media Site', 'บริเวณ', 'เขตพื้นที่', 'เขตพื้นที่', 'Size.', 'จำนวนป้าย', 'ถนน', 'เขตพื้นที่ กทม.', 'จุดนัดพบ', 'อยู่ในพื้นที่ สน.']),
           ...locRows,
           [],
@@ -68,6 +68,7 @@ export function mockSeed(): MockBook {
       {
         title: 'รถคุ้มครอง EXAT (ทดรองจ่าย)', sheetId: 102, rows: [
           [c('ตารางการใช้รถคุ้มครอง EXAT')],
+          [],
           row(['ลำดับ', 'เดือน', 'วันที่', 'รถคุ้มครอง', 'สายทาง', 'โครงการ', 'สถานที่', 'ประเภทงาน', 'ผู้เข้างาน', 'ค่าอาหาร/รถคุ้มครอง']),
           ...exat,
           [c(701)], [c(702)], [c(703)],
@@ -76,6 +77,7 @@ export function mockSeed(): MockBook {
       {
         title: 'รถคุ้มครอง BEM (เปิด PR)', sheetId: 103, rows: [
           [c('สรุปการใช้รถคุ้มครอง BEM (บมจ.ทางด่วนและรถไฟฟ้ากรุงเทพ)')],
+          [],
           row(['ลำดับ', 'เดือน', 'วันที่', 'รถคุ้มครอง', 'สายทาง', 'โครงการ', 'สถานที่', 'ประเภทงาน', 'ผู้เข้างาน', 'ค่ารถคุ้มครอง', 'การชำระเงิน']),
           ...bem,
         ],

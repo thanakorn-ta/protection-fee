@@ -5,7 +5,7 @@
 
 const CONFIG = {
   // ID ของ Google Sheet — เว้นว่างได้ถ้าตั้ง Script Property "SPREADSHEET_ID" หรือสร้างสคริปต์จากเมนู Extensions ของชีท
-  SPREADSHEET_ID: '',
+  SPREADSHEET_ID: '1GZimBywY01PTFBtHd_Is5J4G-ZXguTrgIeH8U8_vC_E',
   // ชื่อแท็บของแต่ละตาราง — เว้นว่าง = ค้นหาอัตโนมัติจากหัวตาราง
   SHEETS: { locations: '', exat: '', bem: '' },
   USERS_SHEET: 'Users',
@@ -33,8 +33,9 @@ const STATUSES = ['pending', 'active', 'disabled'];
 const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const PROJECTS = ['Flyover 2.0 EXAT', 'Flyover 2.0 BEM', 'Gateway EXAT', 'Gateway BEM'];
 const EXPRESSWAYS = ['เฉลิมมหานคร', 'ศรีรัช', 'ฉลองรัช', 'บูรพาวิถี', 'กาญจนาภิเษก', 'อุดรรัถยา'];
-const BEM_FEES = ['คิดค่ารถ 1 คืน'];
-const PAYMENT_STATUSES = ['รอดำเนินการ', 'เปิด PR แล้ว', 'เรียบร้อย'];
+const BEM_FEES = ['คิดค่ารถ 1 คืน', 'BEM ไม่ได้คิดค่ารถ'];
+const PAYMENT_STATUSES = ['รอออก PR', 'เรียบร้อย', 'ฟรี'];
+const EN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /* ------------------------------------------------------------------ */
 /* Web app                                                             */
@@ -505,7 +506,7 @@ function readLog_(key) {
       month,
       count: rows.length,
       amount: fi < 0 ? 0 : rows.reduce((s, r) => s + (Number(String(r[fi]).replace(/[^\d.-]/g, '')) || 0), 0),
-      unpaid: pi < 0 ? 0 : rows.filter(r => String(r[pi]).trim() !== 'เรียบร้อย').length,
+      unpaid: pi < 0 ? 0 : rows.filter(r => /^\s*รอ/.test(String(r[pi]))).length, // เช่น รอออก PR
     };
   }
   return out;
@@ -604,18 +605,35 @@ function parseDate_(s) {
   return d;
 }
 
-/** เดือน — ถ้าแถวก่อนหน้าเป็นข้อความ (เช่น "Sep-26") ให้เขียนเป็นข้อความ ไม่งั้นเขียนเป็นวันที่ */
+/** เดือน — ถ้าแถวก่อนหน้าเป็นข้อความ (เช่น "พ.ค.-22", "Sep-26") เขียนเป็นข้อความแบบเดียวกัน ไม่งั้นเขียนเป็นวันที่ */
 function monthValue_(date, prev) {
-  if (typeof prev === 'string' && prev !== '') return Utilities.formatDate(date, CONFIG.TIMEZONE, 'MMM-yy');
+  if (typeof prev === 'string' && prev !== '') {
+    const sep = /\s/.test(prev.trim()) && prev.indexOf('-') < 0 ? ' ' : '-';
+    return monthNameLike_(prev, date) + sep + yearLike_(prev, date);
+  }
   return new Date(date.getFullYear(), date.getMonth(), 1);
 }
 
-/** วันที่ — ถ้าแถวก่อนหน้าเป็นข้อความ (เช่น "1 ก.ย. 69") ให้เขียนเป็นข้อความ ไม่งั้นเขียนเป็นวันที่ */
+/** วันที่ — ถ้าแถวก่อนหน้าเป็นข้อความ (เช่น "5 พ.ค. 22") เขียนเป็นข้อความแบบเดียวกัน ไม่งั้นเขียนเป็นวันที่ */
 function dateValue_(date, prev) {
   if (typeof prev === 'string' && prev !== '') {
-    return date.getDate() + ' ' + THAI_MONTHS[date.getMonth()] + ' ' + String((date.getFullYear() + 543) % 100).padStart(2, '0');
+    if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(prev.trim())) return date.getDate() + '/' + (date.getMonth() + 1) + '/' + yearLike_(prev, date);
+    return date.getDate() + ' ' + monthNameLike_(prev, date) + ' ' + yearLike_(prev, date);
   }
   return date;
+}
+
+/** ปีแบบเดียวกับข้อความเดิม — "22" ค.ศ. 2 หลัก, "69" พ.ศ. 2 หลัก, "2569" พ.ศ. 4 หลัก */
+function yearLike_(prev, date) {
+  const m = /(\d{2,4})\s*$/.exec(prev);
+  const digits = m ? m[1] : '';
+  const be = digits.length === 4 ? Number(digits) > 2400 : digits.length === 2 && Number(digits) >= 40;
+  const year = date.getFullYear() + (be ? 543 : 0);
+  return digits.length === 4 ? String(year) : String(year % 100).padStart(2, '0');
+}
+
+function monthNameLike_(prev, date) {
+  return /[ก-๙]/.test(prev) ? THAI_MONTHS[date.getMonth()] : EN_MONTHS[date.getMonth()];
 }
 
 function formatDateTime_(v) {

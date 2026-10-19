@@ -70,6 +70,11 @@ export function money(n: number) {
   return Number(n || 0).toLocaleString('th-TH');
 }
 
+/** BEM ยังไม่ชำระ = สถานะที่ขึ้นต้นด้วย "รอ" (เช่น รอออก PR) — ช่องว่างคือจุดถัดไปในคืนเดียวกัน */
+export function isUnpaid(payment: string) {
+  return /^\s*รอ/.test(payment || '');
+}
+
 export function norm(s: string) {
   return String(s || '').replace(/\s+/g, '').toLowerCase();
 }

@@ -1,8 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react';
-import { api, money, norm, stampThai, ROLE_LABEL, STATUS_LABEL, type AppData, type Entry, type Location, type Member, type Mode, type Role, type User } from './api';
-import { monthLong, parseIso, sheetMonthText, thaiShort, todayBangkok, toIso } from '@/lib/dates';
+import { api, isUnpaid, money, norm, stampThai, ROLE_LABEL, STATUS_LABEL, type AppData, type Entry, type Location, type Member, type Mode, type Role, type User } from './api';
+import { dateTextLike, monthLong, monthTextLike, parseIso, thaiShort, todayBangkok, toIso } from '@/lib/dates';
 import { CheckIcon, CopyIcon, PinIcon, PlusIcon, SearchIcon } from './icons';
 import type { Toast } from './App';
 
@@ -75,8 +75,8 @@ export function EntryPage({ data, user, reload, toast }: { data: AppData; user: 
     date: keep?.date || toIso(todayBangkok()),
     worker: keep?.worker ?? user.nickname ?? '',
     place: '', expressway: '', project: m === 'EXAT' ? 'Flyover 2.0 EXAT' : 'Flyover 2.0 BEM', jobType: '',
-    fee: '400', feeText: '', payment: data.options.payments[0] || 'รอดำเนินการ',
-  }), [user.nickname, data.options.payments]);
+    fee: '400', feeText: 'คิดค่ารถ 1 คืน', payment: 'รอออก PR',
+  }), [user.nickname]);
   const [form, setForm] = useState<EntryForm>(() => blank());
   const [autofill, setAutofill] = useState<{ exp: string; proj: string } | null>(null);
   const [error, setError] = useState('');
@@ -85,10 +85,8 @@ export function EntryPage({ data, user, reload, toast }: { data: AppData; user: 
 
   const set = (k: keyof EntryForm, v: string) => setForm(f => ({ ...f, [k]: v }));
 
-  const setMode = (m: Mode) => {
-    setModeState(m);
-    setForm(f => ({ ...f, project: m === 'BEM' ? f.project.replace(/EXAT$/, 'BEM') : f.project.replace(/BEM$/, 'EXAT') }));
-  };
+  // รถคุ้มครอง EXAT เข้างานป้าย BEM ได้ (และกลับกัน) — โครงการจึงไม่ผูกกับผู้ให้บริการรถ
+  const setMode = (m: Mode) => setModeState(m);
 
   const onPlace = (v: string) => {
     const loc = data.locations.find(l => l.area === v.trim());
@@ -96,8 +94,6 @@ export function EntryPage({ data, user, reload, toast }: { data: AppData; user: 
     const proj = projectFor(loc);
     setForm(f => ({ ...f, place: v, project: proj, expressway: loc.expressway || f.expressway }));
     setAutofill({ exp: loc.expressway || '—', proj });
-    const op: Mode = proj.endsWith('BEM') ? 'BEM' : 'EXAT';
-    if (op !== mode) setModeState(op);
   };
 
   const clear = (keep?: Partial<EntryForm>) => {
@@ -202,15 +198,22 @@ export function EntryPage({ data, user, reload, toast }: { data: AppData; user: 
               </div>
             </div>
           ) : (
-            <div className="panel-blue row">
-              <label className="field">ค่ารถคุ้มครอง
-                <input value={form.feeText} onChange={e => set('feeText', e.target.value)} list="dl-bemfees" placeholder="เช่น คิดค่ารถ 1 คืน" />
-              </label>
-              <label className="field">การชำระเงิน
-                <select value={form.payment} onChange={e => set('payment', e.target.value)}>
-                  {data.options.payments.map(p => <option key={p}>{p}</option>)}
-                </select>
-              </label>
+            <div className="panel-blue" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="row">
+                <label className="field">ค่ารถคุ้มครอง
+                  <input value={form.feeText} onChange={e => set('feeText', e.target.value)} list="dl-bemfees" placeholder="เช่น คิดค่ารถ 1 คืน" />
+                </label>
+                <label className="field">การชำระเงิน
+                  <select value={form.payment} onChange={e => set('payment', e.target.value)}>
+                    <option value="">— เว้นว่าง —</option>
+                    {data.options.payments.map(p => <option key={p}>{p}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="quick">
+                <button type="button" onClick={() => setForm(f => ({ ...f, feeText: 'คิดค่ารถ 1 คืน', payment: 'รอออก PR' }))}>คิดค่ารถ 1 คืน · จุดแรกของคืน</button>
+                <button type="button" onClick={() => setForm(f => ({ ...f, feeText: '', payment: '' }))}>เว้นว่าง · จุดถัดไปในคืนเดียวกัน</button>
+              </div>
             </div>
           )}
 
@@ -271,7 +274,7 @@ function tsvFor(list: Entry[], mode: Mode) {
   // เรียงคอลัมน์ตามตารางใน Google Sheet (ไม่รวมลำดับ)
   return list.map(e => {
     const p = parseIso(e.date);
-    const row: (string | number)[] = [p ? sheetMonthText(p) : '', p ? thaiShort(p) : e.dateText, mode, e.expressway, e.project, e.place, e.jobType, e.worker];
+    const row: (string | number)[] = [p ? monthTextLike('พ.ค.-22', p) : '', p ? dateTextLike('5 พ.ค. 22', p) : e.dateText, mode, e.expressway, e.project, e.place, e.jobType, e.worker];
     if (mode === 'EXAT') row.push(e.fee); else row.push(e.feeText, e.payment);
     return row.map(v => String(v ?? '').replace(/[\t\n]/g, ' ')).join('\t');
   }).join('\n');
@@ -353,7 +356,7 @@ export function ListPage({ user, toast, reload }: { user: User; toast: Toast; re
           <span>รายการ <b>{list.length}</b></span>
           {mode === 'EXAT'
             ? <span>รวมค่าใช้จ่าย <b>{money(list.reduce((s, e) => s + e.fee, 0))}</b> บาท</span>
-            : <span>ยังไม่ชำระ <b>{list.filter(e => e.payment.trim() !== 'เรียบร้อย').length}</b> รายการ</span>}
+            : <span>ยังไม่ชำระ <b>{list.filter(e => isUnpaid(e.payment)).length}</b> รายการ</span>}
         </div>
         <div className="table-wrap">
           <table style={{ minWidth: 900 }}>
