@@ -3,7 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/embed-legacy.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/embed-legacy.mjs",
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"

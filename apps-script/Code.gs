@@ -48,6 +48,29 @@ function doGet() {
 }
 
 /* ------------------------------------------------------------------ */
+/* JSON API — ให้หน้าเว็บบน Vercel เรียกฟังก์ชันเดียวกับ google.script.run */
+/* POST { fn: 'login', args: [ ... ] } → { ok: true, result } หรือ { ok: false, error } */
+/* ------------------------------------------------------------------ */
+
+const API_FUNCTIONS = {
+  register, login, logout, changePassword, getAppData, addLogEntry, addLocation, listUsers, updateUser, resetPassword,
+};
+
+function doPost(e) {
+  let out;
+  try {
+    const req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    const fn = API_FUNCTIONS[req.fn];
+    if (!fn || !Object.prototype.hasOwnProperty.call(API_FUNCTIONS, req.fn)) throw new Error('ไม่รู้จักคำสั่ง ' + req.fn);
+    const result = fn.apply(null, Array.isArray(req.args) ? req.args : []);
+    out = { ok: true, result: result === undefined ? null : result };
+  } catch (err) {
+    out = { ok: false, error: String(err && err.message || err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/* ------------------------------------------------------------------ */
 /* สมัครสมาชิก / เข้าสู่ระบบ                                             */
 /* ------------------------------------------------------------------ */
 
