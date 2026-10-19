@@ -6,6 +6,9 @@
 
 เว็บแอปสร้างด้วย **Google Apps Script** อ่าน/เขียนข้อมูลลง Google Sheet โดยตรง ไม่ต้องมีเซิร์ฟเวอร์ ใช้ได้ทั้งมือถือและคอมพิวเตอร์
 
+**ใช้งานได้ที่:** [Protection Fee (Apps Script web app)](https://script.google.com/a/macros/planbmedia.co.th/s/AKfycbyyfHHkyzEEIcIKX5VGJL3l_tIcUVR1Og8vzQO7Ac2eo278zbDBkGisGhg-FsoosgnxWQ/exec) — เปิดได้เฉพาะบัญชี @planbmedia.co.th
+โปรเจกต์ Apps Script: [Prorection-fee](https://script.google.com/u/0/home/projects/1Dfzp4iYTOrlvXYnI7RNBSSr3L0mj9j0fGj12V1y7lS0Q44JbDiRj3fi4/edit) · ชีท: [ตารางสรุปการใช้รถคุ้มครอง (รายเดือน)2026](https://docs.google.com/spreadsheets/d/1GZimBywY01PTFBtHd_Is5J4G-ZXguTrgIeH8U8_vC_E/edit)
+
 | หน้า | ใครใช้ได้ | ทำอะไร |
 |---|---|---|
 | เข้าสู่ระบบ / สมัครสมาชิก | ทุกคน | สมัครบัญชี — ผู้สมัครคนแรกเป็นผู้ดูแลระบบ คนถัดไปต้องรออนุมัติ |
