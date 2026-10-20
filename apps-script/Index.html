@@ -306,6 +306,37 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
 .bk-actions { position: sticky; bottom: 12px; margin-bottom: 16px; padding: 12px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 6px 20px rgba(20,33,27,.12); justify-content: flex-end; }
 .bk-actions .btn.primary { min-width: 180px; }
 @media (max-width: 640px) { .bk-actions .btn { flex: 1; } .bk-actions .btn.primary { min-width: 0; } }
+/* ยกเลิกการจอง */
+.btn.danger-fill { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn.danger-fill:hover { filter: brightness(.92); background: var(--danger); }
+.cx-form { display: flex; flex-direction: column; gap: 14px; }
+.cx-warn { background: #FDECEC; color: #8B1E1E; border-radius: 12px; padding: 12px 14px; font-size: 14px; line-height: 1.6; }
+.cx-drop { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 18px; border: 2px dashed var(--field); border-radius: 12px; background: #FAFBF9; color: var(--muted); text-align: center; cursor: pointer; font-weight: 400; }
+.cx-drop:hover, .cx-drop.over { border-color: var(--green); background: var(--green-soft); color: var(--green-ink); }
+.cx-drop b { color: var(--ink); font-size: 16px; }
+.cx-files { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.cx-file { position: relative; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: #fff; display: flex; flex-direction: column; }
+.cx-file .ph { aspect-ratio: 4 / 3; background: #EEF1EC; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; overflow: hidden; }
+.cx-file .ph img, .cx-file .ph video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cx-file .nm { font-size: 12px; padding: 6px 8px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cx-file .rm { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: 50%; border: 0; background: rgba(20,33,27,.7); color: #fff; font-size: 16px; line-height: 1; }
+.cx-file button.ph { border: 0; padding: 0; cursor: pointer; width: 100%; }
+.cx-progress { font-size: 14px; color: var(--green-ink); font-weight: 600; }
+.cx-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.cx-bar input { flex: 1 1 260px; height: 44px; padding: 0 12px; border: 1.5px solid var(--field); border-radius: 10px; background: #fff; font-size: 15px; }
+.cx-list { display: flex; flex-direction: column; gap: 12px; }
+.cx-card { background: #fff; border: 1px solid var(--line); border-left: 5px solid var(--danger); border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; }
+.cx-card h3 { font-size: 17px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.cx-meta { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 14px; color: var(--muted); }
+.cx-meta b { color: var(--ink); font-weight: 600; }
+.cx-reason { background: #FDF3F3; border-radius: 10px; padding: 10px 12px; font-size: 15px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cx-reason span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 2px; }
+.cx-card .history { font-size: 13px; }
+.status.prev { background: #F2F4F2; color: #43524A; }
+.status.cx { background: #FDECEC; color: #8B1E1E; }
+.media-view { position: fixed; inset: 0; z-index: 11; background: rgba(10,16,13,.88); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; gap: 10px; }
+.media-view img, .media-view video { max-width: 100%; max-height: calc(100vh - 90px); border-radius: 8px; background: #000; }
+.media-view .mv-bar { display: flex; gap: 8px; }
 .modal-ask { position: fixed; inset: 0; z-index: 9; background: rgba(20,33,27,.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ask-card { width: 100%; max-width: 400px; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.3); padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 8px; }
 .ask-card h3 { font-size: 18px; }
@@ -437,6 +468,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       <nav class="menu" aria-label="เมนูหลัก">
         <button type="button" data-page="entry">บันทึกการใช้รถ</button>
         <button type="button" data-page="schedule">ตารางจอง<span class="count" id="bk-count" hidden></span></button>
+        <button type="button" data-page="cancelled">รายการยกเลิก</button>
         <button type="button" data-page="dash">แดชบอร์ด</button>
         <button type="button" data-page="locations">สถานที่</button>
         <button type="button" data-page="users" data-admin>ผู้ใช้</button>
@@ -579,7 +611,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     <div class="loading-box" id="cal-loading" hidden>กำลังโหลดตารางจอง…</div>
     <div class="cal" id="cal-month"></div>
     <div class="blist" id="cal-list" hidden></div>
-    <p class="sub">กดวันที่ว่างเพื่อจองวันนั้น · กดรายการเพื่อดูรายละเอียด แก้ไข หรืออนุมัติ · สี: <span class="status pending">รออนุมัติ</span> <span class="status approved">อนุมัติแล้ว</span> <span class="status cancelled">ไม่อนุมัติ / ยกเลิก</span></p>
+    <p class="sub">กดวันที่ว่างเพื่อจองวันนั้น · กดรายการเพื่อดูรายละเอียด แก้ไข หรืออนุมัติ · สี: <span class="status pending">รออนุมัติ</span> <span class="status approved">อนุมัติแล้ว</span> <span class="status cancelled">ไม่อนุมัติ</span> · การจองที่ยกเลิกย้ายไปหน้า “รายการยกเลิก”</p>
   </main>
 
   <!-- แดชบอร์ด -->
@@ -718,6 +750,27 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   </main>
 
   <!-- บัญชีของฉัน -->
+  <!-- รายการยกเลิก (แยกจากตารางจองและตาราง EXAT / BEM) -->
+  <main class="page" id="page-cancelled" hidden>
+    <div class="page-head">
+      <div>
+        <h1>รายการยกเลิก</h1>
+        <p>การจองที่ถูกยกเลิก พร้อมเหตุผลและไฟล์แนบ — นำออกจากตารางจองและตาราง EXAT / BEM แล้ว</p>
+      </div>
+      <button type="button" class="btn sm" id="cx-refresh">โหลดใหม่</button>
+    </div>
+    <div class="cx-bar">
+      <input type="search" id="cx-search" placeholder="ค้นหา ประเภทงาน จุดที่ไป ผู้เข้างาน เหตุผล" aria-label="ค้นหารายการยกเลิก">
+      <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="กรองตามรถคุ้มครอง">
+        <button type="button" class="pill" data-cx-filter="all" aria-pressed="true">ทั้งหมด</button>
+        <button type="button" class="pill" data-cx-filter="EXAT" aria-pressed="false">EXAT</button>
+        <button type="button" class="pill" data-cx-filter="BEM" aria-pressed="false">BEM</button>
+      </div>
+    </div>
+    <div class="loading-box" id="cx-loading" hidden>กำลังโหลดรายการยกเลิก…</div>
+    <div class="cx-list" id="cx-list"></div>
+  </main>
+
   <main class="page" id="page-account" hidden>
     <div class="page-head">
       <div>
@@ -816,6 +869,12 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       <button type="button" class="btn danger" id="bk-ask-close">ปิดหน้านี้</button>
     </div>
   </div>
+</div>
+
+<!-- ดูภาพ / วิดีโอแนบ -->
+<div class="media-view" id="media-view" role="dialog" aria-modal="true" aria-label="ไฟล์แนบ" hidden>
+  <div id="mv-body"></div>
+  <div class="mv-bar"><a class="btn sm" id="mv-download" download>ดาวน์โหลด</a><button type="button" class="btn sm" id="mv-close">ปิด</button></div>
 </div>
 
 <div id="toast" role="status" aria-live="polite" hidden></div>
@@ -955,6 +1014,8 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     S.user = null;
     S.dash = null;
     if (S.cal) { S.cal.bookings = []; S.cal.pending = []; }
+    S.cancelled = null;
+    S.files = {};
     $('#bk-ask').hidden = true;
     $('#bk-modal').hidden = true;
     document.body.style.overflow = '';
@@ -1000,10 +1061,11 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       if (b.dataset.page === page) b.setAttribute('aria-current', 'page');
       else b.removeAttribute('aria-current');
     });
-    ['entry', 'schedule', 'dash', 'locations', 'users', 'account'].forEach(function (p) { $('#page-' + p).hidden = p !== page; });
+    ['entry', 'schedule', 'cancelled', 'dash', 'locations', 'users', 'account'].forEach(function (p) { $('#page-' + p).hidden = p !== page; });
     if (page === 'users') loadUsers();
     if (page === 'dash') loadDash();
     if (page === 'schedule') loadSchedule();
+    if (page === 'cancelled') loadCancelled();
     window.scrollTo(0, 0);
   }
   $$('nav.menu button').forEach(function (b) {
@@ -1757,7 +1819,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     $('#bk-modal').hidden = !on;
     document.body.style.overflow = on ? 'hidden' : '';
   }
-  function closeModal() { $('#bk-ask').hidden = true; showModal(false); S.bk = null; }
+  function closeModal() { dropCxFiles(); $('#bk-ask').hidden = true; showModal(false); S.bk = null; }
   // ไม่ปิดเองเมื่อคลิกนอกกรอบ — กด × / ยกเลิก / Esc แล้วถามก่อนว่าจะปิดหรืออยู่หน้านี้ต่อ
   function askClose() {
     var editing = !$('#bk-form').hidden;
@@ -1777,6 +1839,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   $('#bk-ask').addEventListener('click', function (e) { if (e.target === this) stayOpen(); });
   document.addEventListener('keydown', function (e) {
     if (e.key !== 'Escape') return;
+    if (!$('#media-view').hidden) { e.preventDefault(); return closeMedia(); }
     if (!$('#bk-ask').hidden) { e.preventDefault(); stayOpen(); }
     else if (!$('#bk-modal').hidden) { e.preventDefault(); askClose(); }
   });
@@ -1854,23 +1917,23 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     if (!btn) return;
     if (btn.id === 'bk-copy') return copyText(bookingMessage(b), $('#bk-msg'));
     if (btn.id === 'bk-edit') return openBookingForm(b);
-    var action = btn.id === 'bk-cancel' ? 'cancel' : btn.id === 'bk-log' ? 'log' : btn.dataset.review;
+    if (btn.id === 'bk-cancel') return renderCancelForm();
+    if (btn.id === 'cx-back') { dropCxFiles(); return renderBookingView(); }
+    if (btn.id === 'cx-submit') return submitCancel();
+    if (btn.dataset.rmFile) { var gone = S.cx.files.splice(Number(btn.dataset.rmFile), 1)[0]; if (gone) URL.revokeObjectURL(gone.url); return renderCxFiles(); }
+    var action = btn.id === 'bk-log' ? 'log' : btn.dataset.review;
     if (!action) return;
-    if (action === 'cancel' && !confirm('ยกเลิกการจอง ' + b.title + ' วันที่ ' + thaiDate(b.date) + ' ?' +
-      (b.loggedRows ? '\n\nการจองนี้บันทึกลงตาราง ' + b.loggedRows + ' แล้ว — ต้องลบแถวในชีทเอง' : ''))) return;
     $$('#bk-view button').forEach(function (x) { x.disabled = true; });
     if (action === 'approved' || action === 'log') btn.textContent = 'กำลังบันทึกลงชีท…';
     try {
-      var res = action === 'cancel' ? await api('cancelBooking', S.token, b.id)
-        : action === 'log' ? await api('logBooking', S.token, b.id)
+      var res = action === 'log' ? await api('logBooking', S.token, b.id)
         : await api('reviewBooking', S.token, b.id, action, ($('#bk-review-note') || {}).value || '');
       storeBooking(res);
       S.bk = res;
       renderBookingView();
       renderSchedule();
       if (res.loggedRows) S.dash = null; // แดชบอร์ดต้องสรุปใหม่
-      var msg = action === 'cancel' ? 'ยกเลิกการจองแล้ว'
-        : action === 'log' ? (res.logError ? 'บันทึกลงตารางไม่สำเร็จ: ' + res.logError : logResultText(res))
+      var msg = action === 'log' ? (res.logError ? 'บันทึกลงตารางไม่สำเร็จ: ' + res.logError : logResultText(res))
         : action === 'approved' ? 'อนุมัติการจอง ' + res.title + ' แล้ว — ' + logResultText(res)
         : 'ไม่อนุมัติการจอง ' + res.title;
       toast(msg, !!res.logError);
@@ -1879,6 +1942,248 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       $$('#bk-view button').forEach(function (x) { x.disabled = false; });
     }
   });
+
+  // ---------- ยกเลิกการจอง (เหตุผล + ภาพ / วิดีโอ) ----------
+  var CX_MAX_FILES = 5, CX_MAX_MB = 25;
+  function fileSize(n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
+  function renderCancelForm() {
+    var b = S.bk;
+    S.cx = { files: [], busy: false };
+    var need = b.cancelNeedsProof;
+    var mark = need ? '<span class="req">*</span>' : '<span class="opt">(ไม่บังคับ)</span>';
+    $('#bk-view').innerHTML =
+      '<div class="cx-form">' +
+        '<div><h3 style="font-size:18px">ยกเลิกการจอง</h3><p class="sub">' + esc(thaiDateLong(b.date)) + ' · ' + esc(b.jobType || b.title) + ' · แจ้งใช้รถ ' + esc(b.provider) + '</p></div>' +
+        (need
+          ? '<div class="cx-warn">การจองนี้<b>อนุมัติแล้ว</b> — ต้องระบุเหตุผลและแนบภาพหรือวิดีโอประกอบอย่างน้อย 1 ไฟล์' +
+            (b.loggedRows ? '<br>ระบบจะนำแถว <b>' + esc(b.loggedRows) + '</b> ออกจากตาราง ' + esc(b.provider) + ' และคำนวณค่าใช้จ่ายใหม่' : '') +
+            '<br>รายการนี้จะย้ายไปอยู่หน้า “รายการยกเลิก”</div>'
+          : '<p class="sub">รายการนี้จะย้ายไปอยู่หน้า “รายการยกเลิก”</p>') +
+        '<label class="field"><span>เหตุผลที่ยกเลิก ' + mark + '</span>' +
+          '<textarea id="cx-reason" rows="3" maxlength="1000" placeholder="เช่น ลูกค้าเลื่อนงาน / ฝนตกหนักเข้าพื้นที่ไม่ได้"></textarea></label>' +
+        '<div class="field"><span>ภาพหรือวิดีโอประกอบ ' + mark + '</span>' +
+          '<label class="cx-drop" id="cx-drop"><input type="file" id="cx-input" accept="image/*,video/*" multiple hidden>' +
+            '<b>+ เลือกภาพหรือวิดีโอ</b><span>ถ่ายรูป / เลือกจากเครื่อง หรือลากไฟล์มาวาง · สูงสุด ' + CX_MAX_FILES + ' ไฟล์ ไฟล์ละไม่เกิน ' + CX_MAX_MB + ' MB</span></label>' +
+          '<div class="cx-files" id="cx-files"></div></div>' +
+        '<div class="cx-progress" id="cx-progress" hidden></div>' +
+        '<div class="error" id="cx-error" hidden></div>' +
+        '<div class="actions bk-actions">' +
+          '<button type="button" class="btn" id="cx-back">กลับ</button>' +
+          '<button type="button" class="btn primary danger-fill" id="cx-submit">ยืนยันยกเลิกการจอง</button>' +
+        '</div>' +
+      '</div>';
+    $('#bk-modal').scrollTop = 0;
+    setTimeout(function () { $('#cx-reason').focus(); }, 30);
+  }
+  function dropCxFiles() {
+    if (S.cx) S.cx.files.forEach(function (f) { URL.revokeObjectURL(f.url); });
+    S.cx = null;
+  }
+  function renderCxFiles() {
+    $('#cx-files').innerHTML = S.cx.files.map(function (f, i) {
+      var ph = /^image\//.test(f.mime) ? '<img src="' + f.url + '" alt="">' : '<video src="' + f.url + '" muted playsinline preload="metadata"></video>';
+      return '<div class="cx-file"><div class="ph">' + ph + '</div><span class="nm">' + esc(f.name) + ' · ' + fileSize(f.size) + '</span>' +
+        '<button type="button" class="rm" data-rm-file="' + i + '" aria-label="นำไฟล์ ' + esc(f.name) + ' ออก">×</button></div>';
+    }).join('');
+  }
+  function cxError(msg) {
+    var el = $('#cx-error');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.hidden = !msg;
+  }
+  function addCxFiles(list) {
+    var err = '';
+    Array.prototype.forEach.call(list || [], function (file) {
+      var mime = file.type || '';
+      if (!/^(image|video)\//.test(mime)) { err = 'แนบได้เฉพาะไฟล์ภาพหรือวิดีโอ: ' + file.name; return; }
+      if (S.cx.files.length >= CX_MAX_FILES) { err = 'แนบได้สูงสุด ' + CX_MAX_FILES + ' ไฟล์'; return; }
+      if (/^video\//.test(mime) && file.size > CX_MAX_MB * 1048576) { err = 'วิดีโอ ' + file.name + ' ใหญ่เกิน ' + CX_MAX_MB + ' MB — ตัดให้สั้นลงก่อน'; return; }
+      S.cx.files.push({ file: file, name: file.name || mime.replace('/', '.'), mime: mime, size: file.size, url: URL.createObjectURL(file) });
+    });
+    renderCxFiles();
+    cxError(err);
+  }
+  function readDataUrl(blob) {
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve(String(r.result)); };
+      r.onerror = function () { reject(new Error('อ่านไฟล์ไม่ได้')); };
+      r.readAsDataURL(blob);
+    });
+  }
+  // ย่อภาพให้ด้านยาวไม่เกิน 1920 px (อัปโหลดเร็วขึ้น) — ย่อไม่ได้ (เช่น HEIC) ส่งไฟล์เดิม
+  function shrinkImage(f) {
+    return new Promise(function (resolve) {
+      if (f.mime === 'image/gif') return resolve(null);
+      var img = new Image();
+      img.onload = function () {
+        var w = img.naturalWidth, h = img.naturalHeight, k = Math.min(1, 1920 / Math.max(w, h));
+        if (k === 1 && f.size < 1.5 * 1048576) return resolve(null);
+        var c = document.createElement('canvas');
+        c.width = Math.round(w * k);
+        c.height = Math.round(h * k);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        resolve({ name: f.name.replace(/\.[^.]+$/, '') + '.jpg', mime: 'image/jpeg', data: c.toDataURL('image/jpeg', 0.85).split(',')[1] });
+      };
+      img.onerror = function () { resolve(null); };
+      img.src = f.url;
+    });
+  }
+  async function cxPayload(f) {
+    if (/^image\//.test(f.mime)) {
+      var small = await shrinkImage(f);
+      if (small) return small;
+    }
+    if (f.size > CX_MAX_MB * 1048576) throw new Error(f.name + ' ใหญ่เกิน ' + CX_MAX_MB + ' MB');
+    return { name: f.name, mime: f.mime, data: (await readDataUrl(f.file)).split(',')[1] };
+  }
+  async function submitCancel() {
+    var b = S.bk, cx = S.cx;
+    if (!b || !cx || cx.busy) return;
+    var reason = $('#cx-reason').value.trim();
+    if (b.cancelNeedsProof && reason.length < 5) { $('#cx-reason').focus(); return cxError('กรุณาระบุเหตุผลที่ยกเลิก (อย่างน้อย 5 ตัวอักษร)'); }
+    if (b.cancelNeedsProof && !cx.files.length) return cxError('กรุณาแนบภาพหรือวิดีโอประกอบอย่างน้อย 1 ไฟล์');
+    cx.busy = true;
+    cxError('');
+    var btns = $$('#bk-view button');
+    btns.forEach(function (x) { x.disabled = true; });
+    var prog = $('#cx-progress');
+    prog.hidden = false;
+    try {
+      var ids = [];
+      for (var i = 0; i < cx.files.length; i++) {
+        prog.textContent = 'กำลังอัปโหลดไฟล์ ' + (i + 1) + ' / ' + cx.files.length + ' — ' + cx.files[i].name + '…';
+        if (!cx.files[i].id) cx.files[i].id = (await api('uploadCancelFile', S.token, b.id, await cxPayload(cx.files[i]))).id;
+        ids.push(cx.files[i].id);
+      }
+      prog.textContent = b.loggedRows ? 'กำลังยกเลิกและนำแถวออกจากตาราง ' + b.provider + '…' : 'กำลังยกเลิกการจอง…';
+      var res = await api('cancelBooking', S.token, b.id, reason, ids);
+      dropCxFiles();
+      S.cal.bookings = S.cal.bookings.filter(function (x) { return x.id !== b.id; });
+      S.cal.pending = (S.cal.pending || []).filter(function (x) { return x.id !== b.id; });
+      setBookingBadge(S.user.role === 'admin' ? S.cal.pending.length : 0);
+      S.cancelled = null;
+      if (res.removedRows) S.dash = null;
+      closeModal();
+      renderSchedule();
+      var warn = res.removeWarnings && res.removeWarnings.length ? ' · ไม่ได้ลบ ' + res.removeWarnings.join(', ') + ' — ตรวจในชีท' : '';
+      toast('ยกเลิกการจองแล้ว — ย้ายไปหน้า “รายการยกเลิก”' + (res.removedRows ? ' · นำ ' + res.removedRows + ' ออกจากตารางแล้ว' : '') + warn, !!warn);
+    } catch (err) {
+      cx.busy = false;
+      prog.hidden = true;
+      btns.forEach(function (x) { x.disabled = false; });
+      cxError(errText(err));
+    }
+  }
+  $('#bk-view').addEventListener('change', function (e) {
+    if (e.target.id !== 'cx-input') return;
+    addCxFiles(e.target.files);
+    e.target.value = '';
+  });
+  ['dragover', 'dragleave', 'drop'].forEach(function (ev) {
+    $('#bk-view').addEventListener(ev, function (e) {
+      var drop = e.target.closest && e.target.closest('#cx-drop');
+      if (!drop || !S.cx) return;
+      e.preventDefault();
+      drop.classList.toggle('over', ev === 'dragover');
+      if (ev === 'drop') addCxFiles(e.dataTransfer.files);
+    });
+  });
+
+  // ---------- รายการยกเลิก ----------
+  S.cxFilter = 'all';
+  S.files = {};
+  async function loadCancelled(force) {
+    if (S.cancelled && !force) return renderCancelled();
+    $('#cx-loading').hidden = false;
+    try {
+      S.cancelled = await api('listCancelled', S.token);
+      renderCancelled();
+    } catch (err) {
+      toast(errText(err), true);
+    } finally {
+      $('#cx-loading').hidden = true;
+    }
+  }
+  function renderCancelled() {
+    var q = norm($('#cx-search').value);
+    $$('[data-cx-filter]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.cxFilter === S.cxFilter)); });
+    var list = (S.cancelled || []).filter(function (b) {
+      if (S.cxFilter !== 'all' && b.provider !== S.cxFilter) return false;
+      return !q || norm([b.jobType, b.title, b.places, b.worker, b.phone, b.cancelReason, b.cancelledByName].join(' ')).indexOf(q) >= 0;
+    });
+    $('#cx-list').innerHTML = list.length
+      ? list.map(cancelCard).join('')
+      : '<div class="list-empty">' + ((S.cancelled || []).length ? 'ไม่พบรายการที่ค้นหา' : 'ยังไม่มีการยกเลิก') + '</div>';
+    loadThumbs();
+  }
+  function cancelCard(b) {
+    var files = b.cancelFiles || [];
+    return '<article class="cx-card">' +
+      '<h3>' + esc(b.jobType || b.title) + ' <span class="status cx">ยกเลิกแล้ว</span>' +
+        (b.prevStatus ? '<span class="status prev">ก่อนยกเลิก: ' + esc(BK_STATUS[b.prevStatus] || b.prevStatus) + '</span>' : '') + '</h3>' +
+      '<div class="cx-meta"><span>วันที่ใช้รถ <b>' + esc(thaiDateLong(b.date)) + (b.time ? ' · ' + esc(b.time) : '') + '</b></span>' +
+        '<span>แจ้งใช้รถ <b>' + esc(b.provider) + '</b></span>' +
+        (b.worker ? '<span>ผู้เข้างาน <b>' + esc(b.worker) + (b.phone ? ' · ' + esc(b.phone) : '') + '</b></span>' : '') + '</div>' +
+      '<div class="cx-meta"><span>จุดที่ไป <b>' + esc(lines(b.places).join(' · ')) + '</b></span></div>' +
+      '<div class="cx-reason"><span>เหตุผลที่ยกเลิก</span>' + esc(b.cancelReason || '— ไม่ได้ระบุ —') + '</div>' +
+      (files.length ? '<div class="cx-files">' + files.map(function (f) {
+        var img = /^image\//.test(f.mime);
+        return '<div class="cx-file"><button type="button" class="ph" data-open-file="' + esc(f.id) + '" data-bk-id="' + esc(b.id) + '" data-name="' + esc(f.name) + '"' + (img ? ' data-thumb="1"' : '') + '>' +
+          (img ? 'กำลังโหลดภาพ…' : '▶ เปิดวิดีโอ') + '</button><span class="nm">' + esc(f.name) + '</span></div>';
+      }).join('') + '</div>' : '') +
+      '<div class="history"><span>ยกเลิกโดย ' + esc(b.cancelledByName || '—') + ' เมื่อ ' + esc(stamp(b.cancelledAt || b.updatedAt)) + '</span>' +
+        '<span>จองโดย ' + esc(b.requestedByName) + ' เมื่อ ' + esc(stamp(b.requestedAt)) + '</span>' +
+        (b.removedRows ? '<span>นำ ' + esc(b.removedRows) + ' ออกจากตารางในชีทแล้ว</span>' : '') + '</div>' +
+    '</article>';
+  }
+  // ไฟล์แนบเป็นไฟล์ส่วนตัวใน Drive — โหลดผ่านเว็บแอป (ต้องเข้าสู่ระบบ) แล้วเก็บไว้ในหน่วยความจำ
+  function fetchFile(bookingId, fileId) {
+    if (!S.files[fileId]) {
+      S.files[fileId] = api('getCancelFile', S.token, bookingId, fileId).then(function (f) {
+        var bin = atob(f.data), arr = new Uint8Array(bin.length);
+        for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+        return { url: URL.createObjectURL(new Blob([arr], { type: f.mime })), mime: f.mime, name: f.name };
+      }).catch(function (err) { delete S.files[fileId]; throw err; });
+    }
+    return S.files[fileId];
+  }
+  function loadThumbs() {
+    $$('#cx-list [data-thumb]').forEach(function (el) {
+      fetchFile(el.dataset.bkId, el.dataset.openFile)
+        .then(function (f) { el.innerHTML = '<img src="' + f.url + '" alt="' + esc(el.dataset.name) + '">'; })
+        .catch(function () { el.textContent = 'โหลดภาพไม่ได้ — กดเพื่อลองใหม่'; });
+    });
+  }
+  function closeMedia() {
+    $('#media-view').hidden = true;
+    $('#mv-body').innerHTML = '';
+  }
+  $('#cx-list').addEventListener('click', function (e) {
+    var el = e.target.closest('[data-open-file]');
+    if (!el) return;
+    var mv = $('#media-view');
+    $('#mv-body').innerHTML = '<p style="color:#fff">กำลังโหลด ' + esc(el.dataset.name) + '…</p>';
+    $('#mv-download').hidden = true;
+    mv.hidden = false;
+    fetchFile(el.dataset.bkId, el.dataset.openFile).then(function (f) {
+      if (mv.hidden) return;
+      $('#mv-body').innerHTML = /^video\//.test(f.mime)
+        ? '<video src="' + f.url + '" controls autoplay playsinline></video>'
+        : '<img src="' + f.url + '" alt="' + esc(f.name) + '">';
+      var a = $('#mv-download');
+      a.href = f.url;
+      a.download = f.name;
+      a.hidden = false;
+      if (el.dataset.thumb && !el.querySelector('img')) loadThumbs();
+    }).catch(function (err) { $('#mv-body').innerHTML = '<p style="color:#fff">' + esc(errText(err)) + '</p>'; });
+  });
+  $('#mv-close').addEventListener('click', closeMedia);
+  $('#media-view').addEventListener('click', function (e) { if (e.target === this) closeMedia(); });
+  $('#cx-search').addEventListener('input', renderCancelled);
+  $$('[data-cx-filter]').forEach(function (b) { b.addEventListener('click', function () { S.cxFilter = b.dataset.cxFilter; renderCancelled(); }); });
+  $('#cx-refresh').addEventListener('click', function () { loadCancelled(true); });
 
   function copyText(text, el) {
     function fallback() {

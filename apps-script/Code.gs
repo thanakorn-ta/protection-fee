@@ -53,7 +53,7 @@ function doGet() {
 /* ------------------------------------------------------------------ */
 
 const API_FUNCTIONS = {
-  register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking,
+  register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
   addLocation, listUsers, updateUser, resetPassword,
 };
 
@@ -729,6 +729,7 @@ const BOOKING_HEADERS = [
   'status', 'requestedBy', 'requestedByName', 'requestedAt', 'reviewedBy', 'reviewedByName', 'reviewedAt', 'reviewNote', 'updatedAt',
   'loggedRows', 'loggedAt', // แถวที่บันทึกลงตาราง EXAT / BEM แล้ว (กันบันทึกซ้ำ)
   'phone', // เบอร์ติดต่อผู้เข้างาน
+  'prevStatus', 'cancelReason', 'cancelFiles', 'cancelledBy', 'cancelledByName', 'cancelledAt', 'removedRows', // การยกเลิก
 ];
 const BOOKING_FIELDS = ['title', 'date', 'time', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'phone', 'note'];
 const MEDIA_TYPES = ['Flyover 2.0', 'Gateway Billboard', 'Mainline'];
@@ -789,7 +790,9 @@ function bookingOut_(b, user) {
   BOOKING_HEADERS.forEach(h => { out[h] = b[h] || ''; });
   out.mine = b.requestedBy === user.username;
   out.canEdit = canEditBooking_(b, user);
-  out.canCancel = b.status !== 'cancelled' && (out.mine || user.role === 'admin');
+  out.canCancel = canCancelBooking_(b, user);
+  out.cancelNeedsProof = cancelNeedsProof_(b);
+  out.cancelFiles = cancelFilesOut_(b.cancelFiles);
   out.canReview = user.role === 'admin' && b.status !== 'cancelled';
   out.canLog = user.role === 'admin' && b.status === 'approved' && !b.loggedRows;
   return out;
@@ -820,7 +823,7 @@ function nowText_() {
 function listBookings(token, from, to) {
   const user = requireUser_(token);
   const all = readBookings_(bookingsSheet_(false));
-  const inRange = all.filter(b => (!from || b.date >= from) && (!to || b.date <= to));
+  const inRange = all.filter(b => b.status !== 'cancelled' && (!from || b.date >= from) && (!to || b.date <= to));
   const pending = all.filter(b => b.status === 'pending').sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   return {
     bookings: inRange.map(b => bookingOut_(b, user)),
@@ -959,21 +962,216 @@ function logBookingSafe_(b, user) {
   return Object.assign(bookingOut_(b, user), { logError, logWarnings: warnings });
 }
 
-/** ผู้จองหรือผู้ดูแลระบบยกเลิกการจอง */
-function cancelBooking(token, id) {
+/* ------------------------------------------------------------------ */
+/* ยกเลิกการจอง — เหตุผล + ไฟล์แนบ (ภาพ / วิดีโอ) และย้ายออกจากตาราง EXAT / BEM */
+/* ------------------------------------------------------------------ */
+
+const CANCEL_SHEET = 'ยกเลิกการใช้รถคุ้มครอง';
+const CANCEL_HEADERS = [
+  'วันที่ยกเลิก', 'รหัสการจอง', 'วันที่ใช้รถ', 'แจ้งใช้รถ', 'ประเภทงาน', 'จุดที่ไป', 'ผู้เข้างาน', 'เบอร์ติดต่อ',
+  'สถานะก่อนยกเลิก', 'เหตุผลที่ยกเลิก', 'ไฟล์แนบ', 'ยกเลิกโดย', 'แถวที่นำออกจากตาราง', 'ข้อมูลแถวเดิม',
+];
+const CANCEL_FOLDER_NAME = 'Protection Fee – ไฟล์แนบการยกเลิก';
+const MAX_UPLOAD_MB = 25;
+const MAX_CANCEL_FILES = 5;
+
+function canCancelBooking_(b, user) {
+  return b.status !== 'cancelled' && (b.requestedBy === user.username || user.role === 'admin');
+}
+
+/** การจองที่อนุมัติแล้ว (หรือบันทึกลงตารางแล้ว) ต้องมีเหตุผลและไฟล์แนบเมื่อยกเลิก */
+function cancelNeedsProof_(b) {
+  return b.status === 'approved' || !!b.loggedRows;
+}
+
+function cancelFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('CANCEL_FOLDER_ID');
+  if (id) {
+    try {
+      const f = DriveApp.getFolderById(id);
+      if (!f.isTrashed()) return f;
+    } catch (err) { /* ถูกลบไปแล้ว — สร้างใหม่ */ }
+  }
+  // เก็บไว้ในโฟลเดอร์เดียวกับ Google Sheet ถ้าเข้าถึงได้
+  let parent = null;
+  try {
+    const parents = DriveApp.getFileById(spreadsheet_().getId()).getParents();
+    if (parents.hasNext()) parent = parents.next();
+  } catch (err) { /* ใช้ My Drive */ }
+  const folder = parent ? parent.createFolder(CANCEL_FOLDER_NAME) : DriveApp.createFolder(CANCEL_FOLDER_NAME);
+  props.setProperty('CANCEL_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+function safeFileName_(name, mime) {
+  let s = String(name || '').replace(/[\\/:*?"<>|\r\n\t]+/g, ' ').trim().slice(-80);
+  if (!s) s = (/^video\//.test(mime) ? 'video' : 'image') + '.' + (String(mime).split('/')[1] || 'bin');
+  return s;
+}
+
+/** อัปโหลดไฟล์แนบการยกเลิก 1 ไฟล์ (base64) ไปที่ Google Drive — เรียกก่อน cancelBooking */
+function uploadCancelFile(token, id, file) {
   const user = requireUser_(token);
+  const b = readBookings_(bookingsSheet_(false)).find(x => x.id === String(id || ''));
+  if (!b) throw new Error('ไม่พบการจองนี้');
+  if (!canCancelBooking_(b, user)) throw new Error('ยกเลิกได้เฉพาะการจองของคุณที่ยังไม่ถูกยกเลิก');
+  file = file || {};
+  const mime = String(file.mime || '').toLowerCase();
+  if (!/^(image|video)\/[\w.+-]+$/.test(mime)) throw new Error('แนบได้เฉพาะไฟล์ภาพหรือวิดีโอ');
+  const bytes = Utilities.base64Decode(String(file.data || '').replace(/^data:[^,]*,/, ''));
+  if (!bytes.length) throw new Error('ไฟล์ว่างเปล่า');
+  if (bytes.length > MAX_UPLOAD_MB * 1024 * 1024) throw new Error('ไฟล์ใหญ่เกิน ' + MAX_UPLOAD_MB + ' MB');
+  const name = safeFileName_(file.name, mime);
+  const f = cancelFolder_().createFile(Utilities.newBlob(bytes, mime, b.date + '_' + b.id + '_' + name));
+  f.setDescription('cancel:' + b.id + ' by ' + user.username); // ไฟล์เป็นส่วนตัวใน Drive ของเจ้าของชีท — เปิดดูผ่านเว็บด้วย getCancelFile
+  return { id: f.getId(), name, mime, size: bytes.length };
+}
+
+/** ตรวจว่าไฟล์เป็นไฟล์แนบของการจองนี้จริง */
+function cancelFileInfo_(fileId, bookingId) {
+  let f;
+  try { f = DriveApp.getFileById(String(fileId || '')); } catch (err) { throw new Error('ไม่พบไฟล์แนบ กรุณาแนบใหม่'); }
+  if (String(f.getDescription() || '').indexOf('cancel:' + bookingId + ' ') !== 0) throw new Error('ไฟล์แนบไม่ใช่ของการจองนี้');
+  const prefix = /^\d{4}-\d{2}-\d{2}_[A-Z0-9]+_/;
+  return { id: f.getId(), name: f.getName().replace(prefix, ''), mime: f.getMimeType() };
+}
+
+function cancelFilesOut_(json) {
+  let list = [];
+  try { list = JSON.parse(json || '[]'); } catch (err) { list = []; }
+  return (Array.isArray(list) ? list : []).filter(x => x && x.id).map(x => ({
+    id: x.id, name: x.name || '', mime: x.mime || '',
+    url: 'https://drive.google.com/file/d/' + encodeURIComponent(x.id) + '/view', // เปิดได้เฉพาะผู้ที่มีสิทธิ์ใน Drive
+  }));
+}
+
+/** เปิดไฟล์แนบของการจองที่ยกเลิกแล้ว (ผู้ใช้ที่เข้าสู่ระบบ) — คืนค่าเป็น base64 */
+function getCancelFile(token, id, fileId) {
+  requireUser_(token);
+  const b = readBookings_(bookingsSheet_(false)).find(x => x.id === String(id || ''));
+  if (!b || b.status !== 'cancelled') throw new Error('ไม่พบการยกเลิกนี้');
+  const info = cancelFilesOut_(b.cancelFiles).find(x => x.id === String(fileId || ''));
+  if (!info) throw new Error('ไม่พบไฟล์แนบนี้');
+  const blob = DriveApp.getFileById(info.id).getBlob();
+  return { name: info.name, mime: blob.getContentType() || info.mime, data: Utilities.base64Encode(blob.getBytes()) };
+}
+
+/**
+ * นำแถวของการจองออกจากตาราง EXAT / BEM (ล้างข้อมูล คงเลขลำดับไว้ให้แถวถัดไปใช้ต่อ)
+ * ล้างเฉพาะแถวที่เลขลำดับและวันที่ตรงกับการจอง — ถ้ามีคนแก้ชีทไปแล้วจะข้ามและแจ้งเตือน
+ */
+function removeLoggedRows_(b) {
+  const empty = { key: '', removed: [], skipped: [], snapshot: [] };
+  const m = /^(EXAT|BEM)\s*ลำดับ\s*(.+)$/.exec(String(b.loggedRows || '').trim());
+  if (!m) return empty;
+  const key = m[1].toLowerCase();
+  const nos = m[2].split(/[,\s]+/).map(Number).filter(n => isFinite(n) && n > 0);
   return withLock_(() => {
-    const sh = bookingsSheet_();
-    const b = readBookings_(sh).find(x => x.id === String(id || ''));
-    if (!b) throw new Error('ไม่พบการจองนี้');
-    if (b.requestedBy !== user.username && user.role !== 'admin') throw new Error('ยกเลิกได้เฉพาะการจองของคุณ');
-    if (b.status === 'cancelled') return bookingOut_(b, user);
-    b.status = 'cancelled';
-    b.updatedAt = nowText_();
-    writeBooking_(sh, b.row, b);
-    audit_(user.username, 'cancel_booking', BOOKING_SHEET, b.row, { id: b.id });
-    return bookingOut_(b, user);
+    const t = findTable_(key);
+    const sh = t.sheet;
+    const noCol = colIndex_(t.headers, 'ลำดับ');
+    const dateCol = colIndex_(t.headers, 'วันที่');
+    const lastRow = sh.getLastRow();
+    if (noCol < 0 || dateCol < 0 || lastRow <= t.headerRow) return Object.assign(empty, { key, skipped: nos.map(n => n + ' (ไม่พบแถว)') });
+    const range = sh.getRange(t.headerRow + 1, 1, lastRow - t.headerRow, t.width);
+    const vals = range.getValues();
+    const disp = range.getDisplayValues();
+    const out = { key, removed: [], skipped: [], snapshot: [] };
+    nos.forEach(no => {
+      const i = vals.findIndex(r => Number(r[noCol]) === no);
+      if (i < 0) { out.skipped.push(no + ' (ไม่พบแถว)'); return; }
+      if (dateIsoOf_(vals[i][dateCol], disp[i][dateCol]) !== b.date) { out.skipped.push(no + ' (วันที่ในชีทไม่ตรงกับการจอง)'); return; }
+      out.snapshot.push(disp[i].map(v => String(v).trim()).filter(Boolean).join(' | '));
+      const row = t.headerRow + 1 + i;
+      if (noCol > 0) sh.getRange(row, 1, 1, noCol).clearContent();
+      if (noCol + 1 < t.width) sh.getRange(row, noCol + 2, 1, t.width - noCol - 1).clearContent();
+      out.removed.push(no);
+    });
+    SpreadsheetApp.flush();
+    return out;
   });
+}
+
+function cancelSheet_() {
+  const ss = spreadsheet_();
+  let sh = ss.getSheetByName(CANCEL_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(CANCEL_SHEET);
+    sh.getRange(1, 1, 1, CANCEL_HEADERS.length).setValues([CANCEL_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function appendCancelLog_(b, rem, files) {
+  const sh = cancelSheet_();
+  const row = Math.max(sh.getLastRow(), 1) + 1;
+  const range = sh.getRange(row, 1, 1, CANCEL_HEADERS.length);
+  range.setNumberFormat('@');
+  range.setValues([[
+    b.cancelledAt, b.id, b.date, b.provider, b.jobType || b.title, b.places, b.worker, b.phone,
+    BOOKING_STATUS_TEXT_[b.prevStatus] || b.prevStatus, b.cancelReason,
+    files.map(f => f.name + ' ' + f.url).join('\n'),
+    b.cancelledByName, b.removedRows + (rem.skipped.length ? (b.removedRows ? '\n' : '') + 'ไม่ได้ลบ: ' + rem.skipped.join(', ') : ''),
+    rem.snapshot.join('\n'),
+  ].map(longText_)]);
+}
+
+const BOOKING_STATUS_TEXT_ = { pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิกแล้ว' };
+
+/**
+ * ผู้จองหรือผู้ดูแลระบบยกเลิกการจอง
+ * การจองที่อนุมัติแล้วต้องระบุเหตุผล + แนบภาพ/วิดีโออย่างน้อย 1 ไฟล์ (อัปโหลดด้วย uploadCancelFile ก่อน)
+ * ถ้าบันทึกลงตาราง EXAT / BEM แล้ว จะนำแถวออก และเก็บประวัติไว้ในแท็บ "ยกเลิกการใช้รถคุ้มครอง"
+ */
+function cancelBooking(token, id, reason, fileIds) {
+  const user = requireUser_(token);
+  const b0 = readBookings_(bookingsSheet_()).find(x => x.id === String(id || ''));
+  if (!b0) throw new Error('ไม่พบการจองนี้');
+  if (b0.status === 'cancelled') return bookingOut_(b0, user);
+  if (!canCancelBooking_(b0, user)) throw new Error('ยกเลิกได้เฉพาะการจองของคุณ');
+  const why = String(reason === null || reason === undefined ? '' : reason).trim().slice(0, 1000);
+  const ids = uniq_((Array.isArray(fileIds) ? fileIds : []).map(String).filter(Boolean)).slice(0, MAX_CANCEL_FILES);
+  const files = ids.map(fid => cancelFileInfo_(fid, b0.id));
+  if (cancelNeedsProof_(b0)) {
+    if (why.length < 5) throw new Error('กรุณาระบุเหตุผลที่ยกเลิก (อย่างน้อย 5 ตัวอักษร)');
+    if (!files.length) throw new Error('การจองที่อนุมัติแล้ว ต้องแนบภาพหรือวิดีโอประกอบการยกเลิกอย่างน้อย 1 ไฟล์');
+  }
+
+  const rem = b0.loggedRows ? removeLoggedRows_(b0) : { key: '', removed: [], skipped: [], snapshot: [] };
+  if (rem.removed.length) afterLogSaved_(rem.key, [b0.date]);
+
+  const b = withLock_(() => {
+    const sh = bookingsSheet_();
+    const cur = readBookings_(sh).find(x => x.id === b0.id);
+    if (!cur) throw new Error('ไม่พบการจองนี้');
+    const now = nowText_();
+    Object.assign(cur, {
+      prevStatus: cur.status, status: 'cancelled', updatedAt: now,
+      cancelReason: why, cancelFiles: JSON.stringify(files),
+      cancelledBy: user.username, cancelledByName: user.fullName || user.username, cancelledAt: now,
+      removedRows: rem.removed.length ? rem.key.toUpperCase() + ' ลำดับ ' + rem.removed.join(', ') : '',
+    });
+    writeBooking_(sh, cur.row, cur);
+    return cur;
+  });
+  try {
+    appendCancelLog_(b, rem, cancelFilesOut_(b.cancelFiles));
+  } catch (err) {
+    console.error('appendCancelLog_ failed', err);
+  }
+  audit_(user.username, 'cancel_booking', BOOKING_SHEET, b.row, { id: b.id, prev: b.prevStatus, files: files.length, removed: b.removedRows, skipped: rem.skipped });
+  return Object.assign(bookingOut_(b, user), { removeWarnings: rem.skipped });
+}
+
+/** รายการที่ยกเลิกแล้วทั้งหมด (ล่าสุดก่อน) — แสดงในหน้า "รายการยกเลิก" แยกจากตารางจอง */
+function listCancelled(token) {
+  const user = requireUser_(token);
+  return readBookings_(bookingsSheet_(false))
+    .filter(b => b.status === 'cancelled')
+    .sort((a, b) => String(b.cancelledAt || b.updatedAt).localeCompare(String(a.cancelledAt || a.updatedAt)))
+    .map(b => bookingOut_(b, user));
 }
 
 /* ------------------------------------------------------------------ */
@@ -1412,4 +1610,10 @@ function monthNameLike_(prev, date) {
 function formatDateTime_(v) {
   if (!(v instanceof Date)) return String(v || '');
   return Utilities.formatDate(v, CONFIG.TIMEZONE, 'dd/MM/yyyy HH:mm');
+}
+
+/** รันครั้งเดียวจากตัวแก้ไข Apps Script เพื่อให้สิทธิ์ Google Drive (เก็บไฟล์แนบการยกเลิก) */
+function authorizeDrive() {
+  const folder = cancelFolder_();
+  console.log('โฟลเดอร์ไฟล์แนบการยกเลิก: ' + folder.getName() + ' — ' + folder.getUrl());
 }
