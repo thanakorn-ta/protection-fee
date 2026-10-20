@@ -172,7 +172,7 @@ function getAppData(token) {
       payments: uniq_(PAYMENT_STATUSES.concat(bem.payments)),
       mediaSites: uniq_(PROJECTS.concat(locations.map(l => l.mediaSite))),
     },
-    recent: { exat: exat.recent, bem: bem.recent },
+    recent: { exat: recentFor_(exat.recent, user), bem: recentFor_(bem.recent, user) },
     bookingPending: user.role === 'admin' ? readBookings_(bookingsSheet_(false)).filter(b => b.status === 'pending').length : 0,
   };
 }
@@ -186,7 +186,7 @@ function addLogEntry(token, key, form) {
   const user = requireUser_(token);
   const r = addLogRow_(user, key, validateLogForm_(key, form));
   CacheService.getScriptCache().remove(DASH_CACHE_KEY);
-  return { row: r.row, no: r.no, recent: readLog_(key).recent };
+  return { row: r.row, no: r.no, recent: recentFor_(readLog_(key).recent, user) };
 }
 
 /**
@@ -207,7 +207,13 @@ function addLogEntries(token, key, common, places) {
   });
   const saved = forms.map(f => addLogRow_(user, key, f));
   CacheService.getScriptCache().remove(DASH_CACHE_KEY);
-  return { saved, recent: readLog_(key).recent };
+  return { saved, recent: recentFor_(readLog_(key).recent, user) };
+}
+
+/** รายการล่าสุดในตาราง — ผู้ดูแลระบบเห็นทุกแถว ผู้ใช้ทั่วไปได้แค่ยอดสรุปเดือนล่าสุดและหัวตาราง */
+function recentFor_(recent, user) {
+  if (user.role === 'admin') return recent;
+  return { headers: recent.headers, rows: [], summary: recent.summary };
 }
 
 function checkLogKey_(key) {
