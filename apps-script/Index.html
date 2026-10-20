@@ -237,7 +237,7 @@ tr.fresh td { background: var(--green-soft); }
 .chart .col.on { background: var(--amber-soft); }
 .chart .col.on .m { color: var(--ink); font-weight: 700; }
 table.compact .on { background: var(--amber-soft); }
-.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; }
 .bars { display: flex; flex-direction: column; gap: 12px; }
 .bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 14px; }
 .bar-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -337,6 +337,29 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
 .media-view { position: fixed; inset: 0; z-index: 11; background: rgba(10,16,13,.88); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 16px; gap: 10px; }
 .media-view img, .media-view video { max-width: 100%; max-height: calc(100vh - 90px); border-radius: 8px; background: #000; }
 .media-view .mv-bar { display: flex; gap: 8px; }
+/* File Accrue */
+.ac-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.ac-head h2 { display: flex; align-items: center; gap: 10px; font-size: 18px; flex-wrap: wrap; }
+.ac-head h2 small { font-size: 13px; font-weight: 400; color: var(--muted); }
+.ac-table td.l { text-align: left; white-space: pre-wrap; }
+.ac-table .tot td { font-weight: 700; background: #FFF8E6; }
+.ac-mail { margin-top: 12px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 14px; }
+.ac-mail .mh { background: #F5F6F2; padding: 10px 14px; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 4px 10px; }
+.ac-mail .mh span { color: var(--muted); }
+.ac-mail .mh b { font-weight: 500; overflow-wrap: anywhere; }
+.ac-mail .mb { padding: 14px; line-height: 1.9; overflow-wrap: anywhere; }
+.ac-mail .mb table { width: 100%; table-layout: fixed; }
+.ac-mail .mb td:first-child { width: 64px; }
+.ac-mail .mb p { margin-left: 64px !important; }
+#page-accrue .grid-2 > * { min-width: 0; }
+#page-accrue .dash-ctl { flex-wrap: wrap; }
+#page-accrue .dash-ctl select { min-width: 120px; }
+.ac-mail .att { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 14px; }
+.ac-mail .att span { background: var(--green-soft); color: var(--green-ink); border-radius: 8px; padding: 4px 10px; font-size: 13px; }
+#ac-summary tbody tr { cursor: pointer; }
+#ac-summary tr.current td { background: var(--amber-soft); font-weight: 600; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.check input { width: 20px; height: 20px; }
 .modal-ask { position: fixed; inset: 0; z-index: 9; background: rgba(20,33,27,.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ask-card { width: 100%; max-width: 400px; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.3); padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 8px; }
 .ask-card h3 { font-size: 18px; }
@@ -471,6 +494,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
         <button type="button" data-page="cancelled">รายการยกเลิก</button>
         <button type="button" data-page="dash">แดชบอร์ด</button>
         <button type="button" data-page="locations">สถานที่</button>
+        <button type="button" data-page="accrue" data-admin>File Accrue</button>
         <button type="button" data-page="users" data-admin>ผู้ใช้</button>
         <button type="button" data-page="account">บัญชีของฉัน</button>
       </nav>
@@ -771,6 +795,71 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     <div class="cx-list" id="cx-list"></div>
   </main>
 
+  <!-- File Accrue (ผู้ดูแลระบบ) -->
+  <main class="page" id="page-accrue" hidden>
+    <div class="page-head">
+      <div>
+        <h1>File Accrue ค่ารถคุ้มครอง</h1>
+        <p>สรุปค่ารถคุ้มครองรายเดือน แยกไฟล์ EXAT / BEM ตามรูปแบบที่ใช้ส่ง — ส่งอีเมลอัตโนมัติทุกวันที่ <span id="ac-day">21</span></p>
+      </div>
+      <div class="dash-ctl">
+        <label class="field">ปี<select id="ac-year"></select></label>
+        <label class="field">เดือน<select id="ac-month"></select></label>
+        <button type="button" class="btn" id="ac-refresh">โหลดใหม่</button>
+      </div>
+    </div>
+    <div class="loading-box" id="ac-loading" hidden>กำลังสรุป File Accrue…</div>
+    <div id="ac-body" hidden>
+      <div class="kpis" id="ac-kpis"></div>
+
+      <section class="card table-card">
+        <div class="table-head"><h2 id="ac-sum-title">สรุปค่ารถคุ้มครองรายเดือน</h2><span class="sub">กดเดือนเพื่อดูรายละเอียด</span></div>
+        <div class="table-wrap"><table class="compact" id="ac-summary" style="min-width:720px"></table></div>
+      </section>
+
+      <section class="card table-card">
+        <div class="table-head ac-head"><h2><span class="fnum">1</span>EXAT <small id="ac-exat-name"></small></h2><button type="button" class="btn sm" data-ac-download="exat">ดาวน์โหลด .xlsx</button></div>
+        <div class="table-wrap"><table class="compact ac-table" id="ac-exat" style="min-width:980px"></table></div>
+      </section>
+
+      <section class="card table-card">
+        <div class="table-head ac-head"><h2><span class="fnum">2</span>BEM <small id="ac-bem-name"></small></h2><button type="button" class="btn sm" data-ac-download="bem">ดาวน์โหลด .xlsx</button></div>
+        <div class="table-wrap"><table class="compact ac-table" id="ac-bem" style="min-width:760px"></table></div>
+      </section>
+
+      <div class="grid-2">
+        <section class="card pad">
+          <div class="ac-head"><h2><span class="fnum">3</span>อีเมลแจ้ง</h2><button type="button" class="btn primary sm" id="ac-send">ส่งอีเมลตอนนี้</button></div>
+          <div class="ac-mail" id="ac-mail"></div>
+          <p class="sub" id="ac-auto"></p>
+        </section>
+        <form class="card pad side-form" id="form-accrue" novalidate>
+          <h2>ตั้งค่าการส่ง</h2>
+          <label class="field">ถึง<input name="to" placeholder="teraporn.ru@planbmedia.co.th"></label>
+          <label class="field"><span>สำเนา (CC) <small>คั่นด้วย , หรือขึ้นบรรทัดใหม่</small></span><textarea name="cc" rows="3" placeholder="name@planbmedia.co.th"></textarea></label>
+          <div class="grid2">
+            <label class="field">เรียน<input name="greeting"></label>
+            <label class="field">สำเนา (ข้อความ)<input name="ccLabel"></label>
+            <label class="field">คำลงท้าย<input name="signOff"></label>
+            <label class="field">ผู้ตรวจสอบ (EXAT)<input name="checker"></label>
+            <label class="field">BEM เวลาเข้า<input name="timeIn"></label>
+            <label class="field">BEM เวลาออก<input name="timeOut"></label>
+            <label class="field">ส่งทุกวันที่<input name="sendDay" type="number" min="1" max="28"></label>
+            <label class="field">เวลา (ชั่วโมง)<input name="sendHour" type="number" min="0" max="23"></label>
+          </div>
+          <label class="check"><input type="checkbox" name="autoSend"> ส่งอีเมลอัตโนมัติทุกเดือน (เดือนปัจจุบัน)</label>
+          <div class="error" data-error hidden></div>
+          <button type="submit" class="btn primary block">บันทึกการตั้งค่า</button>
+        </form>
+      </div>
+
+      <section class="card table-card">
+        <div class="table-head"><h2>ประวัติการส่ง</h2></div>
+        <div class="table-wrap"><table class="compact" id="ac-log" style="min-width:760px"></table></div>
+      </section>
+    </div>
+  </main>
+
   <main class="page" id="page-account" hidden>
     <div class="page-head">
       <div>
@@ -1061,11 +1150,12 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       if (b.dataset.page === page) b.setAttribute('aria-current', 'page');
       else b.removeAttribute('aria-current');
     });
-    ['entry', 'schedule', 'cancelled', 'dash', 'locations', 'users', 'account'].forEach(function (p) { $('#page-' + p).hidden = p !== page; });
+    ['entry', 'schedule', 'cancelled', 'dash', 'locations', 'accrue', 'users', 'account'].forEach(function (p) { $('#page-' + p).hidden = p !== page; });
     if (page === 'users') loadUsers();
     if (page === 'dash') loadDash();
     if (page === 'schedule') loadSchedule();
     if (page === 'cancelled') loadCancelled();
+    if (page === 'accrue') loadAccrue();
     window.scrollTo(0, 0);
   }
   $$('nav.menu button').forEach(function (b) {
@@ -2184,6 +2274,174 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   $('#cx-search').addEventListener('input', renderCancelled);
   $$('[data-cx-filter]').forEach(function (b) { b.addEventListener('click', function () { S.cxFilter = b.dataset.cxFilter; renderCancelled(); }); });
   $('#cx-refresh').addEventListener('click', function () { loadCancelled(true); });
+
+  // ---------- File Accrue (ผู้ดูแลระบบ) ----------
+  S.ac = { y: 0, m: 0, data: null };
+  async function loadAccrue(y, m) {
+    if (!S.user || S.user.role !== 'admin') return;
+    var t = new Date();
+    S.ac.y = y || S.ac.y || t.getFullYear();
+    S.ac.m = m || S.ac.m || t.getMonth() + 1;
+    $('#ac-loading').hidden = false;
+    try {
+      S.ac.data = await api('getAccrue', S.token, S.ac.y, S.ac.m);
+      renderAccrue();
+    } catch (err) {
+      toast(errText(err), true);
+    } finally {
+      $('#ac-loading').hidden = true;
+    }
+  }
+  function renderAccrue() {
+    var d = S.ac.data;
+    if (!d) return;
+    $('#ac-body').hidden = false;
+    var thisYear = new Date().getFullYear(), years = [];
+    for (var yy = thisYear + 1; yy >= thisYear - 4; yy--) years.push(yy);
+    $('#ac-year').innerHTML = years.map(function (y) { return '<option value="' + y + '"' + (y === d.y ? ' selected' : '') + '>พ.ศ. ' + be(y) + '</option>'; }).join('');
+    $('#ac-month').innerHTML = TH_MONTHS_LONG.map(function (n, i) { return '<option value="' + (i + 1) + '"' + (i + 1 === d.m ? ' selected' : '') + '>' + n + '</option>'; }).join('');
+    $('#ac-day').textContent = d.settings.sendDay;
+
+    var ex = d.exat, bm = d.bem;
+    function kpi(cls, label, num, sub) {
+      return '<div class="kpi ' + cls + '"><span class="k-label">' + label + '</span><span class="k-num">' + num + '</span><span class="k-sub">' + esc(sub) + '</span></div>';
+    }
+    $('#ac-kpis').innerHTML = [
+      kpi('total', 'รวม File Accrue · ' + esc(d.label), fmt(ex.total + bm.total) + ' <small>บาท</small>', 'ส่งให้ ' + (d.settings.to || '—')),
+      kpi('exat', 'ไฟล์ที่ 1 · EXAT', fmt(ex.total) + ' <small>บาท</small>', fmt(ex.items.length) + ' จุด'),
+      kpi('bem', 'ไฟล์ที่ 2 · BEM', fmt(bm.total) + ' <small>บาท</small>', fmt(bm.items.length) + ' คืน')
+    ].join('');
+
+    // สรุปรายเดือนทั้งปี
+    $('#ac-sum-title').textContent = 'สรุปค่ารถคุ้มครองรายเดือน ปี ' + be(d.y);
+    var sum = { ec: 0, et: 0, bc: 0, bt: 0 };
+    $('#ac-summary').innerHTML =
+      '<thead><tr><th>เดือน</th><th class="num">EXAT (จุด)</th><th class="num">EXAT (บาท)</th><th class="num">BEM (คืน)</th><th class="num">BEM (บาท)</th><th class="num">รวม (บาท)</th><th>ส่งอีเมล</th></tr></thead><tbody>' +
+      d.summary.map(function (x) {
+        sum.ec += x.exatCount; sum.et += x.exatTotal; sum.bc += x.bemCount; sum.bt += x.bemTotal;
+        var dash = function (v) { return v ? fmt(v) : '<span class="sub">–</span>'; };
+        return '<tr data-ac-month="' + x.m + '"' + (x.m === d.m ? ' class="current"' : '') + '><td>' + TH_MONTHS_LONG[x.m - 1] + '</td>' +
+          '<td class="num">' + dash(x.exatCount) + '</td><td class="num">' + dash(x.exatTotal) + '</td>' +
+          '<td class="num">' + dash(x.bemCount) + '</td><td class="num">' + dash(x.bemTotal) + '</td>' +
+          '<td class="num"><b>' + dash(x.exatTotal + x.bemTotal) + '</b></td>' +
+          '<td>' + (x.sentAt ? '<span class="status approved">ส่งแล้ว ' + esc(stamp(x.sentAt)) + '</span>' : '<span class="sub">ยังไม่ส่ง</span>') + '</td></tr>';
+      }).join('') +
+      '<tr class="current"><td><b>รวมทั้งปี</b></td><td class="num">' + fmt(sum.ec) + '</td><td class="num">' + fmt(sum.et) + '</td><td class="num">' + fmt(sum.bc) + '</td><td class="num">' + fmt(sum.bt) + '</td><td class="num"><b>' + fmt(sum.et + sum.bt) + '</b></td><td></td></tr></tbody>';
+
+    // ไฟล์ที่ 1: EXAT
+    $('#ac-exat-name').textContent = ex.name;
+    $('#ac-exat').innerHTML =
+      '<thead><tr><th>ลำดับ</th><th>วันที่</th><th>โครงการ</th><th>รถคุ้มครอง</th><th>พื้นที่</th><th>ประเภทป้าย</th><th>ประเภทงาน</th><th>สถานที่</th><th class="num">จำนวน (จุด)</th><th class="num">ราคา / จุด</th><th class="num">จำนวน (บาท)</th><th>ผู้ควบคุมงาน</th></tr></thead><tbody>' +
+      (ex.items.length ? ex.items.map(function (x, i) {
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(thaiDate(x.iso)) + '</td><td>' + esc(x.project) + '</td><td>EXAT</td><td>' + esc(x.expressway) + '</td><td>' + esc(x.project) + '</td>' +
+          '<td class="l">' + esc(x.jobType) + '</td><td class="l">' + esc(x.place) + '</td><td class="num">' + x.qty + '</td>' +
+          '<td class="num">' + (x.noRate ? '<span class="status pending" title="สายทางนี้ไม่มีในอัตรา">ไม่มีอัตรา</span>' : fmt(x.price)) + '</td><td class="num">' + fmt(x.amount) + '</td><td>' + esc(x.worker) + '</td></tr>';
+      }).join('') + '<tr class="tot"><td colspan="10" style="text-align:right">รวมเป็นเงินทั้งสิ้น</td><td class="num">' + fmt(ex.total) + '</td><td></td></tr>'
+        : '<tr><td class="empty" colspan="12">ไม่มีการใช้รถคุ้มครอง EXAT ในเดือนนี้</td></tr>') + '</tbody>';
+
+    // ไฟล์ที่ 2: BEM
+    $('#ac-bem-name').textContent = bm.name;
+    $('#ac-bem').innerHTML =
+      '<thead><tr><th>ที่</th><th>วันที่</th><th>เข้า</th><th>ออก</th><th>รายละเอียดงาน</th><th>สถานที่</th><th class="num">ค่าบริการ (บาท)</th></tr></thead><tbody>' +
+      (bm.items.length ? bm.items.map(function (x, i) {
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(thaiDate(x.iso)) + '</td><td>' + esc(x.timeIn) + '</td><td>' + esc(x.timeOut) + '</td>' +
+          '<td class="l">' + esc(x.jobs.join('\n')) + '</td><td class="l">' + esc(x.places.join('\n')) + '</td><td class="num">' + fmt(x.amount) + '</td></tr>';
+      }).join('') + '<tr class="tot"><td colspan="6" style="text-align:right">รวมทั้งสิ้น</td><td class="num">' + fmt(bm.total) + '</td></tr>'
+        : '<tr><td class="empty" colspan="7">ไม่มีการใช้รถคุ้มครอง BEM ที่คิดค่ารถในเดือนนี้</td></tr>') + '</tbody>';
+
+    // ไฟล์ที่ 3: อีเมล
+    var e = d.email, att = [];
+    if (ex.items.length) att.push(ex.name);
+    if (bm.items.length) att.push(bm.name);
+    $('#ac-mail').innerHTML =
+      '<div class="mh"><span>ถึง</span><b>' + esc(e.to || '—') + '</b><span>สำเนา</span><b>' + esc(e.cc || '— ยังไม่ได้ตั้ง —') + '</b><span>เรื่อง</span><b>' + esc(e.subject) + '</b></div>' +
+      '<div class="mb">' + e.html + '</div>' +
+      '<div class="att">' + (att.length ? att.map(function (n) { return '<span>📎 ' + esc(n) + '</span>'; }).join('') : '<span>ไม่มีไฟล์แนบ — เดือนนี้ไม่มีรายการ</span>') + '</div>';
+    var st = d.settings;
+    $('#ac-auto').textContent = st.autoSend
+      ? (st.triggerOn ? 'ส่งอัตโนมัติทุกวันที่ ' + st.sendDay + ' เวลา ' + st.sendHour + ':00–' + (Number(st.sendHour) + 1) + ':00 น. (ไฟล์ของเดือนนั้น) จากบัญชีเจ้าของ Apps Script' : 'ตั้งให้ส่งอัตโนมัติแล้ว แต่ตัวตั้งเวลายังไม่ทำงาน — กด “บันทึกการตั้งค่า” อีกครั้ง')
+      : 'ปิดการส่งอัตโนมัติอยู่ — ส่งเองด้วยปุ่ม “ส่งอีเมลตอนนี้”';
+
+    var f = $('#form-accrue');
+    ['to', 'cc', 'greeting', 'ccLabel', 'signOff', 'checker', 'timeIn', 'timeOut', 'sendDay', 'sendHour'].forEach(function (k) { f[k].value = st[k] === undefined ? '' : st[k]; });
+    f.cc.value = String(st.cc || '').split(/\s*,\s*/).filter(Boolean).join('\n');
+    f.autoSend.checked = !!st.autoSend;
+
+    $('#ac-log').innerHTML =
+      '<thead><tr><th>วันที่ส่ง</th><th>เดือน</th><th>ส่งโดย</th><th>ถึง / สำเนา</th><th class="num">EXAT</th><th class="num">BEM</th><th>สถานะ</th></tr></thead><tbody>' +
+      (d.log.length ? d.log.map(function (x) {
+        return '<tr><td>' + esc(stamp(x.at)) + '</td><td>' + esc(x.month) + '</td><td>' + esc(x.by) + '</td><td class="l">' + esc(x.to + (x.cc ? '\ncc: ' + x.cc : '')) + '</td>' +
+          '<td class="num">' + fmt(x.exat) + '</td><td class="num">' + fmt(x.bem) + '</td><td>' + esc(x.status) + '</td></tr>';
+      }).join('') : '<tr><td class="empty" colspan="7">ยังไม่เคยส่ง</td></tr>') + '</tbody>';
+  }
+  $('#ac-year').addEventListener('change', function () { loadAccrue(Number(this.value), S.ac.m); });
+  $('#ac-month').addEventListener('change', function () { loadAccrue(S.ac.y, Number(this.value)); });
+  $('#ac-refresh').addEventListener('click', function () { loadAccrue(S.ac.y, S.ac.m); });
+  $('#ac-summary').addEventListener('click', function (e) {
+    var tr = e.target.closest('[data-ac-month]');
+    if (tr) loadAccrue(S.ac.y, Number(tr.dataset.acMonth));
+  });
+  function saveBase64(name, mime, data) {
+    var bin = atob(data), arr = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    var url = URL.createObjectURL(new Blob([arr], { type: mime }));
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+  }
+  $$('[data-ac-download]').forEach(function (b) {
+    b.addEventListener('click', async function () {
+      var key = b.dataset.acDownload, label = b.textContent;
+      b.disabled = true;
+      b.textContent = 'กำลังสร้างไฟล์…';
+      try {
+        var f = await api('downloadAccrue', S.token, S.ac.y, S.ac.m, key);
+        saveBase64(f.name, f.mime, f.data);
+        toast('ดาวน์โหลด ' + f.name + ' แล้ว (เก็บสำเนาไว้ในโฟลเดอร์ File Accrue ใน Google Drive)');
+      } catch (err) {
+        toast(errText(err), true);
+      } finally {
+        b.disabled = false;
+        b.textContent = label;
+      }
+    });
+  });
+  $('#ac-send').addEventListener('click', async function () {
+    var d = S.ac.data, b = this;
+    if (!d) return;
+    if (!confirm('ส่งอีเมล “' + d.email.subject + '”\nถึง: ' + d.email.to + (d.email.cc ? '\nสำเนา: ' + d.email.cc : '') + '\nยอด EXAT ' + fmt(d.exat.total) + ' บาท · BEM ' + fmt(d.bem.total) + ' บาท\n\nยืนยันส่งตอนนี้?')) return;
+    b.disabled = true;
+    b.textContent = 'กำลังสร้างไฟล์และส่ง…';
+    try {
+      var res = await api('sendAccrueNow', S.token, S.ac.y, S.ac.m);
+      toast(res.sent ? 'ส่งอีเมล File Accrue ' + d.label + ' แล้ว' : res.reason, !res.sent);
+      await loadAccrue(S.ac.y, S.ac.m);
+    } catch (err) {
+      toast(errText(err), true);
+    } finally {
+      b.disabled = false;
+      b.textContent = 'ส่งอีเมลตอนนี้';
+    }
+  });
+  $('#form-accrue').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var form = e.target;
+    var data = formData(form);
+    data.autoSend = form.autoSend.checked;
+    data.cc = data.cc.split(/[\s,;]+/).filter(Boolean).join(', ');
+    submitWith(form, async function () {
+      var s = await api('saveAccrueSettings', S.token, data);
+      S.ac.data.settings = s;
+      S.ac.data.email.to = s.to;
+      S.ac.data.email.cc = s.cc;
+      await loadAccrue(S.ac.y, S.ac.m);
+      toast('บันทึกการตั้งค่าแล้ว' + (s.autoSend ? ' — ส่งอัตโนมัติทุกวันที่ ' + s.sendDay : ''));
+    });
+  });
 
   function copyText(text, el) {
     function fallback() {

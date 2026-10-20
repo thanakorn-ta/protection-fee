@@ -54,6 +54,7 @@ function doGet() {
 
 const API_FUNCTIONS = {
   register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
+  getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings,
   addLocation, listUsers, updateUser, resetPassword,
 };
 
@@ -442,6 +443,7 @@ function logRows_(key) {
   const c = name => colIndex_(t.headers, name);
   const ci = {
     month: c('เดือน'), date: c('วันที่'), project: c('โครงการ'), expressway: c('สายทาง'), place: c('สถานที่'),
+    no: c('ลำดับ'), jobType: c('ประเภทงาน'),
     worker: c('ผู้เข้างาน'), fee: c('ค่าอาหาร/รถคุ้มครอง'), feeText: c('ค่ารถคุ้มครอง'), payment: c('การชำระเงิน'),
   };
   const str = v => (v instanceof Date ? Utilities.formatDate(v, sheetTz_(), 'd/M/yyyy') : String(v === null || v === undefined ? '' : v));
@@ -452,6 +454,7 @@ function logRows_(key) {
       has,
       iso: has ? dateIsoOf_(r[ci.date], str(r[ci.date])) : '',
       ym: has ? ((ci.month >= 0 && ymOf_(r[ci.month], str(r[ci.month]))) || ymOf_(r[ci.date], str(r[ci.date]))) : null,
+      no: pick(r, ci.no), jobType: pick(r, ci.jobType),
       expressway: pick(r, ci.expressway), project: pick(r, ci.project), place: pick(r, ci.place), worker: pick(r, ci.worker),
       fee: ci.fee < 0 ? 0 : typeof r[ci.fee] === 'number' ? r[ci.fee] : Number(str(r[ci.fee]).replace(/[^\d.-]/g, '')) || 0,
       feeText: pick(r, ci.feeText), payment: pick(r, ci.payment),
@@ -1172,6 +1175,409 @@ function listCancelled(token) {
     .filter(b => b.status === 'cancelled')
     .sort((a, b) => String(b.cancelledAt || b.updatedAt).localeCompare(String(a.cancelledAt || a.updatedAt)))
     .map(b => bookingOut_(b, user));
+}
+
+/* ------------------------------------------------------------------ */
+/* File Accrue ค่ารถคุ้มครองรายเดือน (EXAT / BEM) + ส่งอีเมลทุกวันที่ 21 — เฉพาะผู้ดูแลระบบ */
+/* ------------------------------------------------------------------ */
+
+const ACCRUE_PROP = 'ACCRUE_SETTINGS';
+const ACCRUE_DEFAULTS = {
+  to: 'teraporn.ru@planbmedia.co.th', cc: '',
+  greeting: 'น้องหม่อง', ccLabel: 'ผู้เกี่ยวข้อง', signOff: 'ขอบคุณครับ',
+  checker: 'นายณัฐวุฒิ อู่ยายโสม', timeIn: '22', timeOut: '4',
+  autoSend: true, sendDay: 21, sendHour: 9,
+};
+const ACCRUE_JOB = 'accrueMonthlyJob';
+const ACCRUE_LOG_SHEET = 'ประวัติส่ง File Accrue';
+const ACCRUE_LOG_HEADERS = ['วันที่ส่ง', 'เดือน', 'ส่งโดย', 'ถึง', 'สำเนา', 'EXAT (บาท)', 'BEM (บาท)', 'ไฟล์', 'สถานะ'];
+const ACCRUE_FOLDER_NAME = 'Protection Fee – File Accrue';
+const TH_MONTHS_FULL = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+const ACCRUE_FONT = 'Cordia New';
+
+function accrueSettings_() {
+  let saved = {};
+  try { saved = JSON.parse(PropertiesService.getScriptProperties().getProperty(ACCRUE_PROP) || '{}'); } catch (err) { saved = {}; }
+  return Object.assign({}, ACCRUE_DEFAULTS, saved);
+}
+
+function emailList_(s) {
+  return uniq_(String(s || '').split(/[\s,;]+/).map(x => x.trim()).filter(Boolean));
+}
+
+function checkEmails_(list, label) {
+  list.forEach(e => { if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) throw new Error(label + ': รูปแบบอีเมลไม่ถูกต้อง — ' + e); });
+  return list;
+}
+
+/** "กันยายน 69" */
+function accrueMonthShort_(y, m) { return TH_MONTHS_FULL[m - 1] + ' ' + String((y + 543) % 100).padStart(2, '0'); }
+
+/** "1 ก.ค. 69" — ตามรูปแบบในไฟล์ตัวอย่าง */
+function accrueDateText_(iso) {
+  const p = String(iso || '').split('-').map(Number);
+  return p.length === 3 ? p[2] + ' ' + THAI_MONTHS[p[1] - 1] + ' ' + String((p[0] + 543) % 100).padStart(2, '0') : String(iso || '');
+}
+
+function hourOf_(time, fallback) {
+  const m = /(\d{1,2})\s*[.:]?\s*(\d{2})?/.exec(String(time || ''));
+  return m ? String(Number(m[1])) : fallback;
+}
+
+/**
+ * รายการ Accrue ทั้งปี: EXAT = แถวละ 1 จุด ราคาเต็มตามอัตรา (ไม่หักค่าอาหาร — เป็นทดรองจ่ายแยก)
+ * BEM = แถวละ 1 คืน (รถ 1 คัน) เฉพาะคืนที่คิดค่ารถ — หลายจุดในคืนเดียวรวมเป็นแถวเดียว
+ * นับตามคอลัมน์ "เดือน" ในชีท (เดือนที่ลงบัญชี)
+ */
+function accrueYear_(y) {
+  const rates = readRates_();
+  const s = accrueSettings_();
+  const timeOf = {};
+  readBookings_(bookingsSheet_(false)).forEach(b => {
+    const mm = /^(EXAT|BEM)\s*ลำดับ\s*(.+)$/.exec(String(b.loggedRows || '').trim());
+    if (mm && b.status !== 'cancelled') mm[2].split(/[,\s]+/).filter(Boolean).forEach(n => { timeOf[mm[1] + ':' + n] = b.time; });
+  });
+  const months = [];
+  for (let m = 1; m <= 12; m++) months.push({ m, exat: [], bem: [] });
+
+  ['exat', 'bem'].forEach(key => {
+    const P = key.toUpperCase();
+    const rows = logRows_(key).rows;
+    const costs = computeCosts_(rates, P, rows);
+    let night = null;
+    rows.forEach((r, i) => {
+      const c = costs[i];
+      if (!r.has || !r.ym || r.ym.y !== y) { if (c && c.night) night = null; return; }
+      const bucket = months[r.ym.m - 1];
+      if (key === 'exat') {
+        const price = c.cost === '' ? 0 : (Number(c.cost) || 0) + (Number(c.food) || 0);
+        bucket.exat.push({
+          no: r.no, iso: r.iso, project: r.project, expressway: r.expressway, jobType: r.jobType, place: r.place,
+          worker: r.worker, qty: 1, price, amount: price, noRate: c.note === 'no-rate',
+        });
+        return;
+      }
+      if (c.note === 'free' || c.cost === '') { if (c.night || c.note === 'free') night = null; return; }
+      if (c.night || !night || night.iso !== r.iso || night.m !== r.ym.m) {
+        night = { m: r.ym.m, iso: r.iso, no: r.no, jobs: [], places: [], amount: 0,
+          timeIn: hourOf_(timeOf['BEM:' + r.no], s.timeIn), timeOut: s.timeOut };
+        bucket.bem.push(night);
+      }
+      night.jobs.push(r.jobType);
+      night.places.push(r.place);
+      night.amount += Number(c.cost) || 0;
+    });
+  });
+
+  months.forEach(b => {
+    b.exat.sort((a, c) => a.iso.localeCompare(c.iso));
+    b.bem = b.bem.filter(n => n.amount > 0).sort((a, c) => a.iso.localeCompare(c.iso));
+    b.exatTotal = b.exat.reduce((t, x) => t + x.amount, 0);
+    b.bemTotal = b.bem.reduce((t, x) => t + x.amount, 0);
+  });
+  return months;
+}
+
+function accrueFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('ACCRUE_FOLDER_ID');
+  if (id) {
+    try {
+      const f = DriveApp.getFolderById(id);
+      if (!f.isTrashed()) return f;
+    } catch (err) { /* สร้างใหม่ */ }
+  }
+  let parent = null;
+  try {
+    const parents = DriveApp.getFileById(spreadsheet_().getId()).getParents();
+    if (parents.hasNext()) parent = parents.next();
+  } catch (err) { /* ใช้ My Drive */ }
+  const folder = parent ? parent.createFolder(ACCRUE_FOLDER_NAME) : DriveApp.createFolder(ACCRUE_FOLDER_NAME);
+  props.setProperty('ACCRUE_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+function accrueFileName_(key, y, m, total) {
+  const mon = TH_MONTHS_FULL[m - 1] + String((y + 543) % 100).padStart(2, '0');
+  return (key === 'exat' ? 'ค่ารถคุ้มครองEXAT' : 'ค่ารถคุ้มครอง BEM') + ' (' + mon + ') = ' + Number(total).toLocaleString('en-US') + ' บาท';
+}
+
+/** สร้าง Google Sheet ตามรูปแบบไฟล์ตัวอย่าง (เก็บไว้ในโฟลเดอร์ File Accrue) แล้วส่งออกเป็น .xlsx */
+function buildAccrueFile_(key, y, m, bucket) {
+  const s = accrueSettings_();
+  const total = key === 'exat' ? bucket.exatTotal : bucket.bemTotal;
+  const name = accrueFileName_(key, y, m, total);
+  const ss = SpreadsheetApp.create(name);
+  try { ss.setSpreadsheetLocale('th_TH'); ss.setSpreadsheetTimeZone(CONFIG.TIMEZONE); } catch (err) { /* ใช้ค่าเริ่มต้น */ }
+  const sh = ss.getSheets()[0];
+  if (key === 'exat') layoutExatAccrue_(sh, y, m, bucket.exat, s);
+  else layoutBemAccrue_(sh, y, m, bucket.bem);
+  SpreadsheetApp.flush();
+
+  const props = PropertiesService.getScriptProperties();
+  const prop = 'ACCRUE_FILE_' + key + '_' + y + '_' + m;
+  const old = props.getProperty(prop);
+  const file = DriveApp.getFileById(ss.getId());
+  try { file.moveTo(accrueFolder_()); } catch (err) { /* อยู่ใน My Drive */ }
+  if (old && old !== ss.getId()) { try { DriveApp.getFileById(old).setTrashed(true); } catch (err) { /* ลบไปแล้ว */ } }
+  props.setProperty(prop, ss.getId());
+
+  const res = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx', {
+    headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true,
+  });
+  if (res.getResponseCode() !== 200) throw new Error('ส่งออกไฟล์ Excel ไม่สำเร็จ (HTTP ' + res.getResponseCode() + ')');
+  return { key, name: name + '.xlsx', total, count: (key === 'exat' ? bucket.exat : bucket.bem).length, url: ss.getUrl(), blob: res.getBlob().setName(name + '.xlsx') };
+}
+
+function styleBlock_(range, opts) {
+  range.setFontFamily(ACCRUE_FONT).setFontSize(opts.size || 16).setVerticalAlignment('middle');
+  if (opts.bold) range.setFontWeight('bold');
+  if (opts.align) range.setHorizontalAlignment(opts.align);
+  if (opts.wrap) range.setWrap(true);
+  if (opts.bg) range.setBackground(opts.bg);
+  if (opts.border) range.setBorder(true, true, true, true, true, true, '#000000', SpreadsheetApp.BorderStyle.SOLID);
+  return range;
+}
+
+function layoutExatAccrue_(sh, y, m, items, s) {
+  sh.setName('All');
+  const W = 12;
+  const n = items.length;
+  sh.getRange(1, 3, 1, W - 2).merge().setValue('รายการค่ารถคุ้มครองการทางพิเศษแห่งประเทศไทย ประจำเดือน : ' + TH_MONTHS_FULL[m - 1] + ' ' + (y + 543));
+  styleBlock_(sh.getRange(1, 1, 1, W), { size: 20, bold: true, align: 'center' });
+  sh.setRowHeight(1, 52);
+  const head = ['ลำดับ', 'วันที่', 'โครงการ', 'รถคุ้มครอง', 'พื้นที่', 'ประเภทป้าย', 'ประเภทงาน', 'สถานที่', 'จำนวน\n(จุด)', 'ราคา / จุด', 'จำนวน\n(บาท)', 'ผู้ควบคุมงาน'];
+  sh.getRange(3, 1, 1, W).setValues([head]);
+  styleBlock_(sh.getRange(3, 1, 1, W), { bold: true, align: 'center', wrap: true, bg: '#FCE4D6', border: true });
+  sh.setRowHeight(3, 48);
+  if (n) {
+    const values = items.map((x, i) => [i + 1, accrueDateText_(x.iso), x.project, 'EXAT', x.expressway, x.project, x.jobType, x.place, x.qty, x.price, '', x.worker]);
+    sh.getRange(4, 1, n, W).setValues(values);
+    sh.getRange(4, 11, n, 1).setFormulas(items.map((x, i) => ['=I' + (4 + i) + '*J' + (4 + i)]));
+    styleBlock_(sh.getRange(4, 1, n, W), { align: 'center', border: true });
+    styleBlock_(sh.getRange(4, 7, n, 2), { align: 'left', wrap: true });
+    sh.getRange(4, 10, n, 2).setNumberFormat('#,##0');
+  }
+  const tr = 4 + n;
+  sh.getRange(tr, 8).setValue('รวมเป็นเงินทั้งสิ้น');
+  sh.getRange(tr, 11).setFormula(n ? '=SUM(K4:K' + (tr - 1) + ')' : '=0').setNumberFormat('#,##0');
+  styleBlock_(sh.getRange(tr, 8, 1, 5), { bold: true, align: 'center' });
+  sh.getRange(tr, 11).setBorder(null, null, true, null, null, null, '#000000', SpreadsheetApp.BorderStyle.DOUBLE);
+  const sign = [
+    ['ค่าใช้จ่ายดังกล่าวได้มีการตรวจสอบเรียบร้อยสามารถทำการเบิกจ่ายได้'],
+    ['___________________________________\n(' + s.checker + ')'],
+    ['ผู้ตรวจสอบ'],
+  ];
+  sign.forEach((v, i) => sh.getRange(tr + 2 + i, 8, 1, 5).merge().setValue(v[0]));
+  styleBlock_(sh.getRange(tr + 2, 8, 3, 5), { align: 'center', wrap: true });
+  sh.setRowHeight(tr + 3, 110);
+  [62, 110, 150, 95, 105, 150, 430, 380, 80, 95, 105, 150].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  sh.setFrozenRows(3);
+}
+
+function layoutBemAccrue_(sh, y, m, nights) {
+  sh.setName('BEM');
+  const W = 7;
+  const n = nights.length;
+  sh.getRange(1, 1, 1, W).merge().setValue('ตารางสรุปการใช้บริการรถคุ้มครอง บริษัท ทางด่วนและรถไฟฟ้ากรุงเทพ จำกัด(มหาชน)');
+  sh.getRange(2, 1, 1, W).merge().setValue('รายละเอียดการใช้รถคุ้มครอง เดือน ' + accrueMonthShort_(y, m));
+  sh.getRange(3, 1, 1, W).merge().setValue('รายละเอียดการใช้รถคุ้มครอง');
+  styleBlock_(sh.getRange(1, 1, 2, W), { size: 18, bold: true, align: 'center' });
+  styleBlock_(sh.getRange(3, 1, 1, W), { bold: true, align: 'center', bg: '#DDEBF7', border: true });
+  sh.getRange(4, 1, 2, W).setValues([
+    ['ที่', 'วันที่', 'เวลาทำงาน', '', 'รายละเอียดงาน', 'สถานที่', 'ค่าบริการ(บาท)'],
+    ['', '', 'เข้า', 'ออก', '', '', ''],
+  ]);
+  [[4, 1, 2, 1], [4, 2, 2, 1], [4, 3, 1, 2], [4, 5, 2, 1], [4, 6, 2, 1], [4, 7, 2, 1]].forEach(a => sh.getRange(a[0], a[1], a[2], a[3]).merge());
+  styleBlock_(sh.getRange(4, 1, 2, W), { bold: true, align: 'center', bg: '#DDEBF7', border: true });
+  if (n) {
+    const num = v => (/^\d+$/.test(String(v)) ? Number(v) : v);
+    sh.getRange(6, 1, n, W).setValues(nights.map((x, i) => [i + 1, accrueDateText_(x.iso), num(x.timeIn), num(x.timeOut), x.jobs.join('\n'), x.places.join('\n'), x.amount]));
+    styleBlock_(sh.getRange(6, 1, n, W), { align: 'center', border: true });
+    styleBlock_(sh.getRange(6, 5, n, 2), { align: 'left', wrap: true });
+    sh.getRange(6, 7, n, 1).setNumberFormat('#,##0.00');
+  }
+  const tr = 6 + n;
+  sh.getRange(tr, 1, 1, 6).merge().setValue('รวมทั้งสิ้น');
+  sh.getRange(tr, 7).setFormula(n ? '=SUM(G6:G' + (tr - 1) + ')' : '=0').setNumberFormat('#,##0.00');
+  styleBlock_(sh.getRange(tr, 1, 1, W), { bold: true, align: 'center', border: true, bg: '#FFF2CC' });
+  [50, 95, 70, 60, 300, 440, 120].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+}
+
+function accrueLogSheet_() {
+  const ss = spreadsheet_();
+  let sh = ss.getSheetByName(ACCRUE_LOG_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(ACCRUE_LOG_SHEET);
+    sh.getRange(1, 1, 1, ACCRUE_LOG_HEADERS.length).setValues([ACCRUE_LOG_HEADERS]).setFontWeight('bold');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function logAccrue_(row) {
+  const sh = accrueLogSheet_();
+  const r = Math.max(sh.getLastRow(), 1) + 1;
+  const range = sh.getRange(r, 1, 1, ACCRUE_LOG_HEADERS.length);
+  range.setNumberFormat('@');
+  range.setValues([row.map(longText_)]);
+}
+
+function accrueEmail_(y, m, s) {
+  const label = accrueMonthShort_(y, m);
+  const subject = 'นำส่ง File Accrue ค่ารถคุ้มครอง เดือน' + label;
+  const lines = [
+    ['เรียน', s.greeting], ['สำเนา', s.ccLabel],
+    ['เรื่อง', 'นำส่ง File Accrue ค่ารถคุ้มครอง เดือน' + label + '  รายละเอียดตามไฟล์แนบ'],
+  ];
+  const plain = lines.map(l => l[0] + '\t' + l[1]).join('\n') + '\n\n\t\t' + s.signOff;
+  const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const html = '<div style="font-family:Tahoma,sans-serif;font-size:14px;line-height:1.9">' +
+    '<table style="border-collapse:collapse">' + lines.map(l => '<tr><td style="padding:2px 28px 2px 0;vertical-align:top">' + esc(l[0]) + '</td><td style="padding:2px 0">' + esc(l[1]) + '</td></tr>').join('') + '</table>' +
+    '<p style="margin:28px 0 0 120px">' + esc(s.signOff) + '</p></div>';
+  return { subject, plain, html };
+}
+
+/** สร้างไฟล์ EXAT / BEM ของเดือนนั้นแล้วส่งอีเมล — คืนผลการส่ง */
+function sendAccrue_(y, m, by) {
+  const s = accrueSettings_();
+  const to = checkEmails_(emailList_(s.to), 'ถึง');
+  const cc = checkEmails_(emailList_(s.cc), 'สำเนา');
+  if (!to.length) throw new Error('ยังไม่ได้ตั้งอีเมลผู้รับ (ถึง)');
+  const bucket = accrueYear_(y)[m - 1];
+  const files = [];
+  if (bucket.exat.length) files.push(buildAccrueFile_('exat', y, m, bucket));
+  if (bucket.bem.length) files.push(buildAccrueFile_('bem', y, m, bucket));
+  const when = nowText_();
+  const label = accrueMonthShort_(y, m);
+  if (!files.length) {
+    logAccrue_([when, label, by, to.join(', '), cc.join(', '), '0', '0', '', 'ไม่ได้ส่ง — ไม่มีการใช้รถคุ้มครองในเดือนนี้']);
+    return { sent: false, reason: 'ไม่มีการใช้รถคุ้มครองในเดือน ' + label };
+  }
+  const mail = accrueEmail_(y, m, s);
+  const msg = { to: to.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, attachments: files.map(f => f.blob) };
+  if (cc.length) msg.cc = cc.join(',');
+  MailApp.sendEmail(msg);
+  logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n'), 'ส่งแล้ว']);
+  PropertiesService.getScriptProperties().setProperty('ACCRUE_SENT_' + y + '_' + m, when);
+  return { sent: true, at: when, to, cc, subject: mail.subject, files: files.map(f => ({ name: f.name, total: f.total, count: f.count })) };
+}
+
+/** ตัวตั้งเวลา: ทุกวันที่ 21 ส่ง File Accrue ของเดือนปัจจุบัน (ส่งครั้งเดียวต่อเดือน) */
+function accrueMonthlyJob() {
+  const s = accrueSettings_();
+  if (!s.autoSend) return;
+  const now = new Date();
+  const y = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy'));
+  const m = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'M'));
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty('ACCRUE_AUTO_' + y + '_' + m)) return;
+  try {
+    sendAccrue_(y, m, 'ส่งอัตโนมัติ');
+    props.setProperty('ACCRUE_AUTO_' + y + '_' + m, nowText_());
+  } catch (err) {
+    logAccrue_([nowText_(), accrueMonthShort_(y, m), 'ส่งอัตโนมัติ', s.to, s.cc, '', '', '', 'ส่งไม่สำเร็จ: ' + String(err && err.message || err)]);
+    throw err;
+  }
+}
+
+/** เปิด / ปิด ตัวตั้งเวลาให้ตรงกับการตั้งค่า */
+function ensureAccrueTrigger_(s) {
+  const sig = s.autoSend ? s.sendDay + '@' + s.sendHour : '';
+  const props = PropertiesService.getScriptProperties();
+  const existing = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === ACCRUE_JOB);
+  if (existing.length && props.getProperty('ACCRUE_TRIGGER') === sig) return;
+  existing.forEach(t => ScriptApp.deleteTrigger(t));
+  if (sig) ScriptApp.newTrigger(ACCRUE_JOB).timeBased().onMonthDay(s.sendDay).atHour(s.sendHour).inTimezone(CONFIG.TIMEZONE).create();
+  props.setProperty('ACCRUE_TRIGGER', sig);
+}
+
+function accrueTriggerOn_() {
+  try { return ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === ACCRUE_JOB); } catch (err) { return false; }
+}
+
+function readAccrueLog_() {
+  const sh = spreadsheet_().getSheetByName(ACCRUE_LOG_SHEET);
+  if (!sh || sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, ACCRUE_LOG_HEADERS.length).getDisplayValues()
+    .map(r => ({ at: r[0], month: r[1], by: r[2], to: r[3], cc: r[4], exat: Number(r[5]) || 0, bem: Number(r[6]) || 0, files: r[7], status: r[8] }))
+    .reverse().slice(0, 24);
+}
+
+function accrueSettingsOut_() {
+  const s = accrueSettings_();
+  return Object.assign({}, s, { triggerOn: accrueTriggerOn_() });
+}
+
+/** หน้า File Accrue: สรุปทั้งปี + รายการของเดือนที่เลือก + ตัวอย่างอีเมล */
+function getAccrue(token, y, m) {
+  requireUser_(token, true);
+  const now = new Date();
+  y = Number(y) || Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy'));
+  m = Number(m) || Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'M'));
+  const months = accrueYear_(y);
+  const props = PropertiesService.getScriptProperties();
+  const b = months[m - 1];
+  const s = accrueSettingsOut_();
+  return {
+    y, m, label: accrueMonthShort_(y, m),
+    exat: { items: b.exat, total: b.exatTotal, name: accrueFileName_('exat', y, m, b.exatTotal) + '.xlsx' },
+    bem: { items: b.bem, total: b.bemTotal, name: accrueFileName_('bem', y, m, b.bemTotal) + '.xlsx' },
+    summary: months.map(x => ({ m: x.m, exatCount: x.exat.length, exatTotal: x.exatTotal, bemCount: x.bem.length, bemTotal: x.bemTotal, sentAt: props.getProperty('ACCRUE_SENT_' + y + '_' + x.m) || '' })),
+    email: Object.assign(accrueEmail_(y, m, s), { to: s.to, cc: s.cc }),
+    settings: s,
+    log: readAccrueLog_(),
+  };
+}
+
+/** ดาวน์โหลดไฟล์ .xlsx (base64) */
+function downloadAccrue(token, y, m, key) {
+  requireUser_(token, true);
+  if (key !== 'exat' && key !== 'bem') throw new Error('ประเภทไฟล์ไม่ถูกต้อง');
+  y = Number(y); m = Number(m);
+  if (!(m >= 1 && m <= 12) || !(y > 2000)) throw new Error('เดือนไม่ถูกต้อง');
+  const bucket = accrueYear_(y)[m - 1];
+  const f = buildAccrueFile_(key, y, m, bucket);
+  return { name: f.name, mime: f.blob.getContentType(), data: Utilities.base64Encode(f.blob.getBytes()), url: f.url };
+}
+
+/** ผู้ดูแลระบบสั่งส่งอีเมล File Accrue ทันที */
+function sendAccrueNow(token, y, m) {
+  const user = requireUser_(token, true);
+  y = Number(y); m = Number(m);
+  if (!(m >= 1 && m <= 12) || !(y > 2000)) throw new Error('เดือนไม่ถูกต้อง');
+  const res = withLock_(() => sendAccrue_(y, m, user.fullName || user.username));
+  audit_(user.username, 'send_accrue', ACCRUE_LOG_SHEET, '', { y, m, sent: res.sent });
+  return res;
+}
+
+function saveAccrueSettings(token, form) {
+  const user = requireUser_(token, true);
+  form = form || {};
+  const s = accrueSettings_();
+  const str = (k, max) => String(form[k] === undefined || form[k] === null ? s[k] : form[k]).trim().slice(0, max || 200);
+  const next = {
+    to: checkEmails_(emailList_(str('to', 1000)), 'ถึง').join(', '),
+    cc: checkEmails_(emailList_(str('cc', 2000)), 'สำเนา').join(', '),
+    greeting: str('greeting'), ccLabel: str('ccLabel'), signOff: str('signOff'), checker: str('checker'),
+    timeIn: str('timeIn', 10), timeOut: str('timeOut', 10),
+    autoSend: form.autoSend === undefined ? s.autoSend : form.autoSend === true || form.autoSend === 'true' || form.autoSend === 'on',
+    sendDay: Math.min(28, Math.max(1, Math.floor(Number(form.sendDay) || s.sendDay))),
+    sendHour: Math.min(23, Math.max(0, Math.floor(Number(form.sendHour === undefined ? s.sendHour : form.sendHour)))),
+  };
+  if (!next.to) throw new Error('กรุณากรอกอีเมลผู้รับ (ถึง)');
+  PropertiesService.getScriptProperties().setProperty(ACCRUE_PROP, JSON.stringify(next));
+  ensureAccrueTrigger_(next);
+  audit_(user.username, 'accrue_settings', '', '', { to: next.to, cc: next.cc, autoSend: next.autoSend, day: next.sendDay, hour: next.sendHour });
+  return accrueSettingsOut_();
+}
+
+/** รันครั้งเดียวจากตัวแก้ไข: ให้สิทธิ์ (อีเมล / ตัวตั้งเวลา / ส่งออกไฟล์) และเปิดการส่งอัตโนมัติทุกวันที่ 21 */
+function setupAccrue() {
+  ensureAccrueTrigger_(accrueSettings_());
+  accrueFolder_();
+  UrlFetchApp.fetch('https://www.googleapis.com/discovery/v1/apis', { muteHttpExceptions: true });
+  console.log('MailApp เหลือโควตาวันนี้: ' + MailApp.getRemainingDailyQuota() + ' ฉบับ · ตัวตั้งเวลา: ' + (accrueTriggerOn_() ? 'เปิด' : 'ปิด'));
 }
 
 /* ------------------------------------------------------------------ */
