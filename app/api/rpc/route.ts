@@ -1,6 +1,9 @@
 import { appsScriptUrl } from '@/lib/config';
 import { body, ok, route } from '@/lib/http';
 
+// คำสั่งที่เขียนชีทหลายแถว (บันทึกหลายจุด / คำนวณค่าใช้จ่ายทั้งหมด) อาจใช้เวลาหลายวินาที
+export const maxDuration = 60;
+
 /** ฟังก์ชันใน apps-script/Code.gs ที่หน้าเว็บเรียกได้ (ตรงกับ API_FUNCTIONS) */
 const ALLOWED = new Set(['register', 'login', 'logout', 'changePassword', 'getAppData', 'addLogEntry', 'addLogEntries', 'getDashboard', 'recalcCosts', 'listBookings', 'saveBooking', 'reviewBooking', 'cancelBooking', 'addLocation', 'listUsers', 'updateUser', 'resetPassword']);
 

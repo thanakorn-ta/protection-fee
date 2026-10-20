@@ -185,8 +185,9 @@ function getAppData(token) {
 function addLogEntry(token, key, form) {
   checkLogKey_(key);
   const user = requireUser_(token);
-  const r = addLogRow_(user, key, validateLogForm_(key, form));
-  afterLogSaved_();
+  const f = validateLogForm_(key, form);
+  const r = addLogRow_(user, key, f);
+  afterLogSaved_(key, [String(f.date)]);
   return { row: r.row, no: r.no, recent: recentFor_(readLog_(key).recent, user) };
 }
 
@@ -207,7 +208,7 @@ function addLogEntries(token, key, common, places) {
     }
   });
   const saved = forms.map(f => addLogRow_(user, key, f));
-  afterLogSaved_();
+  afterLogSaved_(key, uniq_(forms.map(f => String(f.date))));
   return { saved, recent: recentFor_(readLog_(key).recent, user) };
 }
 
@@ -371,25 +372,24 @@ function logRows_(key) {
   const t = findTable_(key);
   const last = lastLogRow_(t);
   if (last <= t.headerRow) return { t, rows: [] };
-  const range = t.sheet.getRange(t.headerRow + 1, 1, last - t.headerRow, t.width);
-  const raw = range.getValues();
-  const disp = range.getDisplayValues();
+  // อ่านแค่ getValues (เร็วกว่า getDisplayValues ราวครึ่ง) — วันที่ได้เป็น Date ข้อความได้เป็น string อยู่แล้ว
+  const raw = t.sheet.getRange(t.headerRow + 1, 1, last - t.headerRow, t.width).getValues();
   const c = name => colIndex_(t.headers, name);
   const ci = {
     month: c('เดือน'), date: c('วันที่'), project: c('โครงการ'), expressway: c('สายทาง'), place: c('สถานที่'),
     worker: c('ผู้เข้างาน'), fee: c('ค่าอาหาร/รถคุ้มครอง'), feeText: c('ค่ารถคุ้มครอง'), payment: c('การชำระเงิน'),
   };
-  const pick = (d, i) => (i >= 0 ? String(d[i] || '') : '');
-  const rows = raw.map((r, i) => {
-    const d = disp[i];
-    const has = ci.date >= 0 && !(r[ci.date] === '' && d[ci.date] === '');
+  const str = v => (v instanceof Date ? Utilities.formatDate(v, CONFIG.TIMEZONE, 'd/M/yyyy') : String(v === null || v === undefined ? '' : v));
+  const pick = (r, i) => (i >= 0 ? str(r[i]).trim() : '');
+  const rows = raw.map(r => {
+    const has = ci.date >= 0 && r[ci.date] !== '' && r[ci.date] !== null;
     return {
       has,
-      iso: has ? dateIsoOf_(r[ci.date], d[ci.date]) : '',
-      ym: has ? ((ci.month >= 0 && ymOf_(r[ci.month], d[ci.month])) || ymOf_(r[ci.date], d[ci.date])) : null,
-      expressway: pick(d, ci.expressway), project: pick(d, ci.project), place: pick(d, ci.place), worker: pick(d, ci.worker),
-      fee: ci.fee < 0 ? 0 : typeof r[ci.fee] === 'number' ? r[ci.fee] : Number(String(d[ci.fee] || '').replace(/[^\d.-]/g, '')) || 0,
-      feeText: pick(d, ci.feeText), payment: pick(d, ci.payment),
+      iso: has ? dateIsoOf_(r[ci.date], str(r[ci.date])) : '',
+      ym: has ? ((ci.month >= 0 && ymOf_(r[ci.month], str(r[ci.month]))) || ymOf_(r[ci.date], str(r[ci.date]))) : null,
+      expressway: pick(r, ci.expressway), project: pick(r, ci.project), place: pick(r, ci.place), worker: pick(r, ci.worker),
+      fee: ci.fee < 0 ? 0 : typeof r[ci.fee] === 'number' ? r[ci.fee] : Number(str(r[ci.fee]).replace(/[^\d.-]/g, '')) || 0,
+      feeText: pick(r, ci.feeText), payment: pick(r, ci.payment),
     };
   });
   return { t, rows };
@@ -409,20 +409,33 @@ function ensureCostColumn_(key) {
   return findTable_(key);
 }
 
-/** คำนวณค่าใช้จ่ายทุกแถวลงคอลัมน์ "ค่าใช้จ่ายตามอัตรา" และสร้างแท็บสรุปรายเดือนใหม่ */
-function recalcCosts_() {
+/**
+ * คำนวณค่าใช้จ่ายลงคอลัมน์ "ค่าใช้จ่ายตามอัตรา" และสร้างแท็บสรุปรายเดือนใหม่
+ * onlyDates = { exat: ['2026-10-20'], bem: [] } → เขียนเฉพาะแถวของวันที่นั้น (หลังบันทึก — เร็วกว่าเขียนทั้งคอลัมน์)
+ */
+function recalcCosts_(onlyDates) {
   return withLock_(() => {
     const rates = readRates_();
     const result = {};
+    const ctx = {};
     ['exat', 'bem'].forEach(key => {
       const t = ensureCostColumn_(key);
       const rows = logRows_(key).rows;
       const costs = computeCosts_(rates, key.toUpperCase(), rows);
+      ctx[key] = { rows, costs };
       const col = colIndex_(t.headers, COST_HEADER) + 1;
-      if (rows.length) {
-        const range = t.sheet.getRange(t.headerRow + 1, col, rows.length, 1);
-        range.setValues(costs.map((c, i) => [rows[i].has && c.cost !== '' ? c.cost : '']));
-        range.setNumberFormat('#,##0');
+      const value = i => (rows[i].has && costs[i].cost !== '' ? costs[i].cost : '');
+      if (!onlyDates) {
+        if (rows.length) {
+          const range = t.sheet.getRange(t.headerRow + 1, col, rows.length, 1);
+          range.setValues(costs.map((c, i) => [value(i)]));
+          range.setNumberFormat('#,##0');
+        }
+      } else {
+        const dates = onlyDates[key] || [];
+        rows.forEach((r, i) => {
+          if (r.iso && dates.indexOf(r.iso) >= 0) t.sheet.getRange(t.headerRow + 1 + i, col).setValue(value(i)).setNumberFormat('#,##0');
+        });
       }
       result[key] = {
         rows: rows.filter(r => r.has).length,
@@ -431,19 +444,19 @@ function recalcCosts_() {
         total: costs.reduce((s, c) => s + (Number(c.cost) || 0), 0),
       };
     });
-    result.months = writeMonthlySummary_(rates);
+    result.months = writeMonthlySummary_(ctx);
     CacheService.getScriptCache().remove(DASH_CACHE_KEY);
     SpreadsheetApp.flush();
     return result;
   });
 }
 
-/** สรุปค่าใช้จ่ายรายเดือน (ตามคอลัมน์ "เดือน") จากทั้งสองตาราง */
-function monthlyCosts_(rates) {
+/** สรุปค่าใช้จ่ายรายเดือน (ตามคอลัมน์ "เดือน") — ctx = { exat: { rows, costs }, bem: {...} } */
+function monthlyCosts_(ctx) {
   const months = {};
   ['exat', 'bem'].forEach(key => {
-    const rows = logRows_(key).rows;
-    const costs = computeCosts_(rates, key.toUpperCase(), rows);
+    const rows = ctx[key].rows;
+    const costs = ctx[key].costs;
     rows.forEach((r, i) => {
       if (!r.has || !r.ym) return;
       const k = r.ym.y + '-' + String(r.ym.m).padStart(2, '0');
@@ -465,8 +478,8 @@ function monthlyCosts_(rates) {
   return Object.keys(months).sort().map(k => months[k]);
 }
 
-function writeMonthlySummary_(rates) {
-  const list = monthlyCosts_(rates);
+function writeMonthlySummary_(ctx) {
+  const list = monthlyCosts_(ctx);
   const ss = spreadsheet_();
   const sh = ss.getSheetByName(SUMMARY_SHEET) || ss.insertSheet(SUMMARY_SHEET);
   const head = ['เดือน', 'EXAT จุด', 'EXAT คืน', 'EXAT ค่าใช้จ่าย (บาท)', 'EXAT หักค่าอาหาร (บาท)',
@@ -490,10 +503,12 @@ function writeMonthlySummary_(rates) {
 }
 
 /** หลังบันทึกการใช้รถ — คิดค่าใช้จ่ายใหม่ ถ้าล้มเหลวไม่ให้กระทบการบันทึก */
-function afterLogSaved_() {
+function afterLogSaved_(key, dates) {
   CacheService.getScriptCache().remove(DASH_CACHE_KEY);
   try {
-    recalcCosts_();
+    const only = { exat: [], bem: [] };
+    only[key] = dates;
+    recalcCosts_(only);
   } catch (err) {
     console.error('recalcCosts_ failed', err);
   }
