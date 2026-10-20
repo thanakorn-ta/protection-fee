@@ -252,9 +252,11 @@ function addLogRow_(user, key, form) {
     const prev = last > t.headerRow ? sh.getRange(last, 1, 1, t.width).getValues()[0] : null;
     if (prev) sh.getRange(last, 1, 1, t.width).copyTo(sh.getRange(target, 1, 1, t.width), { formatOnly: true });
 
-    const set = (name, value) => {
+    // เตรียมค่าทุกคอลัมน์ก่อน แล้วค่อยเขียน — ถ้าเขียนไม่สำเร็จจะล้างแถวคืน ไม่ให้เหลือแถวครึ่ง ๆ กลาง ๆ
+    const values = [];
+    const put = (name, value) => {
       const i = c(name);
-      if (i >= 0) sh.getRange(target, i + 1).setValue(value);
+      if (i >= 0) values.push([i + 1, value]);
     };
 
     // บางแถวมีเลขลำดับเตรียมไว้ล่วงหน้า — ใช้เลขเดิมถ้ามี
@@ -263,27 +265,82 @@ function addLogRow_(user, key, form) {
     if (no === '' || no === null) {
       const p = prev ? Number(prev[noIdx]) : 0;
       no = (isFinite(p) ? p : 0) + 1;
-      set('ลำดับ', no);
+      put('ลำดับ', no);
     }
-    set('เดือน', monthValue_(date, prev ? prev[c('เดือน')] : ''));
-    set('วันที่', dateValue_(date, prev ? prev[c('วันที่')] : ''));
-    set('รถคุ้มครอง', key === 'exat' ? 'EXAT' : 'BEM');
-    set('สายทาง', text_(form.expressway));
-    set('โครงการ', text_(form.project));
-    set('สถานที่', text_(form.place));
-    set('ประเภทงาน', text_(form.jobType));
-    set('ผู้เข้างาน', text_(form.worker));
+    put('เดือน', monthValue_(date, prev ? prev[c('เดือน')] : ''));
+    put('วันที่', dateValue_(date, prev ? prev[c('วันที่')] : ''));
+    put('รถคุ้มครอง', key === 'exat' ? 'EXAT' : 'BEM');
+    put('สายทาง', text_(form.expressway));
+    put('โครงการ', text_(form.project));
+    put('สถานที่', text_(form.place));
+    put('ประเภทงาน', text_(form.jobType));
+    put('ผู้เข้างาน', text_(form.worker));
     if (key === 'exat') {
-      set('ค่าอาหาร/รถคุ้มครอง', fee);
+      put('ค่าอาหาร/รถคุ้มครอง', fee);
     } else {
-      set('ค่ารถคุ้มครอง', text_(form.feeText));
-      set('การชำระเงิน', text_(form.payment));
+      put('ค่ารถคุ้มครอง', text_(form.feeText));
+      put('การชำระเงิน', text_(form.payment));
     }
 
-    audit_(user.username, 'add_' + key, sh.getName(), target, { no, date: form.date, place: form.place });
+    const warnings = [];
+    const written = [];
+    try {
+      values.forEach(([col, value]) => {
+        written.push(col);
+        writeCellValidated_(sh.getRange(target, col), value, t.rawHeaders[col - 1] || '', warnings);
+      });
+    } catch (err) {
+      written.forEach(col => sh.getRange(target, col).clearContent());
+      SpreadsheetApp.flush();
+      throw new Error('บันทึกไม่สำเร็จ (ยังไม่ได้เขียนลงชีท): ' + err.message);
+    }
+
+    audit_(user.username, 'add_' + key, sh.getName(), target, { no, date: form.date, place: form.place, warnings });
     SpreadsheetApp.flush();
-    return { row: target, no, place: String(form.place) };
+    return { row: target, no, place: String(form.place), warnings };
   });
+}
+
+/**
+ * เขียนค่าลงเซลล์ให้ผ่านกฎตรวจสอบข้อมูล (data validation) ของชีท
+ * - ค่าที่ต่างจากรายการแค่ช่องว่าง/ขึ้นบรรทัด → ใช้ค่าตามรายการในชีท
+ * - ค่าที่ไม่มีในรายการจริง ๆ (เช่น BEM สายทางที่ไม่ใช่ ศรีรัช) → ยังบันทึก แต่เปลี่ยนกฎของเซลล์นั้นเป็น "แสดงคำเตือน"
+ */
+function writeCellValidated_(cell, value, header, warnings) {
+  const rule = cell.getDataValidation();
+  if (rule && typeof value === 'string' && value !== '') {
+    const allowed = validationList_(rule);
+    if (allowed) {
+      const key = norm_(value);
+      const hit = allowed.find(a => norm_(a) === key);
+      if (hit !== undefined) {
+        value = hit;
+      } else if (!rule.getAllowInvalid()) {
+        cell.setDataValidation(rule.copy().setAllowInvalid(true).build());
+        warnings.push(header + ' “' + value + '” ไม่อยู่ในรายการของชีท');
+      }
+    }
+  }
+  try {
+    cell.setValue(value);
+  } catch (err) {
+    if (!rule || rule.getAllowInvalid()) throw err;
+    cell.setDataValidation(rule.copy().setAllowInvalid(true).build());
+    warnings.push(header + ' ไม่ผ่านกฎตรวจสอบของชีท');
+    cell.setValue(value);
+  }
+}
+
+/** รายการค่าที่กฎอนุญาต (dropdown จากรายการหรือจากช่วงเซลล์) — กฎแบบอื่นคืน null */
+function validationList_(rule) {
+  const type = rule.getCriteriaType();
+  const vals = rule.getCriteriaValues() || [];
+  const C = SpreadsheetApp.DataValidationCriteria;
+  if (type === C.VALUE_IN_LIST) return (vals[0] || []).map(String);
+  if (type === C.VALUE_IN_RANGE && vals[0] && vals[0].getDisplayValues) {
+    return [].concat.apply([], vals[0].getDisplayValues()).map(String).filter(s => s !== '');
+  }
+  return null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -328,7 +385,7 @@ function readRates_() {
     const r = values[i];
     const provider = String(r[0] || '').trim().toUpperCase();
     if (provider !== 'EXAT' && provider !== 'BEM') continue;
-    const from = r[5] instanceof Date ? Utilities.formatDate(r[5], CONFIG.TIMEZONE, 'yyyy-MM-dd') : dateIsoOf_('', r[5]);
+    const from = r[5] instanceof Date ? Utilities.formatDate(r[5], sheetTz_(), 'yyyy-MM-dd') : dateIsoOf_('', r[5]);
     out.push({
       provider,
       expressways: String(r[1] || '').split(/[,\n]/).map(norm_).filter(Boolean),
@@ -387,7 +444,7 @@ function logRows_(key) {
     month: c('เดือน'), date: c('วันที่'), project: c('โครงการ'), expressway: c('สายทาง'), place: c('สถานที่'),
     worker: c('ผู้เข้างาน'), fee: c('ค่าอาหาร/รถคุ้มครอง'), feeText: c('ค่ารถคุ้มครอง'), payment: c('การชำระเงิน'),
   };
-  const str = v => (v instanceof Date ? Utilities.formatDate(v, CONFIG.TIMEZONE, 'd/M/yyyy') : String(v === null || v === undefined ? '' : v));
+  const str = v => (v instanceof Date ? Utilities.formatDate(v, sheetTz_(), 'd/M/yyyy') : String(v === null || v === undefined ? '' : v));
   const pick = (r, i) => (i >= 0 ? str(r[i]).trim() : '');
   const rows = raw.map(r => {
     const has = ci.date >= 0 && r[ci.date] !== '' && r[ci.date] !== null;
@@ -537,7 +594,7 @@ function recalcCostsNow() {
 
 /** วันที่จากเซลล์ → "2026-10-21" — Date, "5 พ.ค. 22", "16/9/2026", "2026-09-16" */
 function dateIsoOf_(raw, disp) {
-  if (raw instanceof Date && !isNaN(raw.getTime())) return Utilities.formatDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  if (raw instanceof Date && !isNaN(raw.getTime())) return Utilities.formatDate(raw, sheetTz_(), 'yyyy-MM-dd');
   const s = String(disp || raw || '').trim();
   if (!s) return '';
   const iso = (y, m, d) => y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
@@ -637,7 +694,7 @@ function getDashboard(token, fresh) {
 /** เดือน/ปี จากเซลล์ — Date, "พ.ค.-22", "5 พ.ค. 22", "Sep-26", "16/9/2026" → { y: ค.ศ., m: 1–12 } */
 function ymOf_(raw, disp) {
   if (raw instanceof Date && !isNaN(raw.getTime())) {
-    return { y: Number(Utilities.formatDate(raw, CONFIG.TIMEZONE, 'yyyy')), m: Number(Utilities.formatDate(raw, CONFIG.TIMEZONE, 'M')) };
+    return { y: Number(Utilities.formatDate(raw, sheetTz_(), 'yyyy')), m: Number(Utilities.formatDate(raw, sheetTz_(), 'M')) };
   }
   const s = String(disp || raw || '').trim();
   if (!s) return null;
@@ -1233,7 +1290,18 @@ function monthValue_(date, prev) {
     const sep = /\s/.test(prev.trim()) && prev.indexOf('-') < 0 ? ' ' : '-';
     return monthNameLike_(prev, date) + sep + yearLike_(prev, date);
   }
-  return new Date(date.getFullYear(), date.getMonth(), 1);
+  return sheetDate_(date.getFullYear(), date.getMonth() + 1, 1);
+}
+
+/** เที่ยงคืนตามเขตเวลาของชีท (ไม่ใช่ของสคริปต์) — กันวันที่/เดือนเลื่อนเมื่อชีทตั้งเขตเวลาอื่น */
+function sheetDate_(y, m, d) {
+  return Utilities.parseDate(y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0'), sheetTz_(), 'yyyy-MM-dd');
+}
+
+let sheetTzCache_ = '';
+function sheetTz_() {
+  if (!sheetTzCache_) sheetTzCache_ = spreadsheet_().getSpreadsheetTimeZone() || CONFIG.TIMEZONE;
+  return sheetTzCache_;
 }
 
 /** วันที่ — ถ้าแถวก่อนหน้าเป็นข้อความ (เช่น "5 พ.ค. 22") เขียนเป็นข้อความแบบเดียวกัน ไม่งั้นเขียนเป็นวันที่ */
@@ -1242,7 +1310,7 @@ function dateValue_(date, prev) {
     if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(prev.trim())) return date.getDate() + '/' + (date.getMonth() + 1) + '/' + yearLike_(prev, date);
     return date.getDate() + ' ' + monthNameLike_(prev, date) + ' ' + yearLike_(prev, date);
   }
-  return date;
+  return sheetDate_(date.getFullYear(), date.getMonth() + 1, date.getDate());
 }
 
 /** ปีแบบเดียวกับข้อความเดิม — "22" ค.ศ. 2 หลัก, "69" พ.ศ. 2 หลัก, "2569" พ.ศ. 4 หลัก */

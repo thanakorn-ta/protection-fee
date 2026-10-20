@@ -1286,7 +1286,9 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       resetEntry({ date: common.date, worker: common.worker });
       renderRecent();
       var nos = res.saved.map(function (s) { return s.no; });
-      toast('บันทึกลงชีทแล้ว ' + nos.length + ' รายการ — ลำดับที่ ' + (nos.length > 1 ? nos[0] + '–' + nos[nos.length - 1] : nos[0]));
+      var warn = uniqList([].concat.apply([], res.saved.map(function (s) { return s.warnings || []; })));
+      toast('บันทึกลงชีทแล้ว ' + nos.length + ' รายการ — ลำดับที่ ' + (nos.length > 1 ? nos[0] + '–' + nos[nos.length - 1] : nos[0]) +
+        (warn.length ? ' · หมายเหตุ: ' + warn.join(', ') + ' (ชีทจะขึ้นเครื่องหมายเตือนที่เซลล์นั้น)' : ''));
     });
   });
 
