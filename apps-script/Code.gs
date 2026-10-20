@@ -917,6 +917,9 @@ function bookingToForms_(b) {
     else { f.feeText = i === 0 ? 'คิดค่ารถ 1 คืน' : ''; f.payment = i === 0 ? 'รอออก PR' : ''; }
     return f;
   });
+  // จุดที่ไม่อยู่ในฐานข้อมูลและการจองไม่ได้ระบุสายทาง: ใช้สายทางของจุดอื่นในการจองเดียวกัน
+  const knownWay = (forms.find(f => f.expressway) || {}).expressway || (key === 'bem' ? 'ศรีรัช' : '');
+  forms.forEach(f => { if (!f.expressway) f.expressway = knownWay; });
   return { key, forms };
 }
 
