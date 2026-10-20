@@ -53,7 +53,7 @@ function doGet() {
 /* ------------------------------------------------------------------ */
 
 const API_FUNCTIONS = {
-  register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, listBookings, saveBooking, reviewBooking, cancelBooking,
+  register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking,
   addLocation, listUsers, updateUser, resetPassword,
 };
 
@@ -173,6 +173,7 @@ function getAppData(token) {
       mediaSites: uniq_(PROJECTS.concat(locations.map(l => l.mediaSite))),
     },
     recent: { exat: recentFor_(exat.recent, user), bem: recentFor_(bem.recent, user) },
+    rates: readRates_().map(r => ({ provider: r.provider, expressways: r.expressways, rate: r.rate, every: r.every, food: r.food, from: r.from })),
     bookingPending: user.role === 'admin' ? readBookings_(bookingsSheet_(false)).filter(b => b.status === 'pending').length : 0,
   };
 }
@@ -185,7 +186,7 @@ function addLogEntry(token, key, form) {
   checkLogKey_(key);
   const user = requireUser_(token);
   const r = addLogRow_(user, key, validateLogForm_(key, form));
-  CacheService.getScriptCache().remove(DASH_CACHE_KEY);
+  afterLogSaved_();
   return { row: r.row, no: r.no, recent: recentFor_(readLog_(key).recent, user) };
 }
 
@@ -206,7 +207,7 @@ function addLogEntries(token, key, common, places) {
     }
   });
   const saved = forms.map(f => addLogRow_(user, key, f));
-  CacheService.getScriptCache().remove(DASH_CACHE_KEY);
+  afterLogSaved_();
   return { saved, recent: recentFor_(readLog_(key).recent, user) };
 }
 
@@ -288,11 +289,251 @@ function addLogRow_(user, key, form) {
 /* แดชบอร์ดสรุปรายปี                                                     */
 /* ------------------------------------------------------------------ */
 
-const DASH_CACHE_KEY = 'dash_v1';
+const DASH_CACHE_KEY = 'dash_v2';
+
+/* ------------------------------------------------------------------ */
+/* ค่าใช้จ่ายตามอัตรา                                                     */
+/* EXAT: จุดละ 3,000 หักค่าอาหาร 400 จากจุดแรกของคืน (4 จุด = 11,600)        */
+/* BEM : 2,000 ต่อคืน ใช้ต่อได้สูงสุด 5 จุด (จุดที่ 6 เริ่มคิดใหม่)              */
+/* อัตราแก้ได้ในแท็บ "อัตราค่ารถคุ้มครอง"                                      */
+/* ------------------------------------------------------------------ */
+
+const RATE_SHEET = 'อัตราค่ารถคุ้มครอง';
+const RATE_HEADERS = ['รถคุ้มครอง', 'สายทาง (คั่นด้วย ,)', 'ค่ารถ (บาท)', 'คิดค่ารถทุกกี่จุด', 'หักค่าอาหารจุดแรก (บาท)', 'ใช้ตั้งแต่วันที่ (ว่าง = ทุกวัน)', 'หมายเหตุ'];
+const RATE_DEFAULTS = [
+  ['EXAT', 'เฉลิมมหานคร, ฉลองรัช, ศรีรัช', 3000, 1, 400, '', 'จุดละ 3,000 บาท หักค่าอาหาร 400 จากจุดแรกของคืน — เช่น 4 จุด = 2,600 + 3,000 + 3,000 + 3,000 = 11,600 บาท'],
+  ['BEM', 'ศรีรัช', 2000, 5, 0, '', '2,000 บาท/คืน ไม่มีค่าอาหาร ใช้ต่อได้สูงสุด 5 จุด (จุดที่ 2–5 = 0) จุดที่ 6 เริ่มคิดใหม่'],
+];
+const COST_HEADER = 'ค่าใช้จ่ายตามอัตรา (บาท)';
+const SUMMARY_SHEET = 'สรุปค่าใช้จ่ายรายเดือน';
+
+function ratesSheet_() {
+  const ss = spreadsheet_();
+  let sh = ss.getSheetByName(RATE_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(RATE_SHEET);
+    sh.getRange(1, 1, 1, RATE_HEADERS.length).setValues([RATE_HEADERS]).setFontWeight('bold');
+    sh.getRange(2, 1, RATE_DEFAULTS.length, RATE_HEADERS.length).setValues(RATE_DEFAULTS);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+/** อัตราทั้งหมด เรียงจากที่ใช้ตั้งแต่วันที่ล่าสุดก่อน */
+function readRates_() {
+  const values = ratesSheet_().getDataRange().getValues();
+  const out = [];
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    const provider = String(r[0] || '').trim().toUpperCase();
+    if (provider !== 'EXAT' && provider !== 'BEM') continue;
+    const from = r[5] instanceof Date ? Utilities.formatDate(r[5], CONFIG.TIMEZONE, 'yyyy-MM-dd') : dateIsoOf_('', r[5]);
+    out.push({
+      provider,
+      expressways: String(r[1] || '').split(/[,\n]/).map(norm_).filter(Boolean),
+      expresswayText: String(r[1] || '').trim(),
+      rate: Number(r[2]) || 0,
+      every: Math.max(1, Math.floor(Number(r[3]) || 1)),
+      food: Number(r[4]) || 0,
+      from: from || '',
+    });
+  }
+  return out.sort((a, b) => (b.from || '').localeCompare(a.from || ''));
+}
+
+function ruleFor_(rates, provider, expressway, iso) {
+  const e = norm_(expressway);
+  return rates.find(r => r.provider === provider && r.expressways.indexOf(e) >= 0 && (!r.from || iso >= r.from)) || null;
+}
+
+/**
+ * คิดค่าใช้จ่ายทีละจุด — rows เรียงตามลำดับในชีท [{ iso, expressway }]
+ * นับจุดในคืนเดียวกัน (วันที่เดียวกัน + อัตราเดียวกัน) เริ่มที่ 1
+ */
+function computeCosts_(rates, provider, rows) {
+  const counters = {};
+  return rows.map(r => {
+    if (!r.iso) return { cost: '', note: 'no-date' };
+    const rule = ruleFor_(rates, provider, r.expressway, r.iso);
+    if (!rule) return { cost: '', note: 'no-rate' };
+    const k = r.iso + '|' + rates.indexOf(rule);
+    const i = counters[k] = (counters[k] || 0) + 1;
+    const charged = (i - 1) % rule.every === 0;
+    let cost = charged ? rule.rate : 0;
+    let food = 0;
+    if (i === 1 && rule.food) { cost -= rule.food; food = rule.food; }
+    return { cost, food, index: i, charged, night: i === 1 };
+  });
+}
+
+/** อ่านแถวในตาราง EXAT / BEM พร้อมวันที่ (ISO) และเดือนที่ลงบัญชี */
+function logRows_(key) {
+  const t = findTable_(key);
+  const last = lastLogRow_(t);
+  if (last <= t.headerRow) return { t, rows: [] };
+  const range = t.sheet.getRange(t.headerRow + 1, 1, last - t.headerRow, t.width);
+  const raw = range.getValues();
+  const disp = range.getDisplayValues();
+  const c = name => colIndex_(t.headers, name);
+  const ci = {
+    month: c('เดือน'), date: c('วันที่'), project: c('โครงการ'), expressway: c('สายทาง'), place: c('สถานที่'),
+    worker: c('ผู้เข้างาน'), fee: c('ค่าอาหาร/รถคุ้มครอง'), feeText: c('ค่ารถคุ้มครอง'), payment: c('การชำระเงิน'),
+  };
+  const pick = (d, i) => (i >= 0 ? String(d[i] || '') : '');
+  const rows = raw.map((r, i) => {
+    const d = disp[i];
+    const has = ci.date >= 0 && !(r[ci.date] === '' && d[ci.date] === '');
+    return {
+      has,
+      iso: has ? dateIsoOf_(r[ci.date], d[ci.date]) : '',
+      ym: has ? ((ci.month >= 0 && ymOf_(r[ci.month], d[ci.month])) || ymOf_(r[ci.date], d[ci.date])) : null,
+      expressway: pick(d, ci.expressway), project: pick(d, ci.project), place: pick(d, ci.place), worker: pick(d, ci.worker),
+      fee: ci.fee < 0 ? 0 : typeof r[ci.fee] === 'number' ? r[ci.fee] : Number(String(d[ci.fee] || '').replace(/[^\d.-]/g, '')) || 0,
+      feeText: pick(d, ci.feeText), payment: pick(d, ci.payment),
+    };
+  });
+  return { t, rows };
+}
+
+/** เพิ่มคอลัมน์ "ค่าใช้จ่ายตามอัตรา (บาท)" ต่อท้ายตาราง ถ้ายังไม่มี */
+function ensureCostColumn_(key) {
+  const t = findTable_(key);
+  if (colIndex_(t.headers, COST_HEADER) >= 0) return t;
+  const sh = t.sheet;
+  const col = t.width + 1;
+  if (sh.getMaxColumns() < col) sh.insertColumnAfter(sh.getMaxColumns());
+  sh.getRange(t.headerRow, t.width).copyTo(sh.getRange(t.headerRow, col), { formatOnly: true });
+  sh.getRange(t.headerRow, col).setValue(COST_HEADER);
+  sh.setColumnWidth(col, 170);
+  delete tableCache_[key];
+  return findTable_(key);
+}
+
+/** คำนวณค่าใช้จ่ายทุกแถวลงคอลัมน์ "ค่าใช้จ่ายตามอัตรา" และสร้างแท็บสรุปรายเดือนใหม่ */
+function recalcCosts_() {
+  return withLock_(() => {
+    const rates = readRates_();
+    const result = {};
+    ['exat', 'bem'].forEach(key => {
+      const t = ensureCostColumn_(key);
+      const rows = logRows_(key).rows;
+      const costs = computeCosts_(rates, key.toUpperCase(), rows);
+      const col = colIndex_(t.headers, COST_HEADER) + 1;
+      if (rows.length) {
+        const range = t.sheet.getRange(t.headerRow + 1, col, rows.length, 1);
+        range.setValues(costs.map((c, i) => [rows[i].has && c.cost !== '' ? c.cost : '']));
+        range.setNumberFormat('#,##0');
+      }
+      result[key] = {
+        rows: rows.filter(r => r.has).length,
+        priced: costs.filter(c => c.cost !== '').length,
+        noRate: costs.filter(c => c.note === 'no-rate').length,
+        total: costs.reduce((s, c) => s + (Number(c.cost) || 0), 0),
+      };
+    });
+    result.months = writeMonthlySummary_(rates);
+    CacheService.getScriptCache().remove(DASH_CACHE_KEY);
+    SpreadsheetApp.flush();
+    return result;
+  });
+}
+
+/** สรุปค่าใช้จ่ายรายเดือน (ตามคอลัมน์ "เดือน") จากทั้งสองตาราง */
+function monthlyCosts_(rates) {
+  const months = {};
+  ['exat', 'bem'].forEach(key => {
+    const rows = logRows_(key).rows;
+    const costs = computeCosts_(rates, key.toUpperCase(), rows);
+    rows.forEach((r, i) => {
+      if (!r.has || !r.ym) return;
+      const k = r.ym.y + '-' + String(r.ym.m).padStart(2, '0');
+      const m = months[k] || (months[k] = {
+        ym: k,
+        exat: { points: 0, nights: 0, charges: 0, cost: 0, food: 0, noRate: 0 },
+        bem: { points: 0, nights: 0, charges: 0, cost: 0, food: 0, noRate: 0 },
+      });
+      const p = m[key];
+      const c = costs[i];
+      p.points++;
+      if (c.cost === '') { p.noRate++; return; }
+      p.cost += c.cost;
+      p.food += c.food || 0;
+      if (c.night) p.nights++;
+      if (c.charged) p.charges++;
+    });
+  });
+  return Object.keys(months).sort().map(k => months[k]);
+}
+
+function writeMonthlySummary_(rates) {
+  const list = monthlyCosts_(rates);
+  const ss = spreadsheet_();
+  const sh = ss.getSheetByName(SUMMARY_SHEET) || ss.insertSheet(SUMMARY_SHEET);
+  const head = ['เดือน', 'EXAT จุด', 'EXAT คืน', 'EXAT ค่าใช้จ่าย (บาท)', 'EXAT หักค่าอาหาร (บาท)',
+    'BEM จุด', 'BEM คิดค่ารถ (ครั้ง)', 'BEM ค่าใช้จ่าย (บาท)', 'รวมค่าใช้จ่าย (บาท)', 'จุดที่ไม่มีอัตรา'];
+  const body = list.map(m => {
+    const [y, mo] = m.ym.split('-').map(Number);
+    return [THAI_MONTHS[mo - 1] + ' ' + (y + 543),
+      m.exat.points, m.exat.nights, m.exat.cost, m.exat.food,
+      m.bem.points, m.bem.charges, m.bem.cost,
+      m.exat.cost + m.bem.cost, m.exat.noRate + m.bem.noRate];
+  });
+  sh.clearContents();
+  sh.getRange(1, 1, 1, head.length).setValues([head]).setFontWeight('bold');
+  if (body.length) {
+    sh.getRange(2, 1, body.length, head.length).setValues(body);
+    sh.getRange(2, 2, body.length, head.length - 1).setNumberFormat('#,##0');
+  }
+  sh.getRange(body.length + 3, 1).setValue('สร้างอัตโนมัติจากแท็บ EXAT / BEM ตามแท็บ "' + RATE_SHEET + '" — อัปเดตล่าสุด ' + nowText_() + ' (ห้ามแก้ในแท็บนี้ ระบบจะเขียนทับ)');
+  sh.setFrozenRows(1);
+  return list.length;
+}
+
+/** หลังบันทึกการใช้รถ — คิดค่าใช้จ่ายใหม่ ถ้าล้มเหลวไม่ให้กระทบการบันทึก */
+function afterLogSaved_() {
+  CacheService.getScriptCache().remove(DASH_CACHE_KEY);
+  try {
+    recalcCosts_();
+  } catch (err) {
+    console.error('recalcCosts_ failed', err);
+  }
+}
+
+/** ผู้ดูแลระบบสั่งคำนวณใหม่ทั้งหมด (เช่นหลังแก้อัตราในชีท) */
+function recalcCosts(token) {
+  requireUser_(token, true);
+  return recalcCosts_();
+}
+
+/** กด Run ในหน้า Apps Script เพื่อคำนวณใหม่ทั้งหมด (ไม่ต้องเข้าสู่ระบบ) */
+function recalcCostsNow() {
+  const r = recalcCosts_();
+  console.log(JSON.stringify(r));
+  return r;
+}
+
+/** วันที่จากเซลล์ → "2026-10-21" — Date, "5 พ.ค. 22", "16/9/2026", "2026-09-16" */
+function dateIsoOf_(raw, disp) {
+  if (raw instanceof Date && !isNaN(raw.getTime())) return Utilities.formatDate(raw, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  const s = String(disp || raw || '').trim();
+  if (!s) return '';
+  const iso = (y, m, d) => y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+  let m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(s);
+  if (m) { const ym = ym_(m[3], m[2]); return ym ? iso(ym.y, ym.m, Number(m[1])) : ''; }
+  m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(s);
+  if (m) { const ym = ym_(m[1], m[2]); return ym ? iso(ym.y, ym.m, Number(m[3])) : ''; }
+  m = /^(\d{1,2})\s*(\D+?)\s*(\d{2,4})$/.exec(s);
+  if (m) { const ym = ymOf_('', m[2] + ' ' + m[3]); return ym ? iso(ym.y, ym.m, Number(m[1])) : ''; }
+  return '';
+}
+
+/* ------------------------------------------------------------------ */
+/* แดชบอร์ดสรุปรายปี                                                     */
+/* ------------------------------------------------------------------ */
 
 /**
  * สรุปตาราง EXAT / BEM แยกปีและเดือน (ใช้คอลัมน์ "เดือน" = เดือนที่ลงบัญชี ถ้าว่างใช้ "วันที่")
- * คืน { updatedAt, years: [2026, 2025, ...], byYear: { 2026: { exat: {...}, bem: {...} } } }
+ * cost = ค่าใช้จ่ายตามอัตรา, amount = ค่าอาหาร/รถคุ้มครองที่กรอกในชีท (EXAT)
  */
 function getDashboard(token, fresh) {
   requireUser_(token);
@@ -300,53 +541,49 @@ function getDashboard(token, fresh) {
   const hit = fresh ? null : cache.get(DASH_CACHE_KEY);
   if (hit) return JSON.parse(hit);
 
+  const rates = readRates_();
   const byYear = {};
   const newPart = () => ({
-    count: 0, amount: 0, nights: 0, pending: 0, unknownDate: 0,
-    months: Array.from({ length: 12 }, () => ({ count: 0, amount: 0, nights: 0 })),
+    count: 0, amount: 0, nights: 0, pending: 0, cost: 0, food: 0, charges: 0, noRate: 0,
+    months: Array.from({ length: 12 }, () => ({ count: 0, amount: 0, nights: 0, cost: 0 })),
     byProject: {}, byExpressway: {}, byWorker: {}, byPlace: {},
   });
-  const inc = (map, name, n) => {
+  const inc = (map, name) => {
     name = String(name || '').replace(/\s+/g, ' ').trim() || '(ไม่ระบุ)';
-    map[name] = (map[name] || 0) + (n === undefined ? 1 : n);
+    map[name] = (map[name] || 0) + 1;
   };
   let unknown = 0;
 
   ['exat', 'bem'].forEach(key => {
-    const t = findTable_(key);
-    const last = lastLogRow_(t);
-    if (last <= t.headerRow) return;
-    const range = t.sheet.getRange(t.headerRow + 1, 1, last - t.headerRow, t.width);
-    const raw = range.getValues();
-    const disp = range.getDisplayValues();
-    const c = name => colIndex_(t.headers, name);
-    const ci = {
-      month: c('เดือน'), date: c('วันที่'), project: c('โครงการ'), expressway: c('สายทาง'), place: c('สถานที่'),
-      worker: c('ผู้เข้างาน'), fee: c('ค่าอาหาร/รถคุ้มครอง'), feeText: c('ค่ารถคุ้มครอง'), payment: c('การชำระเงิน'),
-    };
-    raw.forEach((r, i) => {
-      const d = disp[i];
-      if (ci.date < 0 || (r[ci.date] === '' && d[ci.date] === '')) return;
-      const ym = (ci.month >= 0 && ymOf_(r[ci.month], d[ci.month])) || ymOf_(r[ci.date], d[ci.date]);
-      if (!ym) { unknown++; return; }
-      const year = byYear[ym.y] || (byYear[ym.y] = { exat: newPart(), bem: newPart() });
+    const rows = logRows_(key).rows;
+    const costs = computeCosts_(rates, key.toUpperCase(), rows);
+    rows.forEach((r, i) => {
+      if (!r.has) return;
+      if (!r.ym) { unknown++; return; }
+      const year = byYear[r.ym.y] || (byYear[r.ym.y] = { exat: newPart(), bem: newPart() });
       const part = year[key];
-      const month = part.months[ym.m - 1];
+      const month = part.months[r.ym.m - 1];
+      const c = costs[i];
       part.count++;
       month.count++;
-      if (key === 'exat') {
-        const fee = typeof r[ci.fee] === 'number' ? r[ci.fee] : Number(String(d[ci.fee] || '').replace(/[^\d.-]/g, '')) || 0;
-        part.amount += fee;
-        month.amount += fee;
-        inc(part.byProject, d[ci.project], 1);
-      } else {
-        if (/คิดค่ารถ/.test(d[ci.feeText] || '')) { part.nights++; month.nights++; }
-        if (/^\s*รอ/.test(d[ci.payment] || '')) part.pending++;
-        inc(part.byProject, d[ci.project], 1);
+      if (c.cost === '') part.noRate++;
+      else {
+        part.cost += c.cost;
+        month.cost += c.cost;
+        part.food += c.food || 0;
+        if (c.charged) part.charges++;
       }
-      inc(part.byExpressway, d[ci.expressway]);
-      inc(part.byWorker, d[ci.worker]);
-      inc(part.byPlace, d[ci.place]);
+      if (key === 'exat') {
+        part.amount += r.fee;
+        month.amount += r.fee;
+      } else {
+        if (/คิดค่ารถ/.test(r.feeText)) { part.nights++; month.nights++; }
+        if (/^\s*รอ/.test(r.payment)) part.pending++;
+      }
+      inc(part.byProject, r.project);
+      inc(part.byExpressway, r.expressway);
+      inc(part.byWorker, r.worker);
+      inc(part.byPlace, r.place);
     });
   });
 
@@ -367,6 +604,7 @@ function getDashboard(token, fresh) {
     years: Object.keys(byYear).map(Number).sort((a, b) => b - a),
     byYear,
     unknown,
+    rates: rates.map(r => ({ provider: r.provider, expressways: r.expresswayText, rate: r.rate, every: r.every, food: r.food, from: r.from })),
   };
   const json = JSON.stringify(out);
   if (json.length < 90000) cache.put(DASH_CACHE_KEY, json, 300);

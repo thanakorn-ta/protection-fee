@@ -186,6 +186,11 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
 .code-tag.muted { background: var(--seg); color: var(--muted); }
 .picked { display: flex; flex-direction: column; gap: 10px; }
 .pick { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: start; padding: 12px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; }
+.cost-line { font-size: 13px; color: var(--green-ink); }
+.cost-line b { font-family: var(--mono); font-size: 15px; }
+.picked-total { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 12px 14px; border-radius: 12px; background: var(--green-soft); color: var(--green-ink); font-size: 15px; }
+.picked-total b { font-family: var(--mono); font-size: 20px; }
+.picked-total .sub { flex-basis: 100%; }
 .pick-no { width: 26px; height: 26px; border-radius: 50%; background: var(--amber); color: var(--ink); font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; margin-top: 2px; }
 .pick-title { font-weight: 600; line-height: 1.4; }
 .pick-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
@@ -207,6 +212,9 @@ tr.fresh td { background: var(--green-soft); }
 .kpi { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; }
 .kpi.exat { border-top: 4px solid var(--green); }
 .kpi.bem { border-top: 4px solid var(--amber); }
+.kpi.total { background: var(--green); border-color: var(--green); color: #fff; }
+.kpi.total .k-label, .kpi.total .k-sub, .kpi.total .k-num small { color: var(--on-green); }
+.rate-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
 .k-label { font-size: 14px; color: var(--muted); font-weight: 600; }
 .k-num { font-family: var(--mono); font-size: 30px; line-height: 1.2; }
 .k-num small { font-family: 'IBM Plex Sans Thai', system-ui, sans-serif; font-size: 15px; color: var(--muted); }
@@ -465,6 +473,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
             <div class="results" id="place-results" role="listbox" hidden></div>
           </div>
           <div class="picked" id="picked"></div>
+          <div class="picked-total" id="picked-total" hidden></div>
           <p class="sub" id="picked-hint">ยังไม่ได้เลือกจุด — พิมพ์ค้นหาแล้วกดเลือก (กด Enter เพื่อเลือกอันแรก)</p>
         </section>
 
@@ -565,6 +574,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
           <select id="dash-year"></select>
         </label>
         <button type="button" class="btn" id="dash-refresh">โหลดใหม่</button>
+        <button type="button" class="btn" id="dash-recalc" data-admin title="เขียนคอลัมน์ “ค่าใช้จ่ายตามอัตรา” และแท็บ “สรุปค่าใช้จ่ายรายเดือน” ในชีทใหม่">คำนวณลงชีท</button>
       </div>
     </div>
     <div class="loading-box" id="dash-loading" hidden>กำลังสรุปข้อมูลจาก Google Sheet…</div>
@@ -588,6 +598,11 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       <section class="card table-card">
         <div class="table-head"><h2>เทียบทุกปี</h2><span>กดแถวเพื่อดูปีนั้น</span></div>
         <div class="table-wrap"><table class="compact" id="dash-years" style="min-width:640px"></table></div>
+      </section>
+      <section class="card pad">
+        <h2>อัตราที่ใช้คำนวณ</h2>
+        <ul class="rate-list" id="dash-rates"></ul>
+        <p class="sub">แก้อัตราได้ในแท็บ “อัตราค่ารถคุ้มครอง” ของ Google Sheet แล้วให้ผู้ดูแลระบบกด “คำนวณลงชีท” · สรุปรายเดือนอยู่ในแท็บ “สรุปค่าใช้จ่ายรายเดือน”</p>
       </section>
       <p class="sub" id="dash-note"></p>
     </div>
@@ -1092,6 +1107,45 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     });
   }
 
+  // ค่าใช้จ่ายตามอัตรา (แท็บ "อัตราค่ารถคุ้มครอง") — คิดว่าเป็นจุดแรกของคืน
+  function rateFor(provider, expressway, iso) {
+    var e = norm(expressway);
+    return (S.data.rates || []).find(function (r) {
+      return r.provider === provider && r.expressways.indexOf(e) >= 0 && (!r.from || iso >= r.from);
+    }) || null;
+  }
+  function pickCosts() {
+    var provider = S.mode.toUpperCase();
+    var iso = $('#form-entry [name="date"]').value;
+    var counters = {};
+    return S.picks.map(function (p) {
+      var rule = rateFor(provider, p.expressway, iso);
+      if (!rule) return null;
+      var k = (S.data.rates || []).indexOf(rule);
+      var i = counters[k] = (counters[k] || 0) + 1;
+      var cost = (i - 1) % rule.every === 0 ? rule.rate : 0;
+      if (i === 1 && rule.food) cost -= rule.food;
+      return cost;
+    });
+  }
+  function updateCostLabels() {
+    var costs = pickCosts();
+    $$('#picked .cost-line').forEach(function (el, i) {
+      var c = costs[i];
+      el.innerHTML = c === null || c === undefined
+        ? '<span class="sub">ไม่มีอัตราสำหรับสายทางนี้</span>'
+        : 'ค่าใช้จ่ายตามอัตรา <b>' + c.toLocaleString('th-TH') + '</b> บาท';
+    });
+    var priced = costs.filter(function (c) { return c !== null; });
+    var total = priced.reduce(function (s, c) { return s + c; }, 0);
+    var box = $('#picked-total');
+    box.hidden = !S.picks.length;
+    box.innerHTML = 'รวมค่าใช้จ่ายตามอัตรา <b>' + total.toLocaleString('th-TH') + '</b> บาท' +
+      (priced.length < costs.length ? ' · ' + (costs.length - priced.length) + ' จุดไม่มีอัตรา' : '') +
+      '<span class="sub">คิดว่าเป็นจุดแรกของคืน — ถ้าวันนั้นบันทึกไว้แล้ว ระบบนับต่อให้ตอนคำนวณในชีท</span>';
+  }
+  $('#form-entry [name="date"]').addEventListener('change', function () { updateCostLabels(); });
+
   function renderPicks() {
     applyPickDefaults();
     var isExat = S.mode === 'exat';
@@ -1117,11 +1171,12 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       return '<div class="pick" data-i="' + i + '">' +
         '<span class="pick-no">' + (i + 1) + '</span>' +
         '<div class="pick-main"><div class="pick-title">' + (p.code ? '<span class="code-tag">' + esc(p.code) + '</span> ' : '') + esc(p.place) + '</div>' + meta + '</div>' +
-        '<div class="pick-fee">' + fee + '</div>' +
+        '<div class="pick-fee">' + fee + '<div class="cost-line"></div></div>' +
         '<button type="button" class="icon-x" data-remove aria-label="เอา ' + esc(p.place) + ' ออก" title="เอาจุดนี้ออก">×</button>' +
       '</div>';
     }).join('');
     $('#save-label').textContent = S.picks.length > 1 ? 'บันทึก ' + S.picks.length + ' จุด' : 'บันทึก';
+    updateCostLabels();
   }
   function onPickInput(e) {
     var el = e.target.closest('[data-k]');
@@ -1130,6 +1185,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     if (!p) return;
     p[el.dataset.k] = el.value;
     p.touched[el.dataset.k] = true;
+    if (el.dataset.k === 'expressway') updateCostLabels();
   }
   $('#picked').addEventListener('input', onPickInput);
   $('#picked').addEventListener('change', onPickInput);
@@ -1263,7 +1319,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     $('#sum-label').textContent = (isExat ? 'EXAT' : 'BEM') + ' · ' + (s.month ? 'เดือน ' + s.month : 'ยังไม่มีข้อมูล');
     $('#sum-count').textContent = s.count.toLocaleString('th-TH');
     $('#sum-amount').textContent = isExat ? s.amount.toLocaleString('th-TH') : s.unpaid.toLocaleString('th-TH');
-    $('#sum-unit').textContent = isExat ? 'บาท' : 'รอออก PR';
+    $('#sum-unit').textContent = isExat ? 'บาท (ค่าอาหาร)' : 'รอออก PR';
   }
 
   // ---------- แดชบอร์ด ----------
@@ -1318,9 +1374,11 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       return '<div class="kpi ' + cls + '"><span class="k-label">' + label + '</span><span class="k-num">' + num + '</span><span class="k-sub">' + esc(sub) + '</span></div>';
     }
     $('#dash-kpis').innerHTML = [
+      kpi('total', 'รวมค่าใช้จ่ายตามอัตรา', fmt(ex.cost + bm.cost) + ' <small>บาท</small>', delta(ex.cost + bm.cost, prev ? prev.exat.cost + prev.bem.cost : 0, ' บาท')),
+      kpi('exat', 'EXAT · ค่าใช้จ่าย', fmt(ex.cost) + ' <small>บาท</small>', fmt(ex.count) + ' จุด · หักค่าอาหาร ' + fmt(ex.food) + ' บาท'),
+      kpi('bem', 'BEM · ค่าใช้จ่าย', fmt(bm.cost) + ' <small>บาท</small>', fmt(bm.count) + ' จุด · คิดค่ารถ ' + fmt(bm.charges) + ' ครั้ง'),
       kpi('exat', 'EXAT · เข้างาน', fmt(ex.count) + ' <small>ครั้ง</small>', delta(ex.count, prev ? prev.exat.count : 0, ' ครั้ง')),
-      kpi('exat', 'EXAT · ค่าอาหาร/รถคุ้มครอง', fmt(ex.amount) + ' <small>บาท</small>', delta(ex.amount, prev ? prev.exat.amount : 0, ' บาท')),
-      kpi('bem', 'BEM · เข้างาน', fmt(bm.count) + ' <small>ครั้ง</small>', 'คิดค่ารถ ' + fmt(bm.nights) + ' คืน'),
+      kpi('bem', 'BEM · เข้างาน', fmt(bm.count) + ' <small>ครั้ง</small>', delta(bm.count, prev ? prev.bem.count : 0, ' ครั้ง')),
       kpi('bem', 'BEM · รอออก PR', fmt(bm.pending) + ' <small>รายการ</small>', bm.pending ? 'ยังไม่ได้ชำระ' : 'ไม่มีรายการค้าง')
     ].join('');
 
@@ -1343,10 +1401,11 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     function col(part, key) { return part.months.map(function (x) { return x[key]; }); }
     $('#dash-months').innerHTML =
       '<thead><tr><th></th>' + TH_MONTHS.map(function (n) { return '<th class="num">' + n + '</th>'; }).join('') + '<th class="num">รวม</th></tr></thead><tbody>' +
-      row('EXAT ครั้ง', col(ex, 'count'), ex.count) +
-      row('EXAT บาท', col(ex, 'amount'), ex.amount) +
-      row('BEM ครั้ง', col(bm, 'count'), bm.count) +
-      row('BEM คิดค่ารถ (คืน)', col(bm, 'nights'), bm.nights) +
+      row('EXAT จุด', col(ex, 'count'), ex.count) +
+      row('EXAT ค่าใช้จ่าย (บาท)', col(ex, 'cost'), ex.cost) +
+      row('BEM จุด', col(bm, 'count'), bm.count) +
+      row('BEM ค่าใช้จ่าย (บาท)', col(bm, 'cost'), bm.cost) +
+      row('รวมค่าใช้จ่าย (บาท)', ex.months.map(function (x, i) { return x.cost + bm.months[i].cost; }), ex.cost + bm.cost) +
       '</tbody>';
 
     // แยกตามหมวด — แท่งสีเขียว = EXAT, เหลือง = BEM
@@ -1375,17 +1434,44 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
 
     // เทียบทุกปี
     $('#dash-years').innerHTML =
-      '<thead><tr><th>ปี</th><th class="num">EXAT ครั้ง</th><th class="num">EXAT บาท</th><th class="num">BEM ครั้ง</th><th class="num">BEM คิดค่ารถ (คืน)</th><th class="num">รอออก PR</th></tr></thead><tbody>' +
+      '<thead><tr><th>ปี</th><th class="num">EXAT จุด</th><th class="num">EXAT ค่าใช้จ่าย</th><th class="num">BEM จุด</th><th class="num">BEM ค่าใช้จ่าย</th><th class="num">รวมค่าใช้จ่าย</th><th class="num">รอออก PR</th></tr></thead><tbody>' +
       d.years.map(function (y) {
         var p = d.byYear[y];
         return '<tr data-year="' + y + '" style="cursor:pointer"' + (y === S.dashYear ? ' class="current"' : '') + '>' +
-          '<td>พ.ศ. ' + be(y) + '</td><td class="num">' + fmt(p.exat.count) + '</td><td class="num">' + fmt(p.exat.amount) + '</td>' +
-          '<td class="num">' + fmt(p.bem.count) + '</td><td class="num">' + fmt(p.bem.nights) + '</td><td class="num">' + fmt(p.bem.pending) + '</td></tr>';
+          '<td>พ.ศ. ' + be(y) + '</td><td class="num">' + fmt(p.exat.count) + '</td><td class="num">' + fmt(p.exat.cost) + '</td>' +
+          '<td class="num">' + fmt(p.bem.count) + '</td><td class="num">' + fmt(p.bem.cost) + '</td>' +
+          '<td class="num"><b>' + fmt(p.exat.cost + p.bem.cost) + '</b></td><td class="num">' + fmt(p.bem.pending) + '</td></tr>';
       }).join('') + '</tbody>';
 
-    $('#dash-note').textContent = 'ข้อมูล ณ ' + d.updatedAt + ' · นับตามคอลัมน์ “เดือน” ในชีท (เดือนที่ลงบัญชี)' +
+    var noRate = ex.noRate + bm.noRate;
+    $('#dash-rates').innerHTML = (d.rates || []).map(function (r) {
+      var how = r.every > 1
+        ? fmt(r.rate) + ' บาทต่อคืน ใช้ต่อได้ ' + r.every + ' จุด'
+        : 'จุดละ ' + fmt(r.rate) + ' บาท' + (r.food ? ' หักค่าอาหาร ' + fmt(r.food) + ' จากจุดแรกของคืน' : '');
+      return '<li><b>' + esc(r.provider) + '</b> ' + esc(r.expressways) + ' — ' + how + (r.from ? ' (ตั้งแต่ ' + esc(thaiDate(r.from)) + ')' : '') + '</li>';
+    }).join('') + (noRate ? '<li class="sub">ปีนี้มี ' + fmt(noRate) + ' จุดที่สายทางไม่อยู่ในอัตรา จึงไม่ได้คิดเงิน — เพิ่มสายทางได้ในแท็บ “อัตราค่ารถคุ้มครอง”</li>' : '');
+
+    $('#dash-note').textContent = 'ข้อมูล ณ ' + d.updatedAt + ' · นับตามคอลัมน์ “เดือน” ในชีท (เดือนที่ลงบัญชี) · คืน = จุดที่วันที่เดียวกัน' +
       (d.unknown ? ' · มี ' + d.unknown + ' แถวที่อ่านเดือนไม่ได้ จึงไม่ได้นับ' : '');
   }
+
+  // ผู้ดูแลระบบ: คำนวณค่าใช้จ่ายลงคอลัมน์ในชีท และสร้างแท็บสรุปรายเดือนใหม่
+  $('#dash-recalc').addEventListener('click', async function () {
+    var b = this;
+    b.disabled = true;
+    var label = b.textContent;
+    b.textContent = 'กำลังคำนวณ…';
+    try {
+      var r = await api('recalcCosts', S.token);
+      toast('คำนวณลงชีทแล้ว — EXAT ' + fmt(r.exat.priced) + ' จุด (' + fmt(r.exat.total) + ' บาท) · BEM ' + fmt(r.bem.priced) + ' จุด (' + fmt(r.bem.total) + ' บาท) · สรุป ' + r.months + ' เดือน');
+      await loadDash(true);
+    } catch (err) {
+      toast(errText(err), true);
+    } finally {
+      b.disabled = false;
+      b.textContent = label;
+    }
+  });
 
   // ---------- ตารางจอง ----------
   var BK_STATUS = { pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิกแล้ว' };
