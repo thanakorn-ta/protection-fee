@@ -238,6 +238,72 @@ table.compact th, table.compact td { padding: 8px 10px; }
 table.compact td.num, table.compact th.num { text-align: right; }
 tr.current td { background: var(--amber-soft); font-weight: 600; }
 
+/* ---------- ตารางจอง ---------- */
+nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 0 6px; margin-left: 6px; align-items: center; justify-content: center; border-radius: 999px; background: var(--amber); color: var(--ink); font-size: 12px; font-weight: 700; }
+.cal-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.cal-nav { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.cal-nav h2 { font-size: 20px; margin-left: 6px; }
+.icon-btn2 { width: 44px; height: 44px; border-radius: 10px; border: 1.5px solid var(--field); background: #fff; color: var(--ink); font-size: 22px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.cal { border: 1px solid var(--line); border-radius: 16px; overflow: hidden; background: #fff; }
+.cal-head, .cal-week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.cal-head div { padding: 8px 4px; text-align: center; font-size: 13px; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--line); }
+.cal-day { min-height: 118px; border-right: 1px solid var(--line-soft); border-bottom: 1px solid var(--line-soft); padding: 6px; display: flex; flex-direction: column; gap: 4px; position: relative; min-width: 0; cursor: pointer; }
+.cal-day:nth-child(7n) { border-right: 0; }
+.cal-week:last-child .cal-day { border-bottom: 0; }
+.cal-day.weekend { background: #F8F9F7; }
+.cal-day.out { background: #F2F4F1; }
+.cal-day.out .cal-num { color: #9AA59F; }
+.cal-num { align-self: flex-end; font-size: 13px; min-width: 26px; height: 26px; padding: 0 4px; display: inline-flex; align-items: center; justify-content: center; border-radius: 13px; }
+.cal-day.today .cal-num { background: var(--green); color: #fff; font-weight: 700; }
+.cal-add { position: absolute; left: 4px; top: 4px; width: 28px; height: 28px; border-radius: 6px; border: 0; background: transparent; color: var(--green); font-size: 20px; line-height: 1; opacity: 0; }
+.cal-day:hover .cal-add, .cal-add:focus-visible { opacity: 1; }
+.ev { display: block; width: 100%; text-align: left; border: 1px solid var(--line); border-left: 4px solid var(--amber); border-radius: 6px; background: #fff; padding: 3px 6px; font-size: 12.5px; line-height: 1.35; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); }
+.ev.pending { background: var(--amber-soft); border-left-color: var(--amber); }
+.ev.approved { background: var(--green-soft); border-left-color: var(--green); }
+.ev.rejected, .ev.cancelled { border-left-color: #A8B3AC; color: var(--muted); text-decoration: line-through; }
+.ev-more { font-size: 12px; color: var(--green); background: none; border: 0; text-align: left; padding: 0 4px; }
+.status.approved { background: var(--green-soft); color: var(--green-ink); }
+.status.rejected, .status.cancelled { background: #F2F4F2; color: #43524A; }
+.blist { display: flex; flex-direction: column; gap: 8px; }
+.bitem { display: flex; gap: 12px; align-items: center; padding: 12px 14px; border: 1px solid var(--line); border-left: 5px solid var(--amber); border-radius: 12px; background: #fff; text-align: left; width: 100%; color: var(--ink); }
+.bitem.approved { border-left-color: var(--green); }
+.bitem.rejected, .bitem.cancelled { border-left-color: #A8B3AC; opacity: .75; }
+.bdate { flex: none; width: 54px; text-align: center; line-height: 1.2; }
+.bdate b { display: block; font-size: 22px; font-family: var(--mono); font-weight: 500; }
+.bdate span { font-size: 12px; color: var(--muted); }
+.bmain { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.bmain .t { font-weight: 600; }
+.bmain .s { font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.list-empty { padding: 28px; text-align: center; color: var(--muted); background: #fff; border: 1px dashed var(--line); border-radius: 12px; }
+
+/* หน้าต่างการจอง */
+.modal { position: fixed; inset: 0; background: rgba(20,33,27,.45); z-index: 8; display: flex; align-items: flex-start; justify-content: center; padding: 32px 16px; overflow-y: auto; }
+.modal-card { width: 100%; max-width: 580px; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.25); display: flex; flex-direction: column; }
+.modal-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px 14px 20px; border-bottom: 1px solid var(--line); }
+.modal-head h2 { font-size: 19px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.modal-body { padding: 18px 20px 20px; display: flex; flex-direction: column; gap: 14px; }
+.kv { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px 14px; margin: 0; font-size: 15px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg-box { background: var(--blue-soft); border-radius: 12px; padding: 12px 14px; font-size: 14px; white-space: pre-wrap; line-height: 1.65; }
+.msg-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
+.history { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
+.review-box { background: var(--amber-soft); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+.review-box h3 { font-size: 15px; }
+.field textarea { min-height: 80px; padding: 10px 12px; border: 1.5px solid var(--field); border-radius: 10px; background: #fff; font: inherit; font-weight: 400; font-size: 16px; resize: vertical; width: 100%; }
+.field textarea:focus { border-color: var(--green); }
+.place-add { display: flex; gap: 8px; }
+.place-add input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 1.5px solid var(--field); border-radius: 10px; background: #fff; font-size: 15px; }
+
+@media (max-width: 760px) {
+  .cal-day { min-height: 78px; padding: 3px; gap: 3px; }
+  .ev { font-size: 11px; padding: 2px 4px; border-left-width: 3px; }
+  .cal-head div { font-size: 12px; }
+  .kv { grid-template-columns: 1fr; gap: 2px; }
+  .kv dd { margin-bottom: 8px; }
+  .modal { padding: 0; }
+  .modal-card { border-radius: 0; min-height: 100%; }
+}
 @media (max-width: 640px) {
   .pick { grid-template-columns: auto minmax(0, 1fr) auto; }
   .pick-fee { grid-column: 2 / 4; }
@@ -342,6 +408,7 @@ tr.current td { background: var(--amber-soft); font-weight: 600; }
       </div>
       <nav class="menu" aria-label="เมนูหลัก">
         <button type="button" data-page="entry">บันทึกการใช้รถ</button>
+        <button type="button" data-page="schedule">ตารางจอง<span class="count" id="bk-count" hidden></span></button>
         <button type="button" data-page="dash">แดชบอร์ด</button>
         <button type="button" data-page="locations">สถานที่</button>
         <button type="button" data-page="users" data-admin>ผู้ใช้</button>
@@ -440,6 +507,50 @@ tr.current td { background: var(--amber-soft); font-weight: 600; }
       <div class="table-head"><h2>รายการล่าสุด</h2><span id="recent-note"></span></div>
       <div class="table-wrap"><table style="min-width:880px"><thead id="recent-head"></thead><tbody id="recent-body"></tbody></table></div>
     </section>
+  </main>
+
+  <!-- ตารางจอง -->
+  <main class="page" id="page-schedule" hidden>
+    <div class="page-head">
+      <div>
+        <h1>ตารางจองรถคุ้มครอง</h1>
+        <p>จองวันใช้รถคุ้มครอง EXAT / BEM — ผู้ดูแลระบบอนุมัติก่อนแจ้งการทาง</p>
+      </div>
+      <button type="button" class="btn primary" id="btn-new-booking">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        จองรถคุ้มครอง
+      </button>
+    </div>
+
+    <div class="pending-box" id="bk-pending" hidden>
+      <h2 id="bk-pending-title"></h2>
+      <div class="blist" id="bk-pending-list"></div>
+    </div>
+
+    <div class="cal-bar">
+      <div class="cal-nav">
+        <button type="button" class="icon-btn2" id="cal-prev" aria-label="เดือนก่อน">‹</button>
+        <button type="button" class="icon-btn2" id="cal-next" aria-label="เดือนถัดไป">›</button>
+        <button type="button" class="btn sm" id="cal-today">วันนี้</button>
+        <h2 id="cal-title"></h2>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        <div class="seg" role="group" aria-label="มุมมอง">
+          <button type="button" data-view="month" aria-pressed="true">ปฏิทิน</button>
+          <button type="button" data-view="list" aria-pressed="false">รายการ</button>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="กรองการจอง">
+          <button type="button" class="pill" data-bk-filter="all" aria-pressed="true">ทั้งหมด</button>
+          <button type="button" class="pill" data-bk-filter="pending" aria-pressed="false">รออนุมัติ</button>
+          <button type="button" class="pill" data-bk-filter="approved" aria-pressed="false">อนุมัติแล้ว</button>
+          <button type="button" class="pill" data-bk-filter="mine" aria-pressed="false">ของฉัน</button>
+        </div>
+      </div>
+    </div>
+    <div class="loading-box" id="cal-loading" hidden>กำลังโหลดตารางจอง…</div>
+    <div class="cal" id="cal-month"></div>
+    <div class="blist" id="cal-list" hidden></div>
+    <p class="sub">กดวันที่ว่างเพื่อจองวันนั้น · กดรายการเพื่อดูรายละเอียด แก้ไข หรืออนุมัติ · สี: <span class="status pending">รออนุมัติ</span> <span class="status approved">อนุมัติแล้ว</span> <span class="status cancelled">ไม่อนุมัติ / ยกเลิก</span></p>
   </main>
 
   <!-- แดชบอร์ด -->
@@ -590,6 +701,46 @@ tr.current td { background: var(--amber-soft); font-weight: 600; }
 <datalist id="dl-workers"></datalist>
 <datalist id="dl-bemfees"></datalist>
 
+<!-- หน้าต่างการจอง -->
+<div class="modal" id="bk-modal" role="dialog" aria-modal="true" aria-labelledby="bk-modal-title" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h2 id="bk-modal-title"></h2>
+      <span id="bk-modal-status"></span>
+      <button type="button" class="icon-x" id="bk-close" aria-label="ปิด">×</button>
+    </div>
+    <div class="modal-body" id="bk-view"></div>
+    <form class="modal-body" id="bk-form" novalidate hidden>
+      <label class="field">ลูกค้า / สินค้า
+        <input name="title" required placeholder="เช่น Studio7">
+      </label>
+      <div class="grid2">
+        <label class="field">วันที่ใช้รถคุ้มครอง<input type="date" name="date" required></label>
+        <label class="field">เวลา<input name="time" placeholder="เช่น 22.00 น."></label>
+        <label class="field">แจ้งใช้รถ<select name="provider"><option>EXAT</option><option>BEM</option></select></label>
+        <label class="field">Media Type<select name="mediaType"><option>Flyover 2.0</option><option>Gateway Billboard</option><option>Mainline</option></select></label>
+        <label class="field">สายทาง<input name="expressway" list="dl-expressways" placeholder="เช่น ศรีรัช"></label>
+        <label class="field">จุดนัดพบ<input name="meetingPoint" placeholder="เช่น ด่านศรีนครินทร์"></label>
+      </div>
+      <div class="field">จุดที่ไป <small>บรรทัดละ 1 จุด — เลือกจากฐานข้อมูลป้ายแล้วกด “เพิ่ม” หรือพิมพ์เองก็ได้</small>
+        <div class="place-add">
+          <input id="bk-place-pick" list="dl-places" placeholder="ค้นหาป้าย เช่น 6.2" aria-label="เลือกจุดที่ไปจากฐานข้อมูลป้าย">
+          <button type="button" class="btn sm" id="bk-place-add">เพิ่ม</button>
+        </div>
+        <textarea name="places" rows="3" placeholder="ถนนเอกมัยมุ่งพระรามเก้า" aria-label="จุดที่ไป"></textarea>
+      </div>
+      <label class="field">ประเภทงาน<input name="jobType" list="dl-jobtypes" placeholder="เช่น ติดตั้ง สินค้า COM7 (Studio7)"></label>
+      <label class="field">ผู้เข้างาน <small>ชื่อและเบอร์โทร</small><input name="worker" list="dl-workers" placeholder="เช่น คุณเท่ง 061-895-3563"></label>
+      <label class="field"><span>หมายเหตุ <span class="opt">(ไม่บังคับ)</span></span><textarea name="note" rows="2"></textarea></label>
+      <div class="error" data-error hidden></div>
+      <div class="actions">
+        <button type="submit" class="btn primary">บันทึกการจอง</button>
+        <button type="button" class="btn" id="bk-cancel-edit">ยกเลิก</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <div id="toast" role="status" aria-live="polite" hidden></div>
 <div id="loading" hidden>กำลังโหลด…</div>
 
@@ -623,7 +774,7 @@ tr.current td { background: var(--amber-soft); font-weight: 600; }
   }
   function formData(form) {
     var out = {};
-    $$('input[name], select[name]', form).forEach(function (el) { out[el.name] = el.value; });
+    $$('input[name], select[name], textarea[name]', form).forEach(function (el) { out[el.name] = el.value; });
     return out;
   }
   function errText(err) {
@@ -726,6 +877,9 @@ tr.current td { background: var(--amber-soft); font-weight: 600; }
     S.token = null;
     S.user = null;
     S.dash = null;
+    if (S.cal) { S.cal.bookings = []; S.cal.pending = []; }
+    $('#bk-modal').hidden = true;
+    document.body.style.overflow = '';
     saveToken(null);
     $('#app').hidden = true;
     $('#auth').hidden = false;
@@ -752,6 +906,7 @@ tr.current td { background: var(--amber-soft); font-weight: 600; }
       $('#me-role').textContent = isAdmin ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน';
       $('#account-info').textContent = S.user.username + ' · ' + (isAdmin ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน');
       renderOptions();
+      setBookingBadge(S.data.bookingPending || 0);
       setMode(S.mode);
       renderLocations();
       resetEntry();
@@ -767,9 +922,10 @@ tr.current td { background: var(--amber-soft); font-weight: 600; }
       if (b.dataset.page === page) b.setAttribute('aria-current', 'page');
       else b.removeAttribute('aria-current');
     });
-    ['entry', 'dash', 'locations', 'users', 'account'].forEach(function (p) { $('#page-' + p).hidden = p !== page; });
+    ['entry', 'schedule', 'dash', 'locations', 'users', 'account'].forEach(function (p) { $('#page-' + p).hidden = p !== page; });
     if (page === 'users') loadUsers();
     if (page === 'dash') loadDash();
+    if (page === 'schedule') loadSchedule();
     window.scrollTo(0, 0);
   }
   $$('nav.menu button').forEach(function (b) {
@@ -1229,6 +1385,355 @@ tr.current td { background: var(--amber-soft); font-weight: 600; }
 
     $('#dash-note').textContent = 'ข้อมูล ณ ' + d.updatedAt + ' · นับตามคอลัมน์ “เดือน” ในชีท (เดือนที่ลงบัญชี)' +
       (d.unknown ? ' · มี ' + d.unknown + ' แถวที่อ่านเดือนไม่ได้ จึงไม่ได้นับ' : '');
+  }
+
+  // ---------- ตารางจอง ----------
+  var BK_STATUS = { pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ', cancelled: 'ยกเลิกแล้ว' };
+  var TH_MONTHS_LONG = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
+  var TH_DAYS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
+  var nowD = new Date();
+  S.cal = { y: nowD.getFullYear(), m: nowD.getMonth(), view: window.innerWidth < 760 ? 'list' : 'month', filter: 'all', bookings: [], pending: [], expanded: {} };
+  S.bk = null;
+
+  function isoOf(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function parseIsoDate(iso) { var p = String(iso || '').split('-').map(Number); return new Date(p[0], (p[1] || 1) - 1, p[2] || 1); }
+  function thaiDate(iso) { var d = parseIsoDate(iso); return d.getDate() + ' ' + TH_MONTHS[d.getMonth()] + ' ' + pad2((d.getFullYear() + 543) % 100); }
+  function thaiDateLong(iso) { var d = parseIsoDate(iso); return 'วัน' + ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][d.getDay()] + 'ที่ ' + d.getDate() + ' ' + TH_MONTHS_LONG[d.getMonth()] + ' ' + (d.getFullYear() + 543); }
+  function lines(s) { return String(s || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean); }
+  function stamp(s) { var m = /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2})/.exec(s || ''); return m ? (Number(m[3]) + ' ' + TH_MONTHS[Number(m[2]) - 1] + ' ' + pad2((Number(m[1]) + 543) % 100) + ' ' + m[4]) : (s || ''); }
+  function evLabel(b) { return b.title + ' · ' + b.mediaType + ' · แจ้งใช้รถ ' + b.provider; }
+
+  function setBookingBadge(n) {
+    var el = $('#bk-count');
+    el.textContent = n;
+    el.hidden = !n;
+  }
+
+  /** ข้อความแจ้งการทาง — รูปแบบเดียวกับที่ใช้ส่งใน LINE */
+  function bookingMessage(b) {
+    var out = ['แจ้งใช้รถ ' + b.provider, 'วันที่ ' + thaiDate(b.date)];
+    if (b.expressway) out.push('จุดที่ 1 : ' + b.expressway);
+    if (b.time) out.push('เวลา : ' + b.time);
+    if (b.meetingPoint) out.push('จุดนัดพบ : ' + b.meetingPoint);
+    lines(b.places).forEach(function (p, i) { out.push('ไปที่ ' + (i + 1) + ' : ' + p); });
+    if (b.jobType) out.push('ประเภทงาน : ' + b.jobType);
+    if (b.worker) out.push('ผู้เข้างาน : ' + b.worker);
+    if (b.note) out.push('หมายเหตุ : ' + b.note);
+    return out.join('\n');
+  }
+
+  async function loadSchedule() {
+    var first = new Date(S.cal.y, S.cal.m, 1);
+    var start = new Date(S.cal.y, S.cal.m, 1 - first.getDay());
+    var end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 41);
+    S.cal.range = [isoOf(start), isoOf(end)];
+    renderSchedule(); // แสดงกรอบเดือนก่อน แล้วเติมรายการเมื่อโหลดเสร็จ
+    $('#cal-loading').hidden = false;
+    try {
+      var res = await api('listBookings', S.token, S.cal.range[0], S.cal.range[1]);
+      S.cal.bookings = res.bookings;
+      S.cal.pending = res.pending;
+      setBookingBadge(res.pending.length);
+      renderSchedule();
+    } catch (err) {
+      toast(errText(err), true);
+    } finally {
+      $('#cal-loading').hidden = true;
+    }
+  }
+
+  function visibleBookings() {
+    var f = S.cal.filter;
+    return S.cal.bookings.filter(function (b) {
+      if (f === 'mine') return b.mine;
+      if (f === 'all') return true;
+      return b.status === f;
+    });
+  }
+  function sortBookings(list) {
+    var rank = { approved: 0, pending: 1, rejected: 2, cancelled: 3 };
+    return list.slice().sort(function (a, b) {
+      return a.date === b.date ? (rank[a.status] - rank[b.status]) || String(a.time).localeCompare(String(b.time)) : (a.date < b.date ? -1 : 1);
+    });
+  }
+
+  function renderSchedule() {
+    $('#cal-title').textContent = TH_MONTHS_LONG[S.cal.m] + ' ' + (S.cal.y + 543);
+    $$('[data-view]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.view === S.cal.view)); });
+    $$('[data-bk-filter]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.bkFilter === S.cal.filter)); });
+    $('#cal-month').hidden = S.cal.view !== 'month';
+    $('#cal-list').hidden = S.cal.view !== 'list';
+    var list = sortBookings(visibleBookings());
+
+    // รออนุมัติ (ผู้ดูแลระบบ)
+    var pend = S.cal.pending || [];
+    $('#bk-pending').hidden = !pend.length;
+    $('#bk-pending-title').textContent = 'รออนุมัติ ' + pend.length + ' รายการ';
+    $('#bk-pending-list').innerHTML = pend.map(bookingItem).join('');
+
+    if (S.cal.view === 'list') {
+      var monthKey = S.cal.y + '-' + pad2(S.cal.m + 1);
+      var inMonth = list.filter(function (b) { return b.date.slice(0, 7) === monthKey; });
+      $('#cal-list').innerHTML = inMonth.length ? inMonth.map(bookingItem).join('')
+        : '<div class="list-empty">ยังไม่มีการจองในเดือนนี้ — กด “จองรถคุ้มครอง” เพื่อเพิ่ม</div>';
+      return;
+    }
+
+    var byDate = {};
+    list.forEach(function (b) { (byDate[b.date] = byDate[b.date] || []).push(b); });
+    var first = new Date(S.cal.y, S.cal.m, 1);
+    var start = new Date(S.cal.y, S.cal.m, 1 - first.getDay());
+    var todayIso = today();
+    var html = '<div class="cal-head">' + TH_DAYS.map(function (d) { return '<div>' + d + '</div>'; }).join('') + '</div>';
+    for (var w = 0; w < 6; w++) {
+      html += '<div class="cal-week">';
+      for (var dw = 0; dw < 7; dw++) {
+        var d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + w * 7 + dw);
+        var iso = isoOf(d);
+        var evs = byDate[iso] || [];
+        var cls = 'cal-day' + (d.getMonth() !== S.cal.m ? ' out' : '') + (dw === 0 || dw === 6 ? ' weekend' : '') + (iso === todayIso ? ' today' : '');
+        var max = S.cal.expanded[iso] ? evs.length : 3;
+        html += '<div class="' + cls + '" data-date="' + iso + '">' +
+          '<button type="button" class="cal-add" data-new="' + iso + '" aria-label="จองวันที่ ' + esc(thaiDate(iso)) + '">+</button>' +
+          '<span class="cal-num">' + d.getDate() + '</span>' +
+          evs.slice(0, max).map(function (b) {
+            return '<button type="button" class="ev ' + esc(b.status) + '" data-bk="' + esc(b.id) + '" title="' + esc(evLabel(b) + ' — ' + BK_STATUS[b.status]) + '">' + esc(evLabel(b)) + '</button>';
+          }).join('') +
+          (evs.length > max ? '<button type="button" class="ev-more" data-more="' + iso + '">+' + (evs.length - max) + ' รายการ</button>' : '') +
+        '</div>';
+      }
+      html += '</div>';
+      if (start.getMonth() !== S.cal.m && w >= 4 && new Date(start.getFullYear(), start.getMonth(), start.getDate() + (w + 1) * 7).getMonth() !== S.cal.m) break;
+    }
+    $('#cal-month').innerHTML = html;
+  }
+
+  function bookingItem(b) {
+    var d = parseIsoDate(b.date);
+    var sub = [b.time, b.expressway, lines(b.places).join(', '), 'โดย ' + b.requestedByName].filter(Boolean).join(' · ');
+    return '<button type="button" class="bitem ' + esc(b.status) + '" data-bk="' + esc(b.id) + '">' +
+      '<span class="bdate"><b>' + d.getDate() + '</b><span>' + TH_MONTHS[d.getMonth()] + ' ' + pad2((d.getFullYear() + 543) % 100) + '</span></span>' +
+      '<span class="bmain"><span class="t">' + esc(evLabel(b)) + '</span><span class="s">' + esc(sub) + '</span></span>' +
+      '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status] || b.status) + '</span>' +
+    '</button>';
+  }
+
+  function findBooking(id) {
+    return S.cal.bookings.concat(S.cal.pending || []).find(function (b) { return b.id === id; });
+  }
+  function storeBooking(b) {
+    var replaced = false;
+    S.cal.bookings = S.cal.bookings.map(function (x) { if (x.id === b.id) { replaced = true; return b; } return x; });
+    if (!replaced && S.cal.range && b.date >= S.cal.range[0] && b.date <= S.cal.range[1]) S.cal.bookings.push(b);
+    S.cal.pending = (S.cal.pending || []).filter(function (x) { return x.id !== b.id; });
+    if (b.status === 'pending' && S.user.role === 'admin') S.cal.pending.push(b);
+    setBookingBadge(S.user.role === 'admin' ? S.cal.pending.length : 0);
+  }
+
+  // ปุ่มบนหน้าตาราง
+  $('#cal-prev').addEventListener('click', function () { if (--S.cal.m < 0) { S.cal.m = 11; S.cal.y--; } S.cal.expanded = {}; loadSchedule(); });
+  $('#cal-next').addEventListener('click', function () { if (++S.cal.m > 11) { S.cal.m = 0; S.cal.y++; } S.cal.expanded = {}; loadSchedule(); });
+  $('#cal-today').addEventListener('click', function () { var t = new Date(); S.cal.y = t.getFullYear(); S.cal.m = t.getMonth(); loadSchedule(); });
+  $$('[data-view]').forEach(function (b) { b.addEventListener('click', function () { S.cal.view = b.dataset.view; renderSchedule(); }); });
+  $$('[data-bk-filter]').forEach(function (b) { b.addEventListener('click', function () { S.cal.filter = b.dataset.bkFilter; renderSchedule(); }); });
+  $('#btn-new-booking').addEventListener('click', function () { openBookingForm(null, today()); });
+  $('#page-schedule').addEventListener('click', function (e) {
+    var ev = e.target.closest('[data-bk]');
+    if (ev) return openBooking(ev.dataset.bk);
+    var more = e.target.closest('[data-more]');
+    if (more) { S.cal.expanded[more.dataset.more] = true; return renderSchedule(); }
+    var add = e.target.closest('[data-new]') || e.target.closest('.cal-day');
+    if (add && $('#cal-month').contains(add)) openBookingForm(null, add.dataset.new || add.dataset.date);
+  });
+
+  // หน้าต่างการจอง
+  function showModal(on) {
+    $('#bk-modal').hidden = !on;
+    document.body.style.overflow = on ? 'hidden' : '';
+  }
+  function closeModal() { showModal(false); S.bk = null; }
+  $('#bk-close').addEventListener('click', closeModal);
+  $('#bk-modal').addEventListener('click', function (e) { if (e.target === this) closeModal(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('#bk-modal').hidden) closeModal(); });
+
+  function openBooking(id) {
+    var b = findBooking(id);
+    if (!b) return toast('ไม่พบการจองนี้ — ลองโหลดใหม่', true);
+    S.bk = b;
+    renderBookingView();
+    showModal(true);
+  }
+
+  function renderBookingView() {
+    var b = S.bk;
+    $('#bk-form').hidden = true;
+    $('#bk-view').hidden = false;
+    $('#bk-modal-title').textContent = b.title;
+    $('#bk-modal-status').innerHTML = '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status] || b.status) + '</span>';
+    var kv = [
+      ['วันที่', thaiDateLong(b.date) + (b.time ? ' · ' + b.time : '')],
+      ['แจ้งใช้รถ', b.provider],
+      ['Media Type', b.mediaType],
+      ['สายทาง', b.expressway],
+      ['จุดนัดพบ', b.meetingPoint],
+      ['จุดที่ไป', lines(b.places).map(function (p, i) { return (i + 1) + '. ' + p; }).join('\n')],
+      ['ประเภทงาน', b.jobType],
+      ['ผู้เข้างาน', b.worker],
+      ['หมายเหตุ', b.note]
+    ].filter(function (x) { return x[1]; });
+    var hist = ['จองโดย ' + b.requestedByName + ' เมื่อ ' + stamp(b.requestedAt)];
+    if (b.reviewedAt && (b.status === 'approved' || b.status === 'rejected')) {
+      hist.push((b.status === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ') + 'โดย ' + b.reviewedByName + ' เมื่อ ' + stamp(b.reviewedAt) + (b.reviewNote ? ' — “' + b.reviewNote + '”' : ''));
+    }
+    if (b.status === 'cancelled') hist.push('ยกเลิกเมื่อ ' + stamp(b.updatedAt));
+
+    var review = '';
+    if (b.canReview) {
+      review = '<div class="review-box"><h3>' + (b.status === 'pending' ? 'พิจารณาการจอง (ผู้ดูแลระบบ)' : 'เปลี่ยนผลการพิจารณา') + '</h3>' +
+        '<label class="field"><span>หมายเหตุถึงผู้จอง <span class="opt">(ไม่บังคับ)</span></span><input id="bk-review-note" value="' + esc(b.status === 'pending' ? '' : b.reviewNote) + '" placeholder="เช่น อนุมัติ แจ้ง BEM แล้ว"></label>' +
+        '<div class="actions">' +
+          (b.status !== 'approved' ? '<button type="button" class="btn primary" data-review="approved">อนุมัติ</button>' : '') +
+          (b.status !== 'rejected' ? '<button type="button" class="btn danger" data-review="rejected">ไม่อนุมัติ</button>' : '') +
+        '</div></div>';
+    }
+    $('#bk-view').innerHTML =
+      '<dl class="kv">' + kv.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
+      '<div><div class="msg-head"><span>ข้อความแจ้งการทาง</span><button type="button" class="btn sm" id="bk-copy">คัดลอก</button></div>' +
+      '<div class="msg-box" id="bk-msg">' + esc(bookingMessage(b)) + '</div></div>' +
+      '<div class="history">' + hist.map(function (h) { return '<span>' + esc(h) + '</span>'; }).join('') + '</div>' +
+      review +
+      '<div class="actions">' +
+        (b.canEdit ? '<button type="button" class="btn" id="bk-edit">แก้ไข</button>' : '') +
+        (b.status === 'approved' ? '<button type="button" class="btn" id="bk-to-entry">บันทึกการใช้รถจากการจองนี้</button>' : '') +
+        (b.canCancel ? '<button type="button" class="btn danger" id="bk-cancel">ยกเลิกการจอง</button>' : '') +
+      '</div>' +
+      (!b.canEdit && b.mine && b.status === 'approved' ? '<p class="sub">อนุมัติแล้ว — ถ้าต้องการเปลี่ยนแปลง ให้ติดต่อผู้ดูแลระบบ</p>' : '');
+  }
+
+  $('#bk-view').addEventListener('click', async function (e) {
+    var b = S.bk;
+    if (!b) return;
+    var btn = e.target.closest('button');
+    if (!btn) return;
+    if (btn.id === 'bk-copy') return copyText(bookingMessage(b), $('#bk-msg'));
+    if (btn.id === 'bk-edit') return openBookingForm(b);
+    if (btn.id === 'bk-to-entry') return bookingToEntry(b);
+    var action = btn.id === 'bk-cancel' ? 'cancel' : btn.dataset.review;
+    if (!action) return;
+    if (action === 'cancel' && !confirm('ยกเลิกการจอง ' + b.title + ' วันที่ ' + thaiDate(b.date) + ' ?')) return;
+    $$('#bk-view button').forEach(function (x) { x.disabled = true; });
+    try {
+      var res = action === 'cancel'
+        ? await api('cancelBooking', S.token, b.id)
+        : await api('reviewBooking', S.token, b.id, action, ($('#bk-review-note') || {}).value || '');
+      storeBooking(res);
+      S.bk = res;
+      renderBookingView();
+      renderSchedule();
+      toast(action === 'cancel' ? 'ยกเลิกการจองแล้ว' : action === 'approved' ? 'อนุมัติการจอง ' + res.title + ' แล้ว' : 'ไม่อนุมัติการจอง ' + res.title);
+    } catch (err) {
+      toast(errText(err), true);
+      $$('#bk-view button').forEach(function (x) { x.disabled = false; });
+    }
+  });
+
+  function copyText(text, el) {
+    function fallback() {
+      var r = document.createRange();
+      r.selectNodeContents(el);
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      toast('เลือกข้อความไว้แล้ว — กด Ctrl+C เพื่อคัดลอก');
+    }
+    try {
+      navigator.clipboard.writeText(text).then(function () { toast('คัดลอกข้อความแล้ว'); }, fallback);
+    } catch (err) {
+      fallback();
+    }
+  }
+
+  // ฟอร์มจอง / แก้ไข
+  function openBookingForm(b, dateIso) {
+    var form = $('#bk-form');
+    form.reset();
+    showError(form, '');
+    S.bk = b;
+    var v = b || { date: dateIso || today(), provider: 'EXAT', mediaType: 'Flyover 2.0', worker: LS.get('worker') };
+    ['title', 'date', 'time', 'provider', 'mediaType', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'note'].forEach(function (k) {
+      if (form[k] && v[k] !== undefined) form[k].value = v[k];
+    });
+    $('#bk-modal-title').textContent = b ? 'แก้ไขการจอง' : 'จองรถคุ้มครอง';
+    $('#bk-modal-status').innerHTML = b ? '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status]) + '</span>' : '';
+    $('#bk-view').hidden = true;
+    form.hidden = false;
+    showModal(true);
+    setTimeout(function () { form.title.focus(); }, 30);
+  }
+  $('#bk-cancel-edit').addEventListener('click', function () { if (S.bk) renderBookingView(); else closeModal(); });
+  $('#bk-place-add').addEventListener('click', function () {
+    var pick = $('#bk-place-pick');
+    var v = pick.value.trim();
+    if (!v) return pick.focus();
+    var form = $('#bk-form');
+    var loc = S.data.locations.find(function (l) { return l.area === v || l.code === v; });
+    if (loc) {
+      v = loc.area;
+      if (!form.expressway.value && loc.expressway) form.expressway.value = loc.expressway;
+      if (!form.meetingPoint.value && loc.meetingPoint) form.meetingPoint.value = loc.meetingPoint;
+    }
+    var cur = lines(form.places.value);
+    if (cur.indexOf(v) < 0) cur.push(v);
+    form.places.value = cur.join('\n');
+    pick.value = '';
+    pick.focus();
+  });
+  $('#bk-place-pick').addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); $('#bk-place-add').click(); } });
+
+  $('#bk-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var form = e.target;
+    var data = formData(form);
+    delete data[''];
+    if (!data.title.trim()) { form.title.focus(); return showError(form, 'กรุณากรอกลูกค้า / สินค้า'); }
+    if (!data.date) return showError(form, 'กรุณาเลือกวันที่');
+    if (!lines(data.places).length) { $('#bk-place-pick').focus(); return showError(form, 'กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด'); }
+    if (S.bk) data.id = S.bk.id;
+    var editing = !!S.bk;
+    submitWith(form, async function () {
+      var res = await api('saveBooking', S.token, data);
+      if (data.worker) LS.set('worker', data.worker.replace(/\s*[0-9][0-9\-\s]{6,}$/, ''));
+      var d = parseIsoDate(res.date);
+      if (!editing) { S.cal.y = d.getFullYear(); S.cal.m = d.getMonth(); }
+      storeBooking(res);
+      S.bk = res;
+      renderBookingView();
+      if (!editing || !S.cal.range || res.date < S.cal.range[0] || res.date > S.cal.range[1]) await loadSchedule();
+      else renderSchedule();
+      toast(editing ? 'บันทึกการแก้ไขแล้ว' : 'ส่งคำขอจองแล้ว — รอผู้ดูแลระบบอนุมัติ');
+    });
+  });
+
+  /** เติมฟอร์มบันทึกการใช้รถจากการจองที่อนุมัติแล้ว */
+  function bookingToEntry(b) {
+    closeModal();
+    showPage('entry');
+    setMode(b.provider === 'BEM' ? 'bem' : 'exat');
+    var form = $('#form-entry');
+    resetEntry({ date: b.date, worker: String(b.worker || '').replace(/\s*[0-9][0-9\-\s]{6,}$/, '') });
+    form.jobType.value = b.jobType || b.title;
+    var isGateway = /gateway/i.test(b.mediaType);
+    lines(b.places).forEach(function (p) {
+      var np = norm(p);
+      var loc = S.data.locations.find(function (l) { return l.area === p || norm(l.area).indexOf(np) >= 0 || (l.code && norm(l.code) === np); });
+      if (loc) {
+        S.picks.push({ place: loc.area, code: loc.code, expressway: loc.expressway, project: projectFor(loc), editing: !loc.expressway, fee: '', feeText: '', payment: '', touched: {} });
+      } else {
+        S.picks.push({ place: p, code: '', expressway: b.expressway || '', project: (isGateway ? 'Gateway ' : 'Flyover 2.0 ') + b.provider, editing: true, fee: '', feeText: '', payment: '', touched: {} });
+      }
+    });
+    renderPicks();
+    toast('เติมข้อมูลจากการจองแล้ว — ตรวจสอบแล้วกดบันทึก');
   }
 
   // ---------- สถานที่ ----------

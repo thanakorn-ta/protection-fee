@@ -53,7 +53,8 @@ function doGet() {
 /* ------------------------------------------------------------------ */
 
 const API_FUNCTIONS = {
-  register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, addLocation, listUsers, updateUser, resetPassword,
+  register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, listBookings, saveBooking, reviewBooking, cancelBooking,
+  addLocation, listUsers, updateUser, resetPassword,
 };
 
 function doPost(e) {
@@ -172,6 +173,7 @@ function getAppData(token) {
       mediaSites: uniq_(PROJECTS.concat(locations.map(l => l.mediaSite))),
     },
     recent: { exat: exat.recent, bem: bem.recent },
+    bookingPending: user.role === 'admin' ? readBookings_(bookingsSheet_(false)).filter(b => b.status === 'pending').length : 0,
   };
 }
 
@@ -395,6 +397,176 @@ function ym_(y, m) {
   if (y < 100) y += y >= 40 ? 2500 : 2000;
   if (y > 2400) y -= 543;
   return m >= 1 && m <= 12 ? { y, m } : null;
+}
+
+/* ------------------------------------------------------------------ */
+/* ตารางจองรถคุ้มครอง (แท็บ Bookings) — ผู้จองส่งคำขอ ผู้ดูแลระบบอนุมัติ     */
+/* ------------------------------------------------------------------ */
+
+const BOOKING_SHEET = 'Bookings';
+const BOOKING_HEADERS = [
+  'id', 'title', 'date', 'time', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'note',
+  'status', 'requestedBy', 'requestedByName', 'requestedAt', 'reviewedBy', 'reviewedByName', 'reviewedAt', 'reviewNote', 'updatedAt',
+];
+const BOOKING_FIELDS = ['title', 'date', 'time', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'note'];
+const MEDIA_TYPES = ['Flyover 2.0', 'Gateway Billboard', 'Mainline'];
+
+function bookingsSheet_(create) {
+  const ss = spreadsheet_();
+  let sh = ss.getSheetByName(BOOKING_SHEET);
+  if (!sh && create !== false) {
+    sh = ss.insertSheet(BOOKING_SHEET);
+    sh.getRange(1, 1, 1, BOOKING_HEADERS.length).setValues([BOOKING_HEADERS]);
+    sh.getRange(1, 1, sh.getMaxRows(), BOOKING_HEADERS.length).setNumberFormat('@'); // เก็บเป็นข้อความ ไม่ให้ชีทแปลงวันที่เอง
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function readBookings_(sh) {
+  if (!sh || sh.getLastRow() < 2) return [];
+  const values = sh.getDataRange().getDisplayValues();
+  const head = values[0].map(h => String(h).trim());
+  const idx = {};
+  BOOKING_HEADERS.forEach(h => { idx[h] = head.indexOf(h); });
+  const out = [];
+  for (let i = 1; i < values.length; i++) {
+    const r = values[i];
+    if (idx.id < 0 || !String(r[idx.id]).trim()) continue;
+    const b = { row: i + 1 };
+    BOOKING_HEADERS.forEach(h => { b[h] = idx[h] >= 0 ? String(r[idx[h]]) : ''; });
+    out.push(b);
+  }
+  return out;
+}
+
+function writeBooking_(sh, row, b) {
+  const range = sh.getRange(row, 1, 1, BOOKING_HEADERS.length);
+  range.setNumberFormat('@');
+  range.setValues([BOOKING_HEADERS.map(h => longText_(b[h]))]);
+}
+
+/** เหมือน text_ แต่ยาวได้ถึง 2,000 ตัวอักษร (รายละเอียด / จุดที่ไปหลายบรรทัด) */
+function longText_(v) {
+  let s = String(v === null || v === undefined ? '' : v).trim().slice(0, 2000);
+  if (/^[=+\-@]/.test(s)) s = "'" + s;
+  return s;
+}
+
+function canEditBooking_(b, user) {
+  if (b.status === 'cancelled') return false;
+  if (user.role === 'admin') return true;
+  return b.requestedBy === user.username && (b.status === 'pending' || b.status === 'rejected');
+}
+
+function bookingOut_(b, user) {
+  const out = {};
+  BOOKING_HEADERS.forEach(h => { out[h] = b[h] || ''; });
+  out.mine = b.requestedBy === user.username;
+  out.canEdit = canEditBooking_(b, user);
+  out.canCancel = b.status !== 'cancelled' && (out.mine || user.role === 'admin');
+  out.canReview = user.role === 'admin' && b.status !== 'cancelled';
+  return out;
+}
+
+function validateBooking_(form) {
+  form = form || {};
+  const f = {};
+  BOOKING_FIELDS.forEach(k => { f[k] = String(form[k] === undefined || form[k] === null ? '' : form[k]).trim(); });
+  if (!f.title) throw new Error('กรุณากรอกลูกค้า / สินค้า');
+  parseDate_(f.date);
+  if (f.provider !== 'EXAT' && f.provider !== 'BEM') throw new Error('กรุณาเลือกแจ้งใช้รถ EXAT หรือ BEM');
+  if (!f.mediaType) throw new Error('กรุณาเลือก Media Type');
+  f.places = f.places.split(/\r?\n/).map(s => s.trim()).filter(Boolean).join('\n');
+  if (!f.places) throw new Error('กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด');
+  return f;
+}
+
+function nowText_() {
+  return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm');
+}
+
+/** การจองช่วงวันที่ from–to (ISO) + รายการรออนุมัติทั้งหมด (เฉพาะผู้ดูแลระบบ) */
+function listBookings(token, from, to) {
+  const user = requireUser_(token);
+  const all = readBookings_(bookingsSheet_(false));
+  const inRange = all.filter(b => (!from || b.date >= from) && (!to || b.date <= to));
+  const pending = all.filter(b => b.status === 'pending').sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  return {
+    bookings: inRange.map(b => bookingOut_(b, user)),
+    pending: user.role === 'admin' ? pending.map(b => bookingOut_(b, user)) : [],
+  };
+}
+
+/** สร้าง (ไม่มี id) หรือแก้ไขการจอง */
+function saveBooking(token, form) {
+  const user = requireUser_(token);
+  const f = validateBooking_(form);
+  const id = String((form && form.id) || '').trim();
+  return withLock_(() => {
+    const sh = bookingsSheet_();
+    const now = nowText_();
+    let b;
+    if (id) {
+      b = readBookings_(sh).find(x => x.id === id);
+      if (!b) throw new Error('ไม่พบการจองนี้ อาจถูกลบไปแล้ว');
+      if (!canEditBooking_(b, user)) throw new Error('แก้ไขได้เฉพาะการจองของคุณที่ยังไม่ได้อนุมัติ — ติดต่อผู้ดูแลระบบ');
+      Object.assign(b, f, { updatedAt: now });
+      if (user.role !== 'admin' && b.status === 'rejected') {
+        b.status = 'pending'; // แก้แล้วส่งขออนุมัติใหม่
+        b.reviewedAt = '';
+      }
+      writeBooking_(sh, b.row, b);
+      audit_(user.username, 'update_booking', BOOKING_SHEET, b.row, { id: b.id, status: b.status });
+    } else {
+      b = Object.assign({
+        id: 'B' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 36 * 36).toString(36).toUpperCase(),
+        status: 'pending', requestedBy: user.username, requestedByName: user.fullName || user.username, requestedAt: now,
+        reviewedBy: '', reviewedByName: '', reviewedAt: '', reviewNote: '', updatedAt: now,
+      }, f);
+      b.row = Math.max(sh.getLastRow(), 1) + 1;
+      writeBooking_(sh, b.row, b);
+      audit_(user.username, 'create_booking', BOOKING_SHEET, b.row, { id: b.id, date: b.date, title: b.title });
+    }
+    return bookingOut_(b, user);
+  });
+}
+
+/** ผู้ดูแลระบบอนุมัติ / ไม่อนุมัติ */
+function reviewBooking(token, id, decision, note) {
+  const user = requireUser_(token, true);
+  if (decision !== 'approved' && decision !== 'rejected') throw new Error('ผลการพิจารณาไม่ถูกต้อง');
+  return withLock_(() => {
+    const sh = bookingsSheet_();
+    const b = readBookings_(sh).find(x => x.id === String(id || ''));
+    if (!b) throw new Error('ไม่พบการจองนี้');
+    if (b.status === 'cancelled') throw new Error('การจองนี้ถูกยกเลิกแล้ว');
+    const now = nowText_();
+    Object.assign(b, {
+      status: decision, reviewedBy: user.username, reviewedByName: user.fullName || user.username,
+      reviewedAt: now, reviewNote: String(note || '').trim(), updatedAt: now,
+    });
+    writeBooking_(sh, b.row, b);
+    audit_(user.username, decision === 'approved' ? 'approve_booking' : 'reject_booking', BOOKING_SHEET, b.row, { id: b.id, note: b.reviewNote });
+    return bookingOut_(b, user);
+  });
+}
+
+/** ผู้จองหรือผู้ดูแลระบบยกเลิกการจอง */
+function cancelBooking(token, id) {
+  const user = requireUser_(token);
+  return withLock_(() => {
+    const sh = bookingsSheet_();
+    const b = readBookings_(sh).find(x => x.id === String(id || ''));
+    if (!b) throw new Error('ไม่พบการจองนี้');
+    if (b.requestedBy !== user.username && user.role !== 'admin') throw new Error('ยกเลิกได้เฉพาะการจองของคุณ');
+    if (b.status === 'cancelled') return bookingOut_(b, user);
+    b.status = 'cancelled';
+    b.updatedAt = nowText_();
+    writeBooking_(sh, b.row, b);
+    audit_(user.username, 'cancel_booking', BOOKING_SHEET, b.row, { id: b.id });
+    return bookingOut_(b, user);
+  });
 }
 
 /* ------------------------------------------------------------------ */
