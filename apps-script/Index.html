@@ -1121,7 +1121,11 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     return S.picks.map(function (p) {
       var rule = rateFor(provider, p.expressway, iso);
       if (!rule) return null;
+      var feeText = String(p.feeText || '');
+      if (provider === 'BEM' && (/ไม่ได้คิด/.test(feeText) || /ฟรี/.test(String(p.payment || '')))) return 0;
       var k = (S.data.rates || []).indexOf(rule);
+      // เหมือนฝั่งชีท: กรอกค่าอาหาร (EXAT) หรือ "คิดค่ารถ" (BEM) = จุดแรกของรถอีกคัน
+      if (provider === 'EXAT' ? Number(p.fee) > 0 : /คิดค่ารถ/.test(feeText)) counters[k] = 0;
       var i = counters[k] = (counters[k] || 0) + 1;
       var cost = (i - 1) % rule.every === 0 ? rule.rate : 0;
       if (i === 1 && rule.food) cost -= rule.food;
@@ -1185,7 +1189,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     if (!p) return;
     p[el.dataset.k] = el.value;
     p.touched[el.dataset.k] = true;
-    if (el.dataset.k === 'expressway') updateCostLabels();
+    if (['expressway', 'fee', 'feeText', 'payment'].indexOf(el.dataset.k) >= 0) updateCostLabels();
   }
   $('#picked').addEventListener('input', onPickInput);
   $('#picked').addEventListener('change', onPickInput);
@@ -1449,7 +1453,9 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
         ? fmt(r.rate) + ' บาทต่อคืน ใช้ต่อได้ ' + r.every + ' จุด'
         : 'จุดละ ' + fmt(r.rate) + ' บาท' + (r.food ? ' หักค่าอาหาร ' + fmt(r.food) + ' จากจุดแรกของคืน' : '');
       return '<li><b>' + esc(r.provider) + '</b> ' + esc(r.expressways) + ' — ' + how + (r.from ? ' (ตั้งแต่ ' + esc(thaiDate(r.from)) + ')' : '') + '</li>';
-    }).join('') + (noRate ? '<li class="sub">ปีนี้มี ' + fmt(noRate) + ' จุดที่สายทางไม่อยู่ในอัตรา จึงไม่ได้คิดเงิน — เพิ่มสายทางได้ในแท็บ “อัตราค่ารถคุ้มครอง”</li>' : '');
+    }).join('') +
+      '<li class="sub">1 คืน = รถ 1 คัน: เริ่มนับใหม่เมื่อวันที่เปลี่ยน หรือเมื่อเป็นจุดแรกของรถอีกคัน (EXAT กรอกค่าอาหาร · BEM กรอก “คิดค่ารถ…”) — BEM ที่เขียนว่า “ไม่ได้คิดค่ารถ” หรือชำระ “ฟรี” = 0 บาท</li>' +
+      (noRate ? '<li class="sub">ปีนี้มี ' + fmt(noRate) + ' จุดที่สายทางไม่อยู่ในอัตรา จึงไม่ได้คิดเงิน — เพิ่มสายทางได้ในแท็บ “อัตราค่ารถคุ้มครอง”</li>' : '');
 
     $('#dash-note').textContent = 'ข้อมูล ณ ' + d.updatedAt + ' · นับตามคอลัมน์ “เดือน” ในชีท (เดือนที่ลงบัญชี) · คืน = จุดที่วันที่เดียวกัน' +
       (d.unknown ? ' · มี ' + d.unknown + ' แถวที่อ่านเดือนไม่ได้ จึงไม่ได้นับ' : '');

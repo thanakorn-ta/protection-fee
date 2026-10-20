@@ -348,8 +348,10 @@ function ruleFor_(rates, provider, expressway, iso) {
 }
 
 /**
- * คิดค่าใช้จ่ายทีละจุด — rows เรียงตามลำดับในชีท [{ iso, expressway }]
- * นับจุดในคืนเดียวกัน (วันที่เดียวกัน + อัตราเดียวกัน) เริ่มที่ 1
+ * คิดค่าใช้จ่ายทีละจุด — rows เรียงตามลำดับในชีท [{ iso, expressway, fee, feeText, payment }]
+ * 1 คืน = รถคุ้มครอง 1 คัน: เริ่มคืนใหม่เมื่อวันที่เปลี่ยน หรือเมื่อแถวนั้นเป็นจุดแรกของรถอีกคัน
+ *   EXAT: กรอกค่าอาหาร (มากกว่า 0) = จุดแรกของรถคันนั้น
+ *   BEM : "คิดค่ารถ ..." = จุดแรกของรถคันนั้น / "ไม่ได้คิดค่ารถ" หรือการชำระเงิน "ฟรี" = 0 บาท
  */
 function computeCosts_(rates, provider, rows) {
   const counters = {};
@@ -357,7 +359,13 @@ function computeCosts_(rates, provider, rows) {
     if (!r.iso) return { cost: '', note: 'no-date' };
     const rule = ruleFor_(rates, provider, r.expressway, r.iso);
     if (!rule) return { cost: '', note: 'no-rate' };
+    const feeText = String(r.feeText || '');
+    if (provider === 'BEM' && (/ไม่ได้คิด/.test(feeText) || /ฟรี/.test(String(r.payment || '')))) {
+      return { cost: 0, food: 0, note: 'free' };
+    }
     const k = r.iso + '|' + rates.indexOf(rule);
+    const startsVehicle = provider === 'EXAT' ? Number(r.fee) > 0 : /คิดค่ารถ/.test(feeText);
+    if (startsVehicle) counters[k] = 0;
     const i = counters[k] = (counters[k] || 0) + 1;
     const charged = (i - 1) % rule.every === 0;
     let cost = charged ? rule.rate : 0;
