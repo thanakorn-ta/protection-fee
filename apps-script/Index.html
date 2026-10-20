@@ -295,6 +295,17 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
 .modal-head { position: sticky; top: 0; z-index: 1; background: #fff; display: flex; align-items: center; gap: 10px; padding: 14px max(16px, calc((100% - 760px) / 2)); border-bottom: 1px solid var(--line); box-shadow: 0 2px 8px rgba(0,0,0,.04); }
 .modal-head h2 { font-size: 19px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .modal-body { padding: 18px max(16px, calc((100% - 760px) / 2)) 28px; display: flex; flex-direction: column; gap: 14px; }
+.modal:has(.bk-form:not([hidden])), .modal:has(.bk-form:not([hidden])) .modal-card { background: var(--ground); }
+.bk-form { gap: 16px; padding-bottom: 0; }
+.fsec { background: #fff; border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px 18px; display: flex; flex-direction: column; gap: 12px; }
+.fsec h3 { font-size: 16px; display: flex; align-items: center; gap: 10px; }
+.fnum { width: 26px; height: 26px; border-radius: 50%; background: var(--green); color: #fff; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.fhint { font-size: 13px; color: var(--muted); margin-top: -6px; }
+.req { color: var(--danger); font-weight: 600; }
+.fsec .seg button { min-height: 38px; }
+.bk-actions { position: sticky; bottom: 12px; margin-bottom: 16px; padding: 12px; background: #fff; border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 6px 20px rgba(20,33,27,.12); justify-content: flex-end; }
+.bk-actions .btn.primary { min-width: 180px; }
+@media (max-width: 640px) { .bk-actions .btn { flex: 1; } .bk-actions .btn.primary { min-width: 0; } }
 .modal-ask { position: fixed; inset: 0; z-index: 9; background: rgba(20,33,27,.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ask-card { width: 100%; max-width: 400px; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.3); padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 8px; }
 .ask-card h3 { font-size: 18px; }
@@ -309,8 +320,8 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
 .history { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
 .review-box { background: var(--amber-soft); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
 .review-box h3 { font-size: 15px; }
-.field textarea { min-height: 80px; padding: 10px 12px; border: 1.5px solid var(--field); border-radius: 10px; background: #fff; font: inherit; font-weight: 400; font-size: 16px; resize: vertical; width: 100%; }
-.field textarea:focus { border-color: var(--green); }
+.field textarea, .fsec > textarea { min-height: 80px; padding: 10px 12px; border: 1.5px solid var(--field); border-radius: 10px; background: #fff; font: inherit; font-weight: 400; font-size: 16px; resize: vertical; width: 100%; }
+.field textarea:focus, .fsec > textarea:focus { border-color: var(--green); }
 .place-add { display: flex; gap: 8px; }
 .place-add input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 1.5px solid var(--field); border-radius: 10px; background: #fff; font-size: 15px; }
 
@@ -740,32 +751,57 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       <button type="button" class="icon-x" id="bk-close" aria-label="ปิด">×</button>
     </div>
     <div class="modal-body" id="bk-view"></div>
-    <form class="modal-body" id="bk-form" novalidate hidden>
-      <label class="field">ลูกค้า / สินค้า
-        <input name="title" required placeholder="เช่น Studio7">
-      </label>
-      <div class="grid2">
-        <label class="field">วันที่ใช้รถคุ้มครอง<input type="date" name="date" required></label>
-        <label class="field">เวลา<input name="time" placeholder="เช่น 22.00 น."></label>
-        <label class="field">แจ้งใช้รถ<select name="provider"><option>EXAT</option><option>BEM</option></select></label>
-        <label class="field">Media Type<select name="mediaType"><option>Flyover 2.0</option><option>Gateway Billboard</option><option>Mainline</option></select></label>
-        <label class="field">สายทาง<input name="expressway" list="dl-expressways" placeholder="เช่น ศรีรัช"></label>
-        <label class="field">จุดนัดพบ<input name="meetingPoint" placeholder="เช่น ด่านศรีนครินทร์"></label>
-      </div>
-      <div class="field">จุดที่ไป <small>บรรทัดละ 1 จุด — เลือกจากฐานข้อมูลป้ายแล้วกด “เพิ่ม” หรือพิมพ์เองก็ได้</small>
+    <form class="modal-body bk-form" id="bk-form" novalidate hidden>
+      <section class="fsec">
+        <h3><span class="fnum">1</span>งาน</h3>
+        <label class="field"><span>ประเภทงาน <span class="req">*</span></span>
+          <input name="jobType" list="dl-jobtypes" required placeholder="เช่น ติดตั้ง สินค้า COM7 (Studio7)">
+        </label>
+        <div class="grid2">
+          <div class="field"><span>แจ้งใช้รถ</span>
+            <input type="hidden" name="provider" value="EXAT">
+            <div class="seg" role="group" aria-label="แจ้งใช้รถ" data-seg="provider">
+              <button type="button" data-val="EXAT" aria-pressed="true">EXAT</button>
+              <button type="button" data-val="BEM" aria-pressed="false">BEM</button>
+            </div>
+          </div>
+          <label class="field">Media Type<select name="mediaType"><option>Flyover 2.0</option><option>Gateway Billboard</option><option>Mainline</option></select></label>
+        </div>
+      </section>
+
+      <section class="fsec">
+        <h3><span class="fnum">2</span>วัน เวลา และจุดนัดพบ</h3>
+        <div class="grid2">
+          <label class="field"><span>วันที่ใช้รถคุ้มครอง <span class="req">*</span></span><input type="date" name="date" required></label>
+          <label class="field">เวลา<input name="time" placeholder="เช่น 22.00 น."></label>
+          <label class="field">สายทาง<input name="expressway" list="dl-expressways" placeholder="เช่น ศรีรัช"></label>
+          <label class="field">จุดนัดพบ<input name="meetingPoint" placeholder="เช่น ด่านศรีนครินทร์"></label>
+        </div>
+      </section>
+
+      <section class="fsec">
+        <h3><span class="fnum">3</span>จุดที่ไป <span class="req">*</span></h3>
+        <p class="fhint">บรรทัดละ 1 จุด — ค้นหาจากฐานข้อมูลป้ายแล้วกด “เพิ่ม” หรือพิมพ์เองก็ได้</p>
         <div class="place-add">
           <input id="bk-place-pick" list="dl-places" placeholder="ค้นหาป้าย เช่น 6.2" aria-label="เลือกจุดที่ไปจากฐานข้อมูลป้าย">
-          <button type="button" class="btn sm" id="bk-place-add">เพิ่ม</button>
+          <button type="button" class="btn sm" id="bk-place-add">+ เพิ่ม</button>
         </div>
         <textarea name="places" rows="3" placeholder="ถนนเอกมัยมุ่งพระรามเก้า" aria-label="จุดที่ไป"></textarea>
-      </div>
-      <label class="field">ประเภทงาน<input name="jobType" list="dl-jobtypes" placeholder="เช่น ติดตั้ง สินค้า COM7 (Studio7)"></label>
-      <label class="field">ผู้เข้างาน <small>ชื่อและเบอร์โทร</small><input name="worker" list="dl-workers" placeholder="เช่น คุณเท่ง 061-895-3563"></label>
-      <label class="field"><span>หมายเหตุ <span class="opt">(ไม่บังคับ)</span></span><textarea name="note" rows="2"></textarea></label>
+      </section>
+
+      <section class="fsec">
+        <h3><span class="fnum">4</span>ผู้เข้างาน</h3>
+        <div class="grid2">
+          <label class="field"><span>ชื่อผู้เข้างาน <span class="req">*</span></span><input name="worker" list="dl-workers" required autocomplete="name" placeholder="เช่น คุณเท่ง"></label>
+          <label class="field"><span>เบอร์ติดต่อ <span class="req">*</span></span><input name="phone" type="tel" inputmode="tel" required autocomplete="tel" placeholder="เช่น 061-895-3563"></label>
+        </div>
+        <label class="field"><span>หมายเหตุ <span class="opt">(ไม่บังคับ)</span></span><textarea name="note" rows="2" placeholder="เช่น ต้องการรถ 2 คัน"></textarea></label>
+      </section>
+
       <div class="error" data-error hidden></div>
-      <div class="actions">
-        <button type="submit" class="btn primary">บันทึกการจอง</button>
+      <div class="actions bk-actions">
         <button type="button" class="btn" id="bk-cancel-edit">ยกเลิก</button>
+        <button type="submit" class="btn primary">บันทึกการจอง</button>
       </div>
     </form>
   </div>
@@ -1572,7 +1608,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   function thaiDateLong(iso) { var d = parseIsoDate(iso); return 'วัน' + ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][d.getDay()] + 'ที่ ' + d.getDate() + ' ' + TH_MONTHS_LONG[d.getMonth()] + ' ' + (d.getFullYear() + 543); }
   function lines(s) { return String(s || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean); }
   function stamp(s) { var m = /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2})/.exec(s || ''); return m ? (Number(m[3]) + ' ' + TH_MONTHS[Number(m[2]) - 1] + ' ' + pad2((Number(m[1]) + 543) % 100) + ' ' + m[4]) : (s || ''); }
-  function evLabel(b) { return b.title + ' · ' + b.mediaType + ' · แจ้งใช้รถ ' + b.provider; }
+  function evLabel(b) { return (b.jobType || b.title) + ' · ' + b.mediaType + ' · แจ้งใช้รถ ' + b.provider; }
 
   function setBookingBadge(n) {
     var el = $('#bk-count');
@@ -1588,7 +1624,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     if (b.meetingPoint) out.push('จุดนัดพบ : ' + b.meetingPoint);
     lines(b.places).forEach(function (p, i) { out.push('ไปที่ ' + (i + 1) + ' : ' + p); });
     if (b.jobType) out.push('ประเภทงาน : ' + b.jobType);
-    if (b.worker) out.push('ผู้เข้างาน : ' + b.worker);
+    if (b.worker) out.push('ผู้เข้างาน : ' + b.worker + (b.phone ? ' โทร ' + b.phone : ''));
     if (b.note) out.push('หมายเหตุ : ' + b.note);
     return out.join('\n');
   }
@@ -1734,7 +1770,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   function stayOpen() {
     $('#bk-ask').hidden = true;
     var form = $('#bk-form');
-    if (!form.hidden) form.title.focus();
+    if (!form.hidden) form.jobType.focus();
   }
   $('#bk-close').addEventListener('click', askClose);
   $('#bk-ask-stay').addEventListener('click', stayOpen);
@@ -1758,7 +1794,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     var b = S.bk;
     $('#bk-form').hidden = true;
     $('#bk-view').hidden = false;
-    $('#bk-modal-title').textContent = b.title;
+    $('#bk-modal-title').textContent = b.jobType || b.title;
     $('#bk-modal-status').innerHTML = '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status] || b.status) + '</span>';
     var kv = [
       ['วันที่', thaiDateLong(b.date) + (b.time ? ' · ' + b.time : '')],
@@ -1769,6 +1805,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       ['จุดที่ไป', lines(b.places).map(function (p, i) { return (i + 1) + '. ' + p; }).join('\n')],
       ['ประเภทงาน', b.jobType],
       ['ผู้เข้างาน', b.worker],
+      ['เบอร์ติดต่อ', b.phone],
       ['หมายเหตุ', b.note]
     ].filter(function (x) { return x[1]; });
     var hist = ['จองโดย ' + b.requestedByName + ' เมื่อ ' + stamp(b.requestedAt)];
@@ -1861,21 +1898,47 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   }
 
   // ฟอร์มจอง / แก้ไข
+  var PHONE_RE = /^[0-9+][0-9\-\s]{7,14}$/;
+  // การจองเก่าเก็บชื่อและเบอร์ไว้ช่องเดียว เช่น "คุณเท่ง 061-895-3563" — แยกออกเป็น 2 ช่อง
+  function splitWorker(worker, phone) {
+    var w = String(worker || '').trim();
+    var m = /^(.*?)\s*([0-9+][0-9\-\s]{7,14})$/.exec(w);
+    if (!phone && m) return { worker: m[1].trim(), phone: m[2].trim() };
+    return { worker: w, phone: String(phone || '') };
+  }
+  function setSeg(form, name) {
+    var val = form[name].value;
+    $$('[data-seg="' + name + '"] [data-val]', form).forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.val === val)); });
+  }
+  $$('#bk-form [data-seg] [data-val]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var form = $('#bk-form');
+      var name = b.closest('[data-seg]').dataset.seg;
+      form[name].value = b.dataset.val;
+      setSeg(form, name);
+    });
+  });
+
   function openBookingForm(b, dateIso) {
     var form = $('#bk-form');
     form.reset();
     showError(form, '');
     S.bk = b;
-    var v = b || { date: dateIso || today(), provider: 'EXAT', mediaType: 'Flyover 2.0', worker: LS.get('worker') };
-    ['title', 'date', 'time', 'provider', 'mediaType', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'note'].forEach(function (k) {
+    var v = b
+      ? Object.assign({}, b, { jobType: b.jobType || b.title }, splitWorker(b.worker, b.phone))
+      : { date: dateIso || today(), provider: 'EXAT', mediaType: 'Flyover 2.0', worker: LS.get('worker'), phone: LS.get('bkPhone') };
+    ['date', 'time', 'provider', 'mediaType', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'phone', 'note'].forEach(function (k) {
       if (form[k] && v[k] !== undefined) form[k].value = v[k];
     });
+    if (!form.provider.value) form.provider.value = 'EXAT';
+    setSeg(form, 'provider');
     $('#bk-modal-title').textContent = b ? 'แก้ไขการจอง' : 'จองรถคุ้มครอง';
     $('#bk-modal-status').innerHTML = b ? '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status]) + '</span>' : '';
     $('#bk-view').hidden = true;
     form.hidden = false;
     showModal(true);
-    setTimeout(function () { form.title.focus(); }, 30);
+    $('#bk-modal').scrollTop = 0;
+    setTimeout(function () { form.jobType.focus(); }, 30);
   }
   $('#bk-cancel-edit').addEventListener('click', askClose);
   $('#bk-place-add').addEventListener('click', function () {
@@ -1902,14 +1965,20 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     var form = e.target;
     var data = formData(form);
     delete data[''];
-    if (!data.title.trim()) { form.title.focus(); return showError(form, 'กรุณากรอกลูกค้า / สินค้า'); }
-    if (!data.date) return showError(form, 'กรุณาเลือกวันที่');
-    if (!lines(data.places).length) { $('#bk-place-pick').focus(); return showError(form, 'กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด'); }
+    var bad = function (el, msg) { el.focus(); return showError(form, msg); };
+    if (!data.jobType.trim()) return bad(form.jobType, 'กรุณากรอกประเภทงาน');
+    if (!data.date) return bad(form.date, 'กรุณาเลือกวันที่');
+    if (!lines(data.places).length) return bad($('#bk-place-pick'), 'กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด');
+    if (!data.worker.trim()) return bad(form.worker, 'กรุณากรอกชื่อผู้เข้างาน');
+    if (!data.phone.trim()) return bad(form.phone, 'กรุณากรอกเบอร์ติดต่อผู้เข้างาน');
+    if (!PHONE_RE.test(data.phone.trim())) return bad(form.phone, 'เบอร์ติดต่อไม่ถูกต้อง เช่น 061-895-3563');
+    data.title = data.jobType; // ไม่มีช่องลูกค้า / สินค้าแล้ว
     if (S.bk) data.id = S.bk.id;
     var editing = !!S.bk;
     submitWith(form, async function () {
       var res = await api('saveBooking', S.token, data);
-      if (data.worker) LS.set('worker', data.worker.replace(/\s*[0-9][0-9\-\s]{6,}$/, ''));
+      LS.set('worker', data.worker.trim());
+      LS.set('bkPhone', data.phone.trim());
       var d = parseIsoDate(res.date);
       if (!editing) { S.cal.y = d.getFullYear(); S.cal.m = d.getMonth(); }
       storeBooking(res);

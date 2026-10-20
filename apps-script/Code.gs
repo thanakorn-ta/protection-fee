@@ -728,8 +728,9 @@ const BOOKING_HEADERS = [
   'id', 'title', 'date', 'time', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'note',
   'status', 'requestedBy', 'requestedByName', 'requestedAt', 'reviewedBy', 'reviewedByName', 'reviewedAt', 'reviewNote', 'updatedAt',
   'loggedRows', 'loggedAt', // แถวที่บันทึกลงตาราง EXAT / BEM แล้ว (กันบันทึกซ้ำ)
+  'phone', // เบอร์ติดต่อผู้เข้างาน
 ];
-const BOOKING_FIELDS = ['title', 'date', 'time', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'note'];
+const BOOKING_FIELDS = ['title', 'date', 'time', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'phone', 'note'];
 const MEDIA_TYPES = ['Flyover 2.0', 'Gateway Billboard', 'Mainline'];
 
 function bookingsSheet_(create) {
@@ -798,7 +799,11 @@ function validateBooking_(form) {
   form = form || {};
   const f = {};
   BOOKING_FIELDS.forEach(k => { f[k] = String(form[k] === undefined || form[k] === null ? '' : form[k]).trim(); });
-  if (!f.title) throw new Error('กรุณากรอกลูกค้า / สินค้า');
+  if (!f.jobType) throw new Error('กรุณากรอกประเภทงาน');
+  if (!f.title) f.title = f.jobType; // ไม่มีช่องลูกค้า/สินค้าแล้ว — ใช้ประเภทงานเป็นชื่อการจอง
+  if (!f.worker) throw new Error('กรุณากรอกชื่อผู้เข้างาน');
+  if (!f.phone) throw new Error('กรุณากรอกเบอร์ติดต่อผู้เข้างาน');
+  if (!/^[0-9+][0-9\-\s]{7,14}$/.test(f.phone)) throw new Error('เบอร์ติดต่อไม่ถูกต้อง เช่น 061-895-3563');
   parseDate_(f.date);
   if (f.provider !== 'EXAT' && f.provider !== 'BEM') throw new Error('กรุณาเลือกแจ้งใช้รถ EXAT หรือ BEM');
   if (!f.mediaType) throw new Error('กรุณาเลือก Media Type');
@@ -908,7 +913,7 @@ function bookingToForms_(b) {
     const owner = loc ? (/^BEM/i.test(loc.operator) || /BECL|BEM/i.test(loc.mediaSite) ? 'BEM' : 'EXAT') : b.provider;
     const gateway = loc ? /gateway/i.test(loc.mediaSite) : /gateway/i.test(b.mediaType);
     const f = {
-      date: b.date, worker, jobType: b.jobType || b.title,
+      date: b.date, worker, jobType: b.jobType || b.title, // ไม่ใส่เบอร์โทรลงตาราง EXAT / BEM
       place: loc ? loc.area : p,
       expressway: (loc && loc.expressway) || b.expressway,
       project: (gateway ? 'Gateway ' : 'Flyover 2.0 ') + owner,
