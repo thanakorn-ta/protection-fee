@@ -53,7 +53,7 @@ function doGet() {
 /* ------------------------------------------------------------------ */
 
 const API_FUNCTIONS = {
-  register, login, logout, changePassword, getAppData, addLogEntry, addLocation, listUsers, updateUser, resetPassword,
+  register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, addLocation, listUsers, updateUser, resetPassword,
 };
 
 function doPost(e) {
@@ -180,20 +180,59 @@ function getAppData(token) {
 /* ------------------------------------------------------------------ */
 
 function addLogEntry(token, key, form) {
-  if (key !== 'exat' && key !== 'bem') throw new Error('ประเภทตารางไม่ถูกต้อง');
+  checkLogKey_(key);
   const user = requireUser_(token);
+  const r = addLogRow_(user, key, validateLogForm_(key, form));
+  CacheService.getScriptCache().remove(DASH_CACHE_KEY);
+  return { row: r.row, no: r.no, recent: readLog_(key).recent };
+}
+
+/**
+ * บันทึกหลายจุดในวันเดียวกันพร้อมกัน — common = วันที่/ผู้เข้างาน/ประเภทงาน, places = [{ place, expressway, project, fee | feeText, payment }]
+ * ตรวจครบทุกจุดก่อนเขียน เพื่อไม่ให้บันทึกไปแค่บางจุดเพราะข้อมูลผิด
+ */
+function addLogEntries(token, key, common, places) {
+  checkLogKey_(key);
+  const user = requireUser_(token);
+  if (!Array.isArray(places) || !places.length) throw new Error('กรุณาเลือกสถานที่อย่างน้อย 1 จุด');
+  if (places.length > 30) throw new Error('บันทึกได้ครั้งละไม่เกิน 30 จุด');
+  const forms = places.map((p, i) => {
+    try {
+      return validateLogForm_(key, Object.assign({}, common || {}, p || {}));
+    } catch (err) {
+      throw new Error('จุดที่ ' + (i + 1) + ': ' + err.message);
+    }
+  });
+  const saved = forms.map(f => addLogRow_(user, key, f));
+  CacheService.getScriptCache().remove(DASH_CACHE_KEY);
+  return { saved, recent: readLog_(key).recent };
+}
+
+function checkLogKey_(key) {
+  if (key !== 'exat' && key !== 'bem') throw new Error('ประเภทตารางไม่ถูกต้อง');
+}
+
+function validateLogForm_(key, form) {
   form = form || {};
   const date = parseDate_(form.date);
-  const labels = { expressway: 'สายทาง', project: 'โครงการ', place: 'สถานที่', jobType: 'ประเภทงาน', worker: 'ผู้เข้างาน' };
+  const labels = { worker: 'ผู้เข้างาน', place: 'สถานที่', expressway: 'สายทาง', project: 'โครงการ', jobType: 'ประเภทงาน' };
   Object.keys(labels).forEach(k => {
     if (!String(form[k] || '').trim()) throw new Error('กรุณากรอก' + labels[k]);
   });
   let fee = 0;
   if (key === 'exat') {
     fee = Number(form.fee);
-    if (!isFinite(fee) || fee < 0) throw new Error('ค่าอาหาร/รถคุ้มครองต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป');
+    if (form.fee === '' || form.fee === null || form.fee === undefined || !isFinite(fee) || fee < 0) {
+      throw new Error('ค่าอาหาร/รถคุ้มครองต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป');
+    }
   }
+  return Object.assign({}, form, { dateObj: date, feeNum: fee });
+}
 
+/** เขียน 1 แถวต่อจากแถวล่าสุดที่มีวันที่ (form ผ่าน validateLogForm_ แล้ว) */
+function addLogRow_(user, key, form) {
+  const date = form.dateObj;
+  const fee = form.feeNum;
   return withLock_(() => {
     const t = findTable_(key);
     const sh = t.sheet;
@@ -233,8 +272,129 @@ function addLogEntry(token, key, form) {
 
     audit_(user.username, 'add_' + key, sh.getName(), target, { no, date: form.date, place: form.place });
     SpreadsheetApp.flush();
-    return { row: target, no, recent: readLog_(key).recent };
+    return { row: target, no, place: String(form.place) };
   });
+}
+
+/* ------------------------------------------------------------------ */
+/* แดชบอร์ดสรุปรายปี                                                     */
+/* ------------------------------------------------------------------ */
+
+const DASH_CACHE_KEY = 'dash_v1';
+
+/**
+ * สรุปตาราง EXAT / BEM แยกปีและเดือน (ใช้คอลัมน์ "เดือน" = เดือนที่ลงบัญชี ถ้าว่างใช้ "วันที่")
+ * คืน { updatedAt, years: [2026, 2025, ...], byYear: { 2026: { exat: {...}, bem: {...} } } }
+ */
+function getDashboard(token, fresh) {
+  requireUser_(token);
+  const cache = CacheService.getScriptCache();
+  const hit = fresh ? null : cache.get(DASH_CACHE_KEY);
+  if (hit) return JSON.parse(hit);
+
+  const byYear = {};
+  const newPart = () => ({
+    count: 0, amount: 0, nights: 0, pending: 0, unknownDate: 0,
+    months: Array.from({ length: 12 }, () => ({ count: 0, amount: 0, nights: 0 })),
+    byProject: {}, byExpressway: {}, byWorker: {}, byPlace: {},
+  });
+  const inc = (map, name, n) => {
+    name = String(name || '').replace(/\s+/g, ' ').trim() || '(ไม่ระบุ)';
+    map[name] = (map[name] || 0) + (n === undefined ? 1 : n);
+  };
+  let unknown = 0;
+
+  ['exat', 'bem'].forEach(key => {
+    const t = findTable_(key);
+    const last = lastLogRow_(t);
+    if (last <= t.headerRow) return;
+    const range = t.sheet.getRange(t.headerRow + 1, 1, last - t.headerRow, t.width);
+    const raw = range.getValues();
+    const disp = range.getDisplayValues();
+    const c = name => colIndex_(t.headers, name);
+    const ci = {
+      month: c('เดือน'), date: c('วันที่'), project: c('โครงการ'), expressway: c('สายทาง'), place: c('สถานที่'),
+      worker: c('ผู้เข้างาน'), fee: c('ค่าอาหาร/รถคุ้มครอง'), feeText: c('ค่ารถคุ้มครอง'), payment: c('การชำระเงิน'),
+    };
+    raw.forEach((r, i) => {
+      const d = disp[i];
+      if (ci.date < 0 || (r[ci.date] === '' && d[ci.date] === '')) return;
+      const ym = (ci.month >= 0 && ymOf_(r[ci.month], d[ci.month])) || ymOf_(r[ci.date], d[ci.date]);
+      if (!ym) { unknown++; return; }
+      const year = byYear[ym.y] || (byYear[ym.y] = { exat: newPart(), bem: newPart() });
+      const part = year[key];
+      const month = part.months[ym.m - 1];
+      part.count++;
+      month.count++;
+      if (key === 'exat') {
+        const fee = typeof r[ci.fee] === 'number' ? r[ci.fee] : Number(String(d[ci.fee] || '').replace(/[^\d.-]/g, '')) || 0;
+        part.amount += fee;
+        month.amount += fee;
+        inc(part.byProject, d[ci.project], 1);
+      } else {
+        if (/คิดค่ารถ/.test(d[ci.feeText] || '')) { part.nights++; month.nights++; }
+        if (/^\s*รอ/.test(d[ci.payment] || '')) part.pending++;
+        inc(part.byProject, d[ci.project], 1);
+      }
+      inc(part.byExpressway, d[ci.expressway]);
+      inc(part.byWorker, d[ci.worker]);
+      inc(part.byPlace, d[ci.place]);
+    });
+  });
+
+  // เก็บเฉพาะอันดับต้น ๆ ให้ข้อมูลเล็ก
+  const top = (map, n) => Object.keys(map).map(k => [k, map[k]]).sort((a, b) => b[1] - a[1]).slice(0, n);
+  Object.keys(byYear).forEach(y => {
+    ['exat', 'bem'].forEach(k => {
+      const p = byYear[y][k];
+      p.byProject = top(p.byProject, 8);
+      p.byExpressway = top(p.byExpressway, 8);
+      p.byWorker = top(p.byWorker, 10);
+      p.byPlace = top(p.byPlace, 10);
+    });
+  });
+
+  const out = {
+    updatedAt: Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'dd/MM/yyyy HH:mm'),
+    years: Object.keys(byYear).map(Number).sort((a, b) => b - a),
+    byYear,
+    unknown,
+  };
+  const json = JSON.stringify(out);
+  if (json.length < 90000) cache.put(DASH_CACHE_KEY, json, 300);
+  return out;
+}
+
+/** เดือน/ปี จากเซลล์ — Date, "พ.ค.-22", "5 พ.ค. 22", "Sep-26", "16/9/2026" → { y: ค.ศ., m: 1–12 } */
+function ymOf_(raw, disp) {
+  if (raw instanceof Date && !isNaN(raw.getTime())) {
+    return { y: Number(Utilities.formatDate(raw, CONFIG.TIMEZONE, 'yyyy')), m: Number(Utilities.formatDate(raw, CONFIG.TIMEZONE, 'M')) };
+  }
+  const s = String(disp || raw || '').trim();
+  if (!s) return null;
+  let m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(s);
+  if (m) return ym_(m[3], m[2]);
+  m = /^(\d{4})-(\d{1,2})/.exec(s);
+  if (m) return ym_(m[1], m[2]);
+  const year = /(\d{2,4})\s*$/.exec(s);
+  if (!year) return null;
+  const flat = s.replace(/\./g, '');
+  let mo = 0;
+  THAI_MONTHS.forEach((t, i) => { if (!mo && flat.indexOf(t.replace(/\./g, '')) >= 0) mo = i + 1; });
+  if (!mo) {
+    const en = /([A-Za-z]{3})/.exec(s);
+    if (en) mo = EN_MONTHS.findIndex(x => x.toLowerCase() === en[1].toLowerCase()) + 1;
+  }
+  return mo ? ym_(year[1], mo) : null;
+}
+
+/** ปี 2 หลัก: ต่ำกว่า 40 = ค.ศ. (22 → 2022) ไม่งั้น พ.ศ. (65 → 2022) / ปี 4 หลักที่เกิน 2400 = พ.ศ. */
+function ym_(y, m) {
+  y = Number(y);
+  m = Number(m);
+  if (y < 100) y += y >= 40 ? 2500 : 2000;
+  if (y > 2400) y -= 543;
+  return m >= 1 && m <= 12 ? { y, m } : null;
 }
 
 /* ------------------------------------------------------------------ */

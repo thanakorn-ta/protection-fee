@@ -166,6 +166,89 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
 #toast.err { background: var(--danger); }
 #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(245,246,242,.7); z-index: 5; font-weight: 600; color: var(--green); }
 
+/* ---------- ฟอร์มบันทึกแบบเป็นขั้น ---------- */
+.step { display: flex; flex-direction: column; gap: 12px; }
+.step + .step { border-top: 1px solid var(--line-soft); padding-top: 20px; }
+.step h2 { font-size: 17px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.step h2 small { font-weight: 400; font-size: 14px; color: var(--muted); }
+.step-no { width: 28px; height: 28px; border-radius: 50%; background: var(--green); color: #fff; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; flex: none; }
+.date-row { display: flex; gap: 8px; align-items: center; }
+.date-row input { flex: 1 1 auto; }
+.pill.sm { min-height: 46px; padding: 0 14px; font-size: 14px; flex: none; }
+.picker { position: relative; }
+.picker .search { flex: none; }
+.results { position: absolute; left: 0; right: 0; top: calc(100% + 4px); background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(20,33,27,.16); z-index: 4; max-height: 360px; overflow-y: auto; padding: 6px; }
+.results button { display: flex; width: 100%; gap: 10px; align-items: flex-start; text-align: left; padding: 10px; border: 0; border-radius: 8px; background: transparent; color: var(--ink); font-size: 15px; }
+.results button.on, .results button:hover { background: var(--green-soft); }
+.r-main { display: flex; flex-direction: column; min-width: 0; }
+.r-sub { font-size: 13px; color: var(--muted); }
+.code-tag.plus { background: var(--amber); color: var(--ink); }
+.code-tag.muted { background: var(--seg); color: var(--muted); }
+.picked { display: flex; flex-direction: column; gap: 10px; }
+.pick { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; gap: 12px; align-items: start; padding: 12px; border: 1.5px solid var(--line); border-radius: 12px; background: #fff; }
+.pick-no { width: 26px; height: 26px; border-radius: 50%; background: var(--amber); color: var(--ink); font-weight: 700; font-size: 13px; display: inline-flex; align-items: center; justify-content: center; margin-top: 2px; }
+.pick-title { font-weight: 600; line-height: 1.4; }
+.pick-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.pick-edit { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.pick-fee { display: flex; flex-direction: column; gap: 6px; min-width: 160px; }
+.mini { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 600; color: var(--ink-2); min-width: 0; }
+.mini input, .mini select { height: 40px; padding: 0 10px; border: 1.5px solid var(--field); border-radius: 8px; background: #fff; font-size: 15px; font-weight: 400; width: 100%; min-width: 0; }
+.mini .fee-input input { width: 100px; }
+.icon-x { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: 20px; line-height: 1; }
+.icon-x:hover { color: var(--danger); border-color: var(--danger); }
+.link { border: 0; background: none; color: var(--green); text-decoration: underline; text-underline-offset: 3px; padding: 2px 4px; font-size: 14px; }
+.quick .job-chip { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-color: var(--field); color: var(--ink-2); }
+tr.fresh td { background: var(--green-soft); }
+
+/* ---------- แดชบอร์ด ---------- */
+.dash-ctl { display: flex; gap: 10px; align-items: flex-end; }
+.dash-ctl .field { min-width: 190px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.kpi { background: #fff; border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; }
+.kpi.exat { border-top: 4px solid var(--green); }
+.kpi.bem { border-top: 4px solid var(--amber); }
+.k-label { font-size: 14px; color: var(--muted); font-weight: 600; }
+.k-num { font-family: var(--mono); font-size: 30px; line-height: 1.2; }
+.k-num small { font-family: 'IBM Plex Sans Thai', system-ui, sans-serif; font-size: 15px; color: var(--muted); }
+.k-sub { font-size: 13px; color: var(--muted); }
+.pad { padding: 20px; display: flex; flex-direction: column; gap: 14px; }
+.pad h2 { font-size: 18px; }
+.card-head { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px; align-items: center; }
+.legend { display: flex; gap: 6px 14px; align-items: center; font-size: 14px; color: var(--ink-2); }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+.sw.exat { background: var(--green); }
+.sw.bem { background: var(--amber); }
+.chart { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; height: 200px; }
+.chart .col { display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.chart .bars2 { flex: 1; display: flex; gap: 3px; align-items: flex-end; justify-content: center; width: 100%; border-bottom: 1px solid var(--line); }
+.chart .b { width: 40%; max-width: 20px; border-radius: 4px 4px 0 0; }
+.chart .b.exat { background: var(--green); }
+.chart .b.bem { background: var(--amber); }
+.chart .m { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.bars { display: flex; flex-direction: column; gap: 12px; }
+.bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 14px; }
+.bar-row .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-row .cnt { font-family: var(--mono); }
+.bar-track { grid-column: 1 / -1; height: 8px; border-radius: 4px; background: var(--line-soft); display: flex; overflow: hidden; }
+.bar-track .exat { background: var(--green); }
+.bar-track .bem { background: var(--amber); }
+.loading-box { padding: 48px 16px; text-align: center; color: var(--muted); }
+table.compact th, table.compact td { padding: 8px 10px; }
+table.compact td.num, table.compact th.num { text-align: right; }
+tr.current td { background: var(--amber-soft); font-weight: 600; }
+
+@media (max-width: 640px) {
+  .pick { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .pick-fee { grid-column: 2 / 4; }
+  .pick-edit { grid-template-columns: 1fr; }
+  .dash-ctl { width: 100%; }
+  .dash-ctl .field { flex: 1; min-width: 0; }
+  .chart { gap: 3px; height: 170px; }
+  .kpi { padding: 14px; }
+  .k-num { font-size: 24px; }
+  .chart .m { font-size: 10px; }
+}
 @media (max-width: 640px) {
   .top-inner { padding: 10px 16px 6px; gap: 8px 12px; }
   .me { margin-left: auto; }
@@ -259,6 +342,7 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
       </div>
       <nav class="menu" aria-label="เมนูหลัก">
         <button type="button" data-page="entry">บันทึกการใช้รถ</button>
+        <button type="button" data-page="dash">แดชบอร์ด</button>
         <button type="button" data-page="locations">สถานที่</button>
         <button type="button" data-page="users" data-admin>ผู้ใช้</button>
         <button type="button" data-page="account">บัญชีของฉัน</button>
@@ -288,60 +372,48 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
 
     <div class="split">
       <form class="card main-col" id="form-entry" novalidate>
-        <div class="row">
-          <label class="field">วันที่
-            <input type="date" name="date" required>
-          </label>
-          <label class="field">ผู้เข้างาน
-            <input name="worker" list="dl-workers" placeholder="ชื่อผู้รับผิดชอบหน้างาน" required>
-          </label>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:8px">
-          <label class="field">สถานที่
-            <input name="place" list="dl-places" placeholder="พิมพ์รหัสป้ายหรือชื่อจุด เช่น 4.3 หรือ ด่านดินแดง" required>
-          </label>
-          <div class="autofill" id="autofill" hidden>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0D5C3B" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>
-            <span>เลือกจากฐานข้อมูลป้ายแล้ว ระบบเติมสายทางและโครงการให้:</span>
-            <span class="chip" id="autofill-exp"></span>
-            <span class="chip" id="autofill-proj"></span>
+        <section class="step">
+          <h2><span class="step-no">1</span>วันไหน ใครเข้างาน</h2>
+          <div class="row">
+            <div class="field">วันที่
+              <div class="date-row">
+                <input type="date" name="date" required aria-label="วันที่">
+                <button type="button" class="pill sm" data-day="0">วันนี้</button>
+                <button type="button" class="pill sm" data-day="-1">เมื่อวาน</button>
+              </div>
+            </div>
+            <label class="field">ผู้เข้างาน
+              <input name="worker" list="dl-workers" placeholder="ชื่อผู้รับผิดชอบหน้างาน" required>
+            </label>
           </div>
-        </div>
-        <div class="row">
-          <label class="field">สายทาง
-            <input name="expressway" list="dl-expressways" placeholder="เช่น เฉลิมมหานคร" required>
-          </label>
-          <label class="field">โครงการ
-            <select name="project" id="sel-project" required></select>
-          </label>
-        </div>
-        <label class="field">ประเภทงาน
-          <input name="jobType" list="dl-jobtypes" placeholder="เช่น ติดตั้งสินค้า, ตรวจสอบโครงสร้างประจำปี" required>
-        </label>
+        </section>
 
-        <div class="panel-amber" id="fields-exat">
-          <label class="field">ค่าอาหาร/รถคุ้มครอง
-            <span class="fee-input"><input type="number" name="fee" min="0" step="1" value="400" inputmode="numeric"><span>บาท</span></span>
-          </label>
-          <div class="quick">
-            <button type="button" data-fee="400">400 · จุดแรกของวัน</button>
-            <button type="button" data-fee="0">0 · จุดถัดไปในวันเดียวกัน</button>
+        <section class="step">
+          <h2><span class="step-no">2</span>เข้าจุดไหนบ้าง <small>เลือกได้หลายจุดในวันเดียวกัน — จุดแรกคิดค่าใช้จ่าย จุดถัดไปเป็น 0</small></h2>
+          <div class="picker">
+            <label class="search">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#56655D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+              <input type="search" id="place-search" autocomplete="off" aria-label="ค้นหาสถานที่" placeholder="พิมพ์รหัสป้ายหรือชื่อจุด เช่น 4.3, ดินแดง, Mainline">
+            </label>
+            <div class="results" id="place-results" role="listbox" hidden></div>
           </div>
-        </div>
-        <div class="panel-blue row" id="fields-bem" hidden>
-          <label class="field">ค่ารถคุ้มครอง
-            <input name="feeText" list="dl-bemfees" placeholder="เช่น คิดค่ารถ 1 คืน">
+          <div class="picked" id="picked"></div>
+          <p class="sub" id="picked-hint">ยังไม่ได้เลือกจุด — พิมพ์ค้นหาแล้วกดเลือก (กด Enter เพื่อเลือกอันแรก)</p>
+        </section>
+
+        <section class="step">
+          <h2><span class="step-no">3</span>ทำงานอะไร</h2>
+          <label class="field">ประเภทงาน
+            <input name="jobType" list="dl-jobtypes" placeholder="เช่น ติดตั้งสินค้า, ตรวจสอบโครงสร้างประจำปี" required>
           </label>
-          <label class="field">การชำระเงิน
-            <select name="payment" id="sel-payment"></select>
-          </label>
-        </div>
+          <div class="quick" id="job-chips" aria-label="ประเภทงานที่ใช้ล่าสุด"></div>
+        </section>
 
         <div class="error" data-error hidden></div>
         <div class="actions">
           <button type="submit" class="btn primary">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7"/></svg>
-            บันทึก
+            <span id="save-label">บันทึก</span>
           </button>
           <button type="reset" class="btn">ล้างฟอร์ม</button>
         </div>
@@ -357,8 +429,9 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
         </div>
         <div class="card tips">
           <strong>วิธีกรอก</strong>
-          <div>เข้าหลายจุดในวันเดียวกัน ให้บันทึกทุกจุด แต่คิดค่าใช้จ่ายจุดแรกจุดเดียว</div>
-          <div>ข้อมูลจะเขียนลง Google Sheet ต่อจากแถวล่าสุดทันที</div>
+          <div>เข้าหลายจุดในวันเดียวกัน เลือกให้ครบทุกจุดแล้วกดบันทึกครั้งเดียว — ระบบคิดค่าใช้จ่ายจุดแรก จุดถัดไปเป็น 0 ให้เอง (แก้ได้)</div>
+          <div>เลือกจุดจากฐานข้อมูลป้าย ระบบเติมสายทางและโครงการให้ ถ้าไม่มีในฐานข้อมูลให้กรอกเอง</div>
+          <div>กดบันทึกแล้ว ข้อมูลเขียนลง Google Sheet ต่อจากแถวล่าสุดทันที</div>
         </div>
       </aside>
     </div>
@@ -367,6 +440,46 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
       <div class="table-head"><h2>รายการล่าสุด</h2><span id="recent-note"></span></div>
       <div class="table-wrap"><table style="min-width:880px"><thead id="recent-head"></thead><tbody id="recent-body"></tbody></table></div>
     </section>
+  </main>
+
+  <!-- แดชบอร์ด -->
+  <main class="page" id="page-dash" hidden>
+    <div class="page-head">
+      <div>
+        <h1>แดชบอร์ด</h1>
+        <p>สรุปการใช้รถคุ้มครองรายปี จากตาราง EXAT และ BEM ใน Google Sheet</p>
+      </div>
+      <div class="dash-ctl">
+        <label class="field">ปี
+          <select id="dash-year"></select>
+        </label>
+        <button type="button" class="btn" id="dash-refresh">โหลดใหม่</button>
+      </div>
+    </div>
+    <div class="loading-box" id="dash-loading" hidden>กำลังสรุปข้อมูลจาก Google Sheet…</div>
+    <div class="loading-box" id="dash-empty" hidden>ยังไม่มีข้อมูลในตาราง EXAT / BEM</div>
+    <div id="dash-body" style="display:flex;flex-direction:column;gap:16px" hidden>
+      <div class="kpis" id="dash-kpis"></div>
+      <section class="card pad">
+        <div class="card-head">
+          <h2 id="dash-month-title">รายเดือน</h2>
+          <div class="legend"><span><span class="sw exat"></span>EXAT</span><span><span class="sw bem"></span>BEM</span></div>
+        </div>
+        <div class="chart" id="dash-chart" aria-hidden="true"></div>
+        <div class="table-wrap"><table class="compact" id="dash-months" style="min-width:860px"></table></div>
+      </section>
+      <div class="grid-2">
+        <section class="card pad"><h2>แยกตามโครงการ</h2><div class="bars" id="dash-project"></div></section>
+        <section class="card pad"><h2>แยกตามสายทาง</h2><div class="bars" id="dash-expressway"></div></section>
+        <section class="card pad"><h2>ผู้เข้างาน</h2><div class="bars" id="dash-worker"></div></section>
+        <section class="card pad"><h2>จุดที่เข้าบ่อย</h2><div class="bars" id="dash-place"></div></section>
+      </div>
+      <section class="card table-card">
+        <div class="table-head"><h2>เทียบทุกปี</h2><span>กดแถวเพื่อดูปีนั้น</span></div>
+        <div class="table-wrap"><table class="compact" id="dash-years" style="min-width:640px"></table></div>
+      </section>
+      <p class="sub" id="dash-note"></p>
+    </div>
   </main>
 
   <!-- สถานที่ -->
@@ -612,6 +725,7 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
   function endSession() {
     S.token = null;
     S.user = null;
+    S.dash = null;
     saveToken(null);
     $('#app').hidden = true;
     $('#auth').hidden = false;
@@ -653,8 +767,9 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
       if (b.dataset.page === page) b.setAttribute('aria-current', 'page');
       else b.removeAttribute('aria-current');
     });
-    ['entry', 'locations', 'users', 'account'].forEach(function (p) { $('#page-' + p).hidden = p !== page; });
+    ['entry', 'dash', 'locations', 'users', 'account'].forEach(function (p) { $('#page-' + p).hidden = p !== page; });
     if (page === 'users') loadUsers();
+    if (page === 'dash') loadDash();
     window.scrollTo(0, 0);
   }
   $$('nav.menu button').forEach(function (b) {
@@ -679,23 +794,38 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
     fillList('#dl-jobtypes', o.jobTypes);
     fillList('#dl-workers', o.workers);
     fillList('#dl-bemfees', o.bemFees);
-    fillSelect($('#sel-project'), o.projects);
-    fillSelect($('#sel-payment'), o.payments);
     fillSelect($('#sel-mediasite'), o.mediaSites);
   }
 
   // ---------- บันทึกการใช้รถ ----------
+  var LS = {
+    get: function (k) { try { return localStorage.getItem('pf_' + k) || ''; } catch (e) { return ''; } },
+    set: function (k, v) { try { localStorage.setItem('pf_' + k, v); } catch (e) {} }
+  };
+  S.picks = [];
+  S.fresh = [];
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+  function isoDay(offset) {
+    var d = new Date();
+    d.setDate(d.getDate() + offset);
+    return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+  }
+  function uniqList(arr) {
+    var seen = {}, out = [];
+    arr.forEach(function (v) { v = String(v || '').trim(); if (v && !seen[v]) { seen[v] = 1; out.push(v); } });
+    return out;
+  }
+
   function setMode(mode) {
     S.mode = mode;
     $$('[data-mode]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.mode === mode)); });
     $('#entry-subtitle').textContent = MODE_TEXT[mode].subtitle;
     $('#recent-note').textContent = MODE_TEXT[mode].note;
-    $('#fields-exat').hidden = mode !== 'exat';
-    $('#fields-bem').hidden = mode !== 'bem';
-    var project = $('#sel-project');
-    if (mode === 'bem' && /EXAT$/.test(project.value)) project.value = project.value.replace(/EXAT$/, 'BEM');
-    if (mode === 'exat' && /BEM$/.test(project.value)) project.value = project.value.replace(/BEM$/, 'EXAT');
+    if (!S.data) return;
+    renderPicks();
     renderRecent();
+    renderJobChips();
   }
   $$('[data-mode]').forEach(function (b) { b.addEventListener('click', function () { setMode(b.dataset.mode); }); });
 
@@ -703,56 +833,244 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
     var op = /^BEM/i.test(loc.operator) || /BECL|BEM/i.test(loc.mediaSite) ? 'BEM' : 'EXAT';
     return (/gateway/i.test(loc.mediaSite) ? 'Gateway ' : 'Flyover 2.0 ') + op;
   }
-  var placeInput = $('#form-entry [name="place"]');
-  function onPlace() {
-    var v = placeInput.value.trim();
-    var loc = S.data.locations.find(function (l) { return l.area === v; });
-    if (!loc) { $('#autofill').hidden = true; return; }
-    var proj = projectFor(loc);
-    if (loc.expressway) $('#form-entry [name="expressway"]').value = loc.expressway;
-    $('#sel-project').value = proj;
-    $('#autofill-exp').textContent = loc.expressway || '—';
-    $('#autofill-proj').textContent = proj;
-    $('#autofill').hidden = false;
-  }
-  placeInput.addEventListener('change', onPlace);
-  placeInput.addEventListener('input', onPlace);
 
-  $$('[data-fee]').forEach(function (b) {
-    b.addEventListener('click', function () { $('#form-entry [name="fee"]').value = b.dataset.fee; });
+  $$('[data-day]').forEach(function (b) {
+    b.addEventListener('click', function () { $('#form-entry [name="date"]').value = isoDay(Number(b.dataset.day)); });
+  });
+
+  // ค้นหาและเลือกสถานที่ (หลายจุดได้)
+  var placeSearch = $('#place-search');
+  var placeResults = $('#place-results');
+  var hits = [], hitOn = 0;
+
+  function pickedIndex(place) {
+    for (var i = 0; i < S.picks.length; i++) if (S.picks[i].place === place) return i;
+    return -1;
+  }
+  function findPlaces(q) {
+    var nq = norm(q);
+    if (!nq) return [];
+    var out = [], seen = {};
+    S.data.locations.forEach(function (l) {
+      var code = norm(l.code), area = norm(l.area);
+      var all = norm([l.area, l.expressway, l.meetingPoint, l.road, l.mediaSite, l.operator].join(' '));
+      var score = code === nq ? 0 : area.indexOf(nq) === 0 ? 1 : code.indexOf(nq) === 0 ? 2 : all.indexOf(nq) >= 0 ? 3 : -1;
+      if (score < 0 || seen[l.area]) return;
+      seen[l.area] = 1;
+      out.push({ score: score, place: l.area, code: l.code, expressway: l.expressway, project: projectFor(l), sub: [l.operator, l.expressway, l.size, l.meetingPoint].filter(Boolean).join(' · '), known: true });
+    });
+    out.sort(function (a, b) { return a.score - b.score; });
+    out = out.slice(0, 8);
+    (S.data.options.places || []).forEach(function (p) {
+      if (out.length >= 11 || seen[p] || norm(p).indexOf(nq) < 0) return;
+      seen[p] = 1;
+      out.push({ place: p, code: '', expressway: '', project: '', sub: 'เคยบันทึกในตาราง (ไม่มีในฐานข้อมูลป้าย)', known: false });
+    });
+    if (!out.some(function (h) { return norm(h.place) === nq; })) {
+      out.push({ place: String(q).trim(), code: '', expressway: '', project: '', sub: 'ใช้ชื่อนี้ — กรอกสายทางและโครงการเอง', known: false, free: true });
+    }
+    return out;
+  }
+  function renderResults() {
+    var q = placeSearch.value;
+    if (!q.trim()) { placeResults.hidden = true; hits = []; return; }
+    hits = findPlaces(q);
+    hitOn = 0;
+    placeResults.innerHTML = hits.map(function (h, i) {
+      var tag = h.code ? '<span class="code-tag">' + esc(h.code) + '</span>'
+        : h.free ? '<span class="code-tag plus">+</span>' : '<span class="code-tag muted">—</span>';
+      var already = pickedIndex(h.place) >= 0 ? ' · เลือกแล้ว' : '';
+      return '<button type="button" role="option" data-hit="' + i + '"' + (i === 0 ? ' class="on"' : '') + '>' + tag +
+        '<span class="r-main"><span>' + esc(h.place) + '</span><span class="r-sub">' + esc(h.sub + already) + '</span></span></button>';
+    }).join('');
+    placeResults.hidden = false;
+  }
+  placeSearch.addEventListener('input', renderResults);
+  placeSearch.addEventListener('focus', function () { if (placeSearch.value.trim()) renderResults(); });
+  placeSearch.addEventListener('blur', function () { setTimeout(function () { placeResults.hidden = true; }, 150); });
+  placeSearch.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Enter ในช่องค้นหา = เลือกสถานที่ ไม่ใช่ส่งฟอร์ม
+      if (!placeResults.hidden && hits[hitOn]) addPick(hits[hitOn]);
+      return;
+    }
+    if (placeResults.hidden || !hits.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      hitOn = (hitOn + (e.key === 'ArrowDown' ? 1 : -1) + hits.length) % hits.length;
+      $$('#place-results button').forEach(function (b, i) { b.classList.toggle('on', i === hitOn); });
+    } else if (e.key === 'Escape') {
+      placeResults.hidden = true;
+    }
+  });
+  placeResults.addEventListener('mousedown', function (e) { e.preventDefault(); });
+  placeResults.addEventListener('click', function (e) {
+    var b = e.target.closest('[data-hit]');
+    if (b) addPick(hits[Number(b.dataset.hit)]);
+  });
+
+  function addPick(h) {
+    if (!h || !h.place) return;
+    if (pickedIndex(h.place) >= 0) {
+      toast('เลือกจุดนี้ไปแล้ว');
+    } else {
+      S.picks.push({
+        place: h.place, code: h.code || '', expressway: h.expressway || '', project: h.project || '',
+        editing: !h.known || !h.expressway, fee: '', feeText: '', payment: '', touched: {}
+      });
+    }
+    placeSearch.value = '';
+    placeResults.hidden = true;
+    showError($('#form-entry'), '');
+    renderPicks();
+    placeSearch.focus();
+  }
+
+  /** จุดแรกคิดค่าใช้จ่าย จุดถัดไปเป็น 0 / เว้นว่าง — เว้นช่องที่ผู้ใช้แก้เองไว้ */
+  function applyPickDefaults() {
+    S.picks.forEach(function (p, i) {
+      var first = i === 0;
+      if (!p.touched.fee) p.fee = first ? '400' : '0';
+      if (!p.touched.feeText) p.feeText = first ? 'คิดค่ารถ 1 คืน' : '';
+      if (!p.touched.payment) p.payment = first ? 'รอออก PR' : '';
+    });
+  }
+
+  function renderPicks() {
+    applyPickDefaults();
+    var isExat = S.mode === 'exat';
+    $('#picked-hint').hidden = S.picks.length > 0;
+    $('#picked').innerHTML = S.picks.map(function (p, i) {
+      var fee = isExat
+        ? '<label class="mini">ค่าอาหาร/รถคุ้มครอง<span class="fee-input"><input type="number" min="0" step="1" inputmode="numeric" data-k="fee" value="' + esc(p.fee) + '"><span>บาท</span></span></label>'
+        : '<label class="mini">ค่ารถคุ้มครอง<input data-k="feeText" list="dl-bemfees" value="' + esc(p.feeText) + '" placeholder="เว้นว่างได้"></label>' +
+          '<label class="mini">การชำระเงิน<select data-k="payment">' +
+            [''].concat(S.data.options.payments || []).map(function (v) {
+              return '<option value="' + esc(v) + '"' + (v === p.payment ? ' selected' : '') + '>' + (v ? esc(v) : '— เว้นว่าง —') + '</option>';
+            }).join('') +
+          '</select></label>';
+      var meta = p.editing
+        ? '<div class="pick-edit">' +
+            '<label class="mini">สายทาง<input data-k="expressway" list="dl-expressways" value="' + esc(p.expressway) + '" placeholder="เช่น เฉลิมมหานคร"></label>' +
+            '<label class="mini">โครงการ<select data-k="project"><option value="">— เลือกโครงการ —</option>' +
+              S.data.options.projects.map(function (v) { return '<option' + (v === p.project ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
+            '</select></label>' +
+          '</div>'
+        : '<div class="pick-meta"><span class="chip">' + esc(p.expressway) + '</span><span class="chip">' + esc(p.project) + '</span>' +
+            '<button type="button" class="link" data-edit>แก้ไข</button></div>';
+      return '<div class="pick" data-i="' + i + '">' +
+        '<span class="pick-no">' + (i + 1) + '</span>' +
+        '<div class="pick-main"><div class="pick-title">' + (p.code ? '<span class="code-tag">' + esc(p.code) + '</span> ' : '') + esc(p.place) + '</div>' + meta + '</div>' +
+        '<div class="pick-fee">' + fee + '</div>' +
+        '<button type="button" class="icon-x" data-remove aria-label="เอา ' + esc(p.place) + ' ออก" title="เอาจุดนี้ออก">×</button>' +
+      '</div>';
+    }).join('');
+    $('#save-label').textContent = S.picks.length > 1 ? 'บันทึก ' + S.picks.length + ' จุด' : 'บันทึก';
+  }
+  function onPickInput(e) {
+    var el = e.target.closest('[data-k]');
+    if (!el) return;
+    var p = S.picks[Number(el.closest('.pick').dataset.i)];
+    if (!p) return;
+    p[el.dataset.k] = el.value;
+    p.touched[el.dataset.k] = true;
+  }
+  $('#picked').addEventListener('input', onPickInput);
+  $('#picked').addEventListener('change', onPickInput);
+  $('#picked').addEventListener('click', function (e) {
+    var card = e.target.closest('.pick');
+    if (!card) return;
+    var i = Number(card.dataset.i);
+    if (e.target.closest('[data-remove]')) {
+      S.picks.splice(i, 1);
+      renderPicks();
+    } else if (e.target.closest('[data-edit]')) {
+      S.picks[i].editing = true;
+      renderPicks();
+    }
+  });
+
+  // ประเภทงานที่ใช้ล่าสุด กดเพื่อเติม
+  function recentJobs() {
+    var out = [];
+    [S.mode, S.mode === 'exat' ? 'bem' : 'exat'].forEach(function (k) {
+      var r = S.data.recent[k] || { headers: [], rows: [] };
+      var i = (r.headers || []).map(norm).indexOf(norm('ประเภทงาน'));
+      if (i >= 0) r.rows.forEach(function (row) { out.push(row[i]); });
+    });
+    return uniqList(out.concat((S.data.options.jobTypes || []).slice().reverse())).slice(0, 6);
+  }
+  function renderJobChips() {
+    $('#job-chips').innerHTML = recentJobs().map(function (j) {
+      return '<button type="button" class="job-chip" data-job="' + esc(j) + '" title="' + esc(j) + '">' + esc(j) + '</button>';
+    }).join('');
+  }
+  $('#job-chips').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-job]');
+    if (b) $('#form-entry [name="jobType"]').value = b.dataset.job;
   });
 
   function resetEntry(keep) {
     var form = $('#form-entry');
     form.reset();
     form.date.value = (keep && keep.date) || today();
-    if (keep && keep.worker) form.worker.value = keep.worker;
-    $('#autofill').hidden = true;
-    setMode(S.mode);
+    form.worker.value = (keep && keep.worker) || LS.get('worker');
+    S.picks = [];
+    placeSearch.value = '';
+    placeResults.hidden = true;
+    renderPicks();
+    renderJobChips();
   }
   $('#form-entry button[type="reset"]').addEventListener('click', function (e) {
     e.preventDefault();
-    resetEntry();
+    resetEntry({ date: $('#form-entry [name="date"]').value, worker: $('#form-entry [name="worker"]').value });
     showError($('#form-entry'), '');
   });
 
   $('#form-entry').addEventListener('submit', function (e) {
     e.preventDefault();
     var form = e.target;
-    var data = formData(form);
+    var common = { date: form.date.value, worker: form.worker.value.trim(), jobType: form.jobType.value.trim() };
+    if (!common.date) return showError(form, 'กรุณาเลือกวันที่');
+    if (!common.worker) { form.worker.focus(); return showError(form, 'กรุณากรอกผู้เข้างาน'); }
+    if (!S.picks.length) { placeSearch.focus(); return showError(form, 'กรุณาเลือกสถานที่อย่างน้อย 1 จุด'); }
+    for (var i = 0; i < S.picks.length; i++) {
+      var p = S.picks[i];
+      if (!String(p.expressway).trim() || !p.project) {
+        p.editing = true;
+        renderPicks();
+        return showError(form, 'จุดที่ ' + (i + 1) + ': กรอกสายทางและเลือกโครงการ');
+      }
+      if (S.mode === 'exat' && (p.fee === '' || !(Number(p.fee) >= 0))) {
+        return showError(form, 'จุดที่ ' + (i + 1) + ': ค่าอาหาร/รถคุ้มครองต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป');
+      }
+    }
+    if (!common.jobType) { form.jobType.focus(); return showError(form, 'กรุณากรอกประเภทงาน'); }
+
+    var mode = S.mode;
+    var places = S.picks.map(function (p) {
+      var base = { place: p.place, expressway: String(p.expressway).trim(), project: p.project };
+      if (mode === 'exat') base.fee = Number(p.fee);
+      else { base.feeText = String(p.feeText).trim(); base.payment = p.payment; }
+      return base;
+    });
     submitWith(form, async function () {
-      var res = await api('addLogEntry', S.token, S.mode, data);
-      S.data.recent[S.mode] = res.recent;
-      addOption('places', data.place);
-      addOption('jobTypes', data.jobType);
-      addOption('workers', data.worker);
-      addOption('expressways', data.expressway);
+      var res = await api('addLogEntries', S.token, mode, common, places);
+      S.data.recent[mode] = res.recent;
+      S.fresh = res.saved.map(function (s) { return String(s.no); });
+      S.dash = null; // แดชบอร์ดต้องสรุปใหม่
+      places.forEach(function (p) { addOption('places', p.place); addOption('expressways', p.expressway); });
+      addOption('jobTypes', common.jobType);
+      addOption('workers', common.worker);
       fillList('#dl-places', S.data.options.places);
       fillList('#dl-jobtypes', S.data.options.jobTypes);
       fillList('#dl-workers', S.data.options.workers);
       fillList('#dl-expressways', S.data.options.expressways);
-      resetEntry({ date: data.date, worker: data.worker });
-      toast('บันทึกแล้ว — ลำดับที่ ' + res.no + ' (แถว ' + res.row + ')');
+      LS.set('worker', common.worker);
+      resetEntry({ date: common.date, worker: common.worker });
+      renderRecent();
+      var nos = res.saved.map(function (s) { return s.no; });
+      toast('บันทึกลงชีทแล้ว ' + nos.length + ' รายการ — ลำดับที่ ' + (nos.length > 1 ? nos[0] + '–' + nos[nos.length - 1] : nos[0]));
     });
   });
 
@@ -778,7 +1096,8 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
     }).join('') + '</tr>';
     $('#recent-body').innerHTML = r.rows.length
       ? r.rows.map(function (row) {
-          return '<tr>' + cols.map(function (c, i) {
+          var fresh = idx[0] >= 0 && S.fresh.indexOf(String(row[idx[0]])) >= 0;
+          return '<tr' + (fresh ? ' class="fresh"' : '') + '>' + cols.map(function (c, i) {
             return '<td class="' + c[2] + '">' + esc(idx[i] >= 0 ? row[idx[i]] : '') + '</td>';
           }).join('') + '</tr>';
         }).join('')
@@ -788,7 +1107,128 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
     $('#sum-label').textContent = (isExat ? 'EXAT' : 'BEM') + ' · ' + (s.month ? 'เดือน ' + s.month : 'ยังไม่มีข้อมูล');
     $('#sum-count').textContent = s.count.toLocaleString('th-TH');
     $('#sum-amount').textContent = isExat ? s.amount.toLocaleString('th-TH') : s.unpaid.toLocaleString('th-TH');
-    $('#sum-unit').textContent = isExat ? 'บาท' : 'ยังไม่ชำระ';
+    $('#sum-unit').textContent = isExat ? 'บาท' : 'รอออก PR';
+  }
+
+  // ---------- แดชบอร์ด ----------
+  var TH_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  function fmt(n) { return Number(n || 0).toLocaleString('th-TH'); }
+  function be(y) { return Number(y) + 543; }
+
+  async function loadDash(fresh) {
+    if (S.dash && !fresh) return renderDash();
+    $('#dash-loading').hidden = false;
+    $('#dash-body').hidden = true;
+    $('#dash-empty').hidden = true;
+    $('#dash-refresh').disabled = true;
+    try {
+      S.dash = await api('getDashboard', S.token, !!fresh);
+      if (!S.dashYear || S.dash.years.indexOf(S.dashYear) < 0) S.dashYear = S.dash.years[0];
+      renderDash();
+    } catch (err) {
+      toast(errText(err), true);
+    } finally {
+      $('#dash-loading').hidden = true;
+      $('#dash-refresh').disabled = false;
+    }
+  }
+  $('#dash-refresh').addEventListener('click', function () { loadDash(true); });
+  $('#dash-year').addEventListener('change', function () { S.dashYear = Number(this.value); renderDash(); });
+  $('#dash-years').addEventListener('click', function (e) {
+    var tr = e.target.closest('tr[data-year]');
+    if (!tr) return;
+    S.dashYear = Number(tr.dataset.year);
+    renderDash();
+    window.scrollTo(0, 0);
+  });
+
+  function renderDash() {
+    var d = S.dash;
+    if (!d || !d.years.length) { $('#dash-empty').hidden = false; $('#dash-body').hidden = true; return; }
+    $('#dash-body').hidden = false;
+    $('#dash-year').innerHTML = d.years.map(function (y) {
+      return '<option value="' + y + '"' + (y === S.dashYear ? ' selected' : '') + '>พ.ศ. ' + be(y) + ' (' + y + ')</option>';
+    }).join('');
+    var Y = d.byYear[S.dashYear];
+    var ex = Y.exat, bm = Y.bem;
+    var prev = d.byYear[S.dashYear - 1];
+
+    function delta(cur, before, unit) {
+      if (!prev) return 'ไม่มีข้อมูลปีก่อนหน้า';
+      var diff = cur - before;
+      return (diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : '') + fmt(Math.abs(diff)) + (unit || '') + ' จากปี ' + be(S.dashYear - 1);
+    }
+    function kpi(cls, label, num, sub) {
+      return '<div class="kpi ' + cls + '"><span class="k-label">' + label + '</span><span class="k-num">' + num + '</span><span class="k-sub">' + esc(sub) + '</span></div>';
+    }
+    $('#dash-kpis').innerHTML = [
+      kpi('exat', 'EXAT · เข้างาน', fmt(ex.count) + ' <small>ครั้ง</small>', delta(ex.count, prev ? prev.exat.count : 0, ' ครั้ง')),
+      kpi('exat', 'EXAT · ค่าอาหาร/รถคุ้มครอง', fmt(ex.amount) + ' <small>บาท</small>', delta(ex.amount, prev ? prev.exat.amount : 0, ' บาท')),
+      kpi('bem', 'BEM · เข้างาน', fmt(bm.count) + ' <small>ครั้ง</small>', 'คิดค่ารถ ' + fmt(bm.nights) + ' คืน'),
+      kpi('bem', 'BEM · รอออก PR', fmt(bm.pending) + ' <small>รายการ</small>', bm.pending ? 'ยังไม่ได้ชำระ' : 'ไม่มีรายการค้าง')
+    ].join('');
+
+    // กราฟรายเดือน
+    $('#dash-month-title').textContent = 'รายเดือน ปี ' + be(S.dashYear);
+    var max = 1;
+    for (var m = 0; m < 12; m++) max = Math.max(max, ex.months[m].count, bm.months[m].count);
+    function h(n) { return n ? Math.max(3, n / max * 100) : 0; }
+    $('#dash-chart').innerHTML = TH_MONTHS.map(function (name, i) {
+      var e = ex.months[i], b = bm.months[i];
+      return '<div class="col" title="' + name + ' — EXAT ' + e.count + ' ครั้ง (' + fmt(e.amount) + ' บาท) · BEM ' + b.count + ' ครั้ง">' +
+        '<div class="bars2"><span class="b exat" style="height:' + h(e.count) + '%"></span><span class="b bem" style="height:' + h(b.count) + '%"></span></div>' +
+        '<span class="m">' + name + '</span></div>';
+    }).join('');
+
+    function row(label, list, total) {
+      return '<tr><th>' + label + '</th>' + list.map(function (v) { return '<td class="num">' + (v ? fmt(v) : '<span class="sub">–</span>') + '</td>'; }).join('') +
+        '<td class="num"><b>' + fmt(total) + '</b></td></tr>';
+    }
+    function col(part, key) { return part.months.map(function (x) { return x[key]; }); }
+    $('#dash-months').innerHTML =
+      '<thead><tr><th></th>' + TH_MONTHS.map(function (n) { return '<th class="num">' + n + '</th>'; }).join('') + '<th class="num">รวม</th></tr></thead><tbody>' +
+      row('EXAT ครั้ง', col(ex, 'count'), ex.count) +
+      row('EXAT บาท', col(ex, 'amount'), ex.amount) +
+      row('BEM ครั้ง', col(bm, 'count'), bm.count) +
+      row('BEM คิดค่ารถ (คืน)', col(bm, 'nights'), bm.nights) +
+      '</tbody>';
+
+    // แยกตามหมวด — แท่งสีเขียว = EXAT, เหลือง = BEM
+    function merged(key) {
+      var map = {};
+      [['exat', ex[key]], ['bem', bm[key]]].forEach(function (pair) {
+        (pair[1] || []).forEach(function (item) {
+          var o = map[item[0]] || (map[item[0]] = { name: item[0], exat: 0, bem: 0 });
+          o[pair[0]] += item[1];
+        });
+      });
+      return Object.keys(map).map(function (k) { var o = map[k]; o.total = o.exat + o.bem; return o; })
+        .sort(function (a, b) { return b.total - a.total; }).slice(0, 8);
+    }
+    function bars(sel, list) {
+      var top = list.length ? list[0].total : 1;
+      $(sel).innerHTML = list.length ? list.map(function (o) {
+        return '<div class="bar-row" title="EXAT ' + o.exat + ' · BEM ' + o.bem + '"><span class="name">' + esc(o.name) + '</span><span class="cnt">' + fmt(o.total) + '</span>' +
+          '<div class="bar-track"><span class="exat" style="width:' + (o.exat / top * 100) + '%"></span><span class="bem" style="width:' + (o.bem / top * 100) + '%"></span></div></div>';
+      }).join('') : '<p class="sub">ไม่มีข้อมูล</p>';
+    }
+    bars('#dash-project', merged('byProject'));
+    bars('#dash-expressway', merged('byExpressway'));
+    bars('#dash-worker', merged('byWorker'));
+    bars('#dash-place', merged('byPlace'));
+
+    // เทียบทุกปี
+    $('#dash-years').innerHTML =
+      '<thead><tr><th>ปี</th><th class="num">EXAT ครั้ง</th><th class="num">EXAT บาท</th><th class="num">BEM ครั้ง</th><th class="num">BEM คิดค่ารถ (คืน)</th><th class="num">รอออก PR</th></tr></thead><tbody>' +
+      d.years.map(function (y) {
+        var p = d.byYear[y];
+        return '<tr data-year="' + y + '" style="cursor:pointer"' + (y === S.dashYear ? ' class="current"' : '') + '>' +
+          '<td>พ.ศ. ' + be(y) + '</td><td class="num">' + fmt(p.exat.count) + '</td><td class="num">' + fmt(p.exat.amount) + '</td>' +
+          '<td class="num">' + fmt(p.bem.count) + '</td><td class="num">' + fmt(p.bem.nights) + '</td><td class="num">' + fmt(p.bem.pending) + '</td></tr>';
+      }).join('') + '</tbody>';
+
+    $('#dash-note').textContent = 'ข้อมูล ณ ' + d.updatedAt + ' · นับตามคอลัมน์ “เดือน” ในชีท (เดือนที่ลงบัญชี)' +
+      (d.unknown ? ' · มี ' + d.unknown + ' แถวที่อ่านเดือนไม่ได้ จึงไม่ได้นับ' : '');
   }
 
   // ---------- สถานที่ ----------
