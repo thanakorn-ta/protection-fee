@@ -233,6 +233,10 @@ tr.fresh td { background: var(--green-soft); }
 .chart .b.exat { background: var(--green); }
 .chart .b.bem { background: var(--amber); }
 .chart .m { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.chart .col { cursor: pointer; border-radius: 6px; }
+.chart .col.on { background: var(--amber-soft); }
+.chart .col.on .m { color: var(--ink); font-weight: 700; }
+table.compact .on { background: var(--amber-soft); }
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
 .bars { display: flex; flex-direction: column; gap: 12px; }
 .bar-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; font-size: 14px; }
@@ -567,11 +571,14 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     <div class="page-head">
       <div>
         <h1>แดชบอร์ด</h1>
-        <p>สรุปการใช้รถคุ้มครองรายปี จากตาราง EXAT และ BEM ใน Google Sheet</p>
+        <p>สรุปการใช้รถคุ้มครองและค่าใช้จ่าย รายเดือนและรายปี จากตาราง EXAT และ BEM ใน Google Sheet</p>
       </div>
       <div class="dash-ctl">
         <label class="field">ปี
           <select id="dash-year"></select>
+        </label>
+        <label class="field">เดือน
+          <select id="dash-month"></select>
         </label>
         <button type="button" class="btn" id="dash-refresh">โหลดใหม่</button>
         <button type="button" class="btn" id="dash-recalc" data-admin title="เขียนคอลัมน์ “ค่าใช้จ่ายตามอัตรา” และแท็บ “สรุปค่าใช้จ่ายรายเดือน” ในชีทใหม่">คำนวณลงชีท</button>
@@ -589,11 +596,14 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
         <div class="chart" id="dash-chart" aria-hidden="true"></div>
         <div class="table-wrap"><table class="compact" id="dash-months" style="min-width:860px"></table></div>
       </section>
+      <section class="card table-card">
+        <div class="table-head"><h2 id="dash-place-title">ค่าใช้จ่ายแยกตามสถานที่</h2><span id="dash-place-sum"></span></div>
+        <div class="table-wrap"><table class="compact" id="dash-places" style="min-width:680px"></table></div>
+      </section>
       <div class="grid-2">
         <section class="card pad"><h2>แยกตามโครงการ</h2><div class="bars" id="dash-project"></div></section>
         <section class="card pad"><h2>แยกตามสายทาง</h2><div class="bars" id="dash-expressway"></div></section>
         <section class="card pad"><h2>ผู้เข้างาน</h2><div class="bars" id="dash-worker"></div></section>
-        <section class="card pad"><h2>จุดที่เข้าบ่อย</h2><div class="bars" id="dash-place"></div></section>
       </div>
       <section class="card table-card">
         <div class="table-head"><h2>เทียบทุกปี</h2><span>กดแถวเพื่อดูปีนั้น</span></div>
@@ -1364,79 +1374,120 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     var d = S.dash;
     if (!d || !d.years.length) { $('#dash-empty').hidden = false; $('#dash-body').hidden = true; return; }
     $('#dash-body').hidden = false;
+    var M = S.dashMonth || 0; // 0 = ทั้งปี, 1–12 = เดือน
     $('#dash-year').innerHTML = d.years.map(function (y) {
       return '<option value="' + y + '"' + (y === S.dashYear ? ' selected' : '') + '>พ.ศ. ' + be(y) + ' (' + y + ')</option>';
     }).join('');
+    $('#dash-month').innerHTML = '<option value="0">ทั้งปี</option>' + TH_MONTHS_LONG.map(function (n, i) {
+      return '<option value="' + (i + 1) + '"' + (M === i + 1 ? ' selected' : '') + '>' + n + '</option>';
+    }).join('');
     var Y = d.byYear[S.dashYear];
-    var ex = Y.exat, bm = Y.bem;
-    var prev = d.byYear[S.dashYear - 1];
+    var period = M ? TH_MONTHS_LONG[M - 1] + ' ' + be(S.dashYear) : 'ปี ' + be(S.dashYear);
 
+    // ยอดของช่วงที่เลือก (ทั้งปี หรือเดือนเดียว)
+    function tot(part, m) {
+      if (!m) return part;
+      var x = part.months[m - 1];
+      return { count: x.count, cost: x.cost, food: x.food, charges: x.charges, pending: x.pending };
+    }
+    var ex = tot(Y.exat, M), bm = tot(Y.bem, M);
+    // เทียบกับปีก่อน (ดูทั้งปี) หรือเดือนก่อน (ดูรายเดือน)
+    var cmp = null, cmpLabel = '';
+    if (!M) {
+      var py = d.byYear[S.dashYear - 1];
+      if (py) { cmp = { ex: py.exat, bm: py.bem }; cmpLabel = 'ปี ' + be(S.dashYear - 1); }
+    } else {
+      var pm = M === 1 ? 12 : M - 1, pyear = M === 1 ? S.dashYear - 1 : S.dashYear, PY = d.byYear[pyear];
+      if (PY) { cmp = { ex: tot(PY.exat, pm), bm: tot(PY.bem, pm) }; cmpLabel = TH_MONTHS[pm - 1] + ' ' + be(pyear); }
+    }
     function delta(cur, before, unit) {
-      if (!prev) return 'ไม่มีข้อมูลปีก่อนหน้า';
+      if (!cmp) return 'ไม่มีข้อมูลช่วงก่อนหน้า';
       var diff = cur - before;
-      return (diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : '') + fmt(Math.abs(diff)) + (unit || '') + ' จากปี ' + be(S.dashYear - 1);
+      return (diff > 0 ? '▲ ' : diff < 0 ? '▼ ' : '') + fmt(Math.abs(diff)) + (unit || '') + ' จาก ' + cmpLabel;
     }
     function kpi(cls, label, num, sub) {
       return '<div class="kpi ' + cls + '"><span class="k-label">' + label + '</span><span class="k-num">' + num + '</span><span class="k-sub">' + esc(sub) + '</span></div>';
     }
     $('#dash-kpis').innerHTML = [
-      kpi('total', 'รวมค่าใช้จ่ายตามอัตรา', fmt(ex.cost + bm.cost) + ' <small>บาท</small>', delta(ex.cost + bm.cost, prev ? prev.exat.cost + prev.bem.cost : 0, ' บาท')),
+      kpi('total', 'รวมค่าใช้จ่าย · ' + esc(period), fmt(ex.cost + bm.cost) + ' <small>บาท</small>', delta(ex.cost + bm.cost, cmp ? cmp.ex.cost + cmp.bm.cost : 0, ' บาท')),
       kpi('exat', 'EXAT · ค่าใช้จ่าย', fmt(ex.cost) + ' <small>บาท</small>', fmt(ex.count) + ' จุด · หักค่าอาหาร ' + fmt(ex.food) + ' บาท'),
       kpi('bem', 'BEM · ค่าใช้จ่าย', fmt(bm.cost) + ' <small>บาท</small>', fmt(bm.count) + ' จุด · คิดค่ารถ ' + fmt(bm.charges) + ' ครั้ง'),
-      kpi('exat', 'EXAT · เข้างาน', fmt(ex.count) + ' <small>ครั้ง</small>', delta(ex.count, prev ? prev.exat.count : 0, ' ครั้ง')),
-      kpi('bem', 'BEM · เข้างาน', fmt(bm.count) + ' <small>ครั้ง</small>', delta(bm.count, prev ? prev.bem.count : 0, ' ครั้ง')),
+      kpi('exat', 'EXAT · เข้างาน', fmt(ex.count) + ' <small>จุด</small>', delta(ex.count, cmp ? cmp.ex.count : 0, ' จุด')),
+      kpi('bem', 'BEM · เข้างาน', fmt(bm.count) + ' <small>จุด</small>', delta(bm.count, cmp ? cmp.bm.count : 0, ' จุด')),
       kpi('bem', 'BEM · รอออก PR', fmt(bm.pending) + ' <small>รายการ</small>', bm.pending ? 'ยังไม่ได้ชำระ' : 'ไม่มีรายการค้าง')
     ].join('');
 
-    // กราฟรายเดือน
+    // กราฟรายเดือน (กดเดือนเพื่อดูเดือนนั้น)
+    var yx = Y.exat, yb = Y.bem;
     $('#dash-month-title').textContent = 'รายเดือน ปี ' + be(S.dashYear);
     var max = 1;
-    for (var m = 0; m < 12; m++) max = Math.max(max, ex.months[m].count, bm.months[m].count);
+    for (var m = 0; m < 12; m++) max = Math.max(max, yx.months[m].cost + yb.months[m].cost);
     function h(n) { return n ? Math.max(3, n / max * 100) : 0; }
     $('#dash-chart').innerHTML = TH_MONTHS.map(function (name, i) {
-      var e = ex.months[i], b = bm.months[i];
-      return '<div class="col" title="' + name + ' — EXAT ' + e.count + ' ครั้ง (' + fmt(e.amount) + ' บาท) · BEM ' + b.count + ' ครั้ง">' +
-        '<div class="bars2"><span class="b exat" style="height:' + h(e.count) + '%"></span><span class="b bem" style="height:' + h(b.count) + '%"></span></div>' +
+      var e = yx.months[i], b = yb.months[i];
+      return '<div class="col' + (M === i + 1 ? ' on' : '') + '" data-month="' + (i + 1) + '" title="' + name + ' — EXAT ' + e.count + ' จุด ' + fmt(e.cost) + ' บาท · BEM ' + b.count + ' จุด ' + fmt(b.cost) + ' บาท">' +
+        '<div class="bars2"><span class="b exat" style="height:' + h(e.cost) + '%"></span><span class="b bem" style="height:' + h(b.cost) + '%"></span></div>' +
         '<span class="m">' + name + '</span></div>';
     }).join('');
 
     function row(label, list, total) {
-      return '<tr><th>' + label + '</th>' + list.map(function (v) { return '<td class="num">' + (v ? fmt(v) : '<span class="sub">–</span>') + '</td>'; }).join('') +
-        '<td class="num"><b>' + fmt(total) + '</b></td></tr>';
+      return '<tr><th>' + label + '</th>' + list.map(function (v, i) {
+        return '<td class="num' + (M === i + 1 ? ' on' : '') + '">' + (v ? fmt(v) : '<span class="sub">–</span>') + '</td>';
+      }).join('') + '<td class="num"><b>' + fmt(total) + '</b></td></tr>';
     }
     function col(part, key) { return part.months.map(function (x) { return x[key]; }); }
     $('#dash-months').innerHTML =
-      '<thead><tr><th></th>' + TH_MONTHS.map(function (n) { return '<th class="num">' + n + '</th>'; }).join('') + '<th class="num">รวม</th></tr></thead><tbody>' +
-      row('EXAT จุด', col(ex, 'count'), ex.count) +
-      row('EXAT ค่าใช้จ่าย (บาท)', col(ex, 'cost'), ex.cost) +
-      row('BEM จุด', col(bm, 'count'), bm.count) +
-      row('BEM ค่าใช้จ่าย (บาท)', col(bm, 'cost'), bm.cost) +
-      row('รวมค่าใช้จ่าย (บาท)', ex.months.map(function (x, i) { return x.cost + bm.months[i].cost; }), ex.cost + bm.cost) +
+      '<thead><tr><th></th>' + TH_MONTHS.map(function (n, i) { return '<th class="num' + (M === i + 1 ? ' on' : '') + '">' + n + '</th>'; }).join('') + '<th class="num">รวม</th></tr></thead><tbody>' +
+      row('EXAT จุด', col(yx, 'count'), yx.count) +
+      row('EXAT ค่าใช้จ่าย (บาท)', col(yx, 'cost'), yx.cost) +
+      row('BEM จุด', col(yb, 'count'), yb.count) +
+      row('BEM ค่าใช้จ่าย (บาท)', col(yb, 'cost'), yb.cost) +
+      row('รวมค่าใช้จ่าย (บาท)', yx.months.map(function (x, i) { return x.cost + yb.months[i].cost; }), yx.cost + yb.cost) +
       '</tbody>';
 
-    // แยกตามหมวด — แท่งสีเขียว = EXAT, เหลือง = BEM
-    function merged(key) {
-      var map = {};
-      [['exat', ex[key]], ['bem', bm[key]]].forEach(function (pair) {
-        (pair[1] || []).forEach(function (item) {
-          var o = map[item[0]] || (map[item[0]] = { name: item[0], exat: 0, bem: 0 });
-          o[pair[0]] += item[1];
+    // แยกตามหมวดในช่วงที่เลือก — จำนวนจุดและค่าใช้จ่าย
+    function dimList(dim) {
+      var map = (Y.dims && Y.dims[dim]) || {};
+      return Object.keys(map).map(function (name) {
+        var o = { name: name, exat: 0, bem: 0, cost: 0 };
+        [['e', 'exat'], ['b', 'bem']].forEach(function (p) {
+          var s = map[name][p[0]] || {};
+          Object.keys(s).forEach(function (mo) {
+            if (M && Number(mo) !== M) return;
+            o[p[1]] += s[mo][0];
+            o.cost += s[mo][1];
+          });
         });
-      });
-      return Object.keys(map).map(function (k) { var o = map[k]; o.total = o.exat + o.bem; return o; })
-        .sort(function (a, b) { return b.total - a.total; }).slice(0, 8);
+        o.total = o.exat + o.bem;
+        return o;
+      }).filter(function (o) { return o.total > 0; })
+        .sort(function (a, b) { return b.cost - a.cost || b.total - a.total; });
     }
     function bars(sel, list) {
-      var top = list.length ? list[0].total : 1;
-      $(sel).innerHTML = list.length ? list.map(function (o) {
-        return '<div class="bar-row" title="EXAT ' + o.exat + ' · BEM ' + o.bem + '"><span class="name">' + esc(o.name) + '</span><span class="cnt">' + fmt(o.total) + '</span>' +
+      var top = list.reduce(function (mx, o) { return Math.max(mx, o.total); }, 1);
+      $(sel).innerHTML = list.length ? list.slice(0, 8).map(function (o) {
+        return '<div class="bar-row" title="EXAT ' + o.exat + ' จุด · BEM ' + o.bem + ' จุด"><span class="name">' + esc(o.name) + '</span>' +
+          '<span class="cnt">' + fmt(o.total) + ' จุด · ' + fmt(o.cost) + ' ฿</span>' +
           '<div class="bar-track"><span class="exat" style="width:' + (o.exat / top * 100) + '%"></span><span class="bem" style="width:' + (o.bem / top * 100) + '%"></span></div></div>';
-      }).join('') : '<p class="sub">ไม่มีข้อมูล</p>';
+      }).join('') : '<p class="sub">ไม่มีข้อมูลในช่วงนี้</p>';
     }
-    bars('#dash-project', merged('byProject'));
-    bars('#dash-expressway', merged('byExpressway'));
-    bars('#dash-worker', merged('byWorker'));
-    bars('#dash-place', merged('byPlace'));
+    bars('#dash-project', dimList('project'));
+    bars('#dash-expressway', dimList('expressway'));
+    bars('#dash-worker', dimList('worker'));
+
+    // ค่าใช้จ่ายแยกตามสถานที่ (ทุกจุด)
+    var places = dimList('place');
+    var sum = places.reduce(function (s, o) { s.exat += o.exat; s.bem += o.bem; s.cost += o.cost; return s; }, { exat: 0, bem: 0, cost: 0 });
+    $('#dash-place-title').textContent = 'ค่าใช้จ่ายแยกตามสถานที่ · ' + period;
+    $('#dash-place-sum').textContent = fmt(places.length) + ' สถานที่';
+    $('#dash-places').innerHTML =
+      '<thead><tr><th>สถานที่</th><th class="num">EXAT จุด</th><th class="num">BEM จุด</th><th class="num">รวมจุด</th><th class="num">ค่าใช้จ่าย (บาท)</th></tr></thead><tbody>' +
+      (places.length ? places.map(function (o) {
+        return '<tr><td>' + esc(o.name) + '</td><td class="num">' + (o.exat ? fmt(o.exat) : '–') + '</td><td class="num">' + (o.bem ? fmt(o.bem) : '–') + '</td>' +
+          '<td class="num">' + fmt(o.total) + '</td><td class="num"><b>' + fmt(o.cost) + '</b></td></tr>';
+      }).join('') + '<tr class="current"><td>รวม</td><td class="num">' + fmt(sum.exat) + '</td><td class="num">' + fmt(sum.bem) + '</td><td class="num">' + fmt(sum.exat + sum.bem) + '</td><td class="num">' + fmt(sum.cost) + '</td></tr>'
+        : '<tr><td class="empty" colspan="5">ไม่มีการใช้รถคุ้มครองในช่วงนี้</td></tr>') +
+      '</tbody>';
 
     // เทียบทุกปี
     $('#dash-years').innerHTML =
@@ -1449,7 +1500,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
           '<td class="num"><b>' + fmt(p.exat.cost + p.bem.cost) + '</b></td><td class="num">' + fmt(p.bem.pending) + '</td></tr>';
       }).join('') + '</tbody>';
 
-    var noRate = ex.noRate + bm.noRate;
+    var noRate = Y.exat.noRate + Y.bem.noRate;
     $('#dash-rates').innerHTML = (d.rates || []).map(function (r) {
       var how = r.every > 1
         ? fmt(r.rate) + ' บาทต่อคืน ใช้ต่อได้ ' + r.every + ' จุด'
@@ -1459,9 +1510,17 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       '<li class="sub">1 คืน = รถ 1 คัน: เริ่มนับใหม่เมื่อวันที่เปลี่ยน หรือเมื่อเป็นจุดแรกของรถอีกคัน (EXAT กรอกค่าอาหาร · BEM กรอก “คิดค่ารถ…”) — BEM ที่เขียนว่า “ไม่ได้คิดค่ารถ” หรือชำระ “ฟรี” = 0 บาท</li>' +
       (noRate ? '<li class="sub">ปีนี้มี ' + fmt(noRate) + ' จุดที่สายทางไม่อยู่ในอัตรา จึงไม่ได้คิดเงิน — เพิ่มสายทางได้ในแท็บ “อัตราค่ารถคุ้มครอง”</li>' : '');
 
-    $('#dash-note').textContent = 'ข้อมูล ณ ' + d.updatedAt + ' · นับตามคอลัมน์ “เดือน” ในชีท (เดือนที่ลงบัญชี) · คืน = จุดที่วันที่เดียวกัน' +
+    $('#dash-note').textContent = 'ข้อมูล ณ ' + d.updatedAt + ' · นับตามคอลัมน์ “เดือน” ในชีท (เดือนที่ลงบัญชี) · การจองที่อนุมัติแล้วจะถูกบันทึกลงตารางและรวมอยู่ในตัวเลขนี้' +
       (d.unknown ? ' · มี ' + d.unknown + ' แถวที่อ่านเดือนไม่ได้ จึงไม่ได้นับ' : '');
   }
+  $('#dash-month').addEventListener('change', function () { S.dashMonth = Number(this.value); renderDash(); });
+  $('#dash-chart').addEventListener('click', function (e) {
+    var c = e.target.closest('[data-month]');
+    if (!c) return;
+    var m = Number(c.dataset.month);
+    S.dashMonth = S.dashMonth === m ? 0 : m; // กดซ้ำ = กลับไปทั้งปี
+    renderDash();
+  });
 
   // ผู้ดูแลระบบ: คำนวณค่าใช้จ่ายลงคอลัมน์ในชีท และสร้างแท็บสรุปรายเดือนใหม่
   $('#dash-recalc').addEventListener('click', async function () {
@@ -1680,13 +1739,14 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       hist.push((b.status === 'approved' ? 'อนุมัติ' : 'ไม่อนุมัติ') + 'โดย ' + b.reviewedByName + ' เมื่อ ' + stamp(b.reviewedAt) + (b.reviewNote ? ' — “' + b.reviewNote + '”' : ''));
     }
     if (b.status === 'cancelled') hist.push('ยกเลิกเมื่อ ' + stamp(b.updatedAt));
+    if (b.loggedRows) hist.push('บันทึกลงตาราง ' + b.loggedRows + ' เมื่อ ' + stamp(b.loggedAt));
 
     var review = '';
     if (b.canReview) {
       review = '<div class="review-box"><h3>' + (b.status === 'pending' ? 'พิจารณาการจอง (ผู้ดูแลระบบ)' : 'เปลี่ยนผลการพิจารณา') + '</h3>' +
         '<label class="field"><span>หมายเหตุถึงผู้จอง <span class="opt">(ไม่บังคับ)</span></span><input id="bk-review-note" value="' + esc(b.status === 'pending' ? '' : b.reviewNote) + '" placeholder="เช่น อนุมัติ แจ้ง BEM แล้ว"></label>' +
         '<div class="actions">' +
-          (b.status !== 'approved' ? '<button type="button" class="btn primary" data-review="approved">อนุมัติ</button>' : '') +
+          (b.status !== 'approved' ? '<button type="button" class="btn primary" data-review="approved">' + (b.loggedRows ? 'อนุมัติ' : 'อนุมัติ + บันทึกลงตาราง ' + esc(b.provider)) + '</button>' : '') +
           (b.status !== 'rejected' ? '<button type="button" class="btn danger" data-review="rejected">ไม่อนุมัติ</button>' : '') +
         '</div></div>';
     }
@@ -1698,10 +1758,20 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       review +
       '<div class="actions">' +
         (b.canEdit ? '<button type="button" class="btn" id="bk-edit">แก้ไข</button>' : '') +
-        (b.status === 'approved' ? '<button type="button" class="btn" id="bk-to-entry">บันทึกการใช้รถจากการจองนี้</button>' : '') +
+        (b.canLog ? '<button type="button" class="btn primary" id="bk-log">บันทึกลงตาราง ' + esc(b.provider) + '</button>' : '') +
         (b.canCancel ? '<button type="button" class="btn danger" id="bk-cancel">ยกเลิกการจอง</button>' : '') +
       '</div>' +
-      (!b.canEdit && b.mine && b.status === 'approved' ? '<p class="sub">อนุมัติแล้ว — ถ้าต้องการเปลี่ยนแปลง ให้ติดต่อผู้ดูแลระบบ</p>' : '');
+      (b.status === 'pending' ? '<p class="sub">เมื่อผู้ดูแลระบบอนุมัติ ระบบจะบันทึกทุกจุดลงตาราง ' + esc(b.provider) + ' ในชีท และคิดค่าใช้จ่ายตามอัตราให้เอง</p>' : '') +
+      (!b.canEdit && b.mine && b.status === 'approved' ? '<p class="sub">อนุมัติแล้ว — ถ้าต้องการเปลี่ยนแปลง ให้ติดต่อผู้ดูแลระบบ</p>' : '') +
+      (b.loggedRows && b.canEdit ? '<p class="sub">บันทึกลงตารางแล้ว — ถ้าแก้ไขการจอง ต้องแก้แถวในชีทเองด้วย</p>' : '');
+  }
+
+  /** ผลการบันทึกลงตาราง (หลังอนุมัติ หรือกด "บันทึกลงตาราง") */
+  function logResultText(res) {
+    if (res.logError) return 'แต่บันทึกลงตารางไม่สำเร็จ: ' + res.logError + ' — แก้ไขการจองแล้วกด “บันทึกลงตาราง” อีกครั้ง';
+    if (!res.loggedRows) return '';
+    return 'บันทึกลงตาราง ' + res.loggedRows + ' แล้ว' +
+      ((res.logWarnings || []).length ? ' · หมายเหตุ: ' + res.logWarnings.join(', ') + ' (ชีทจะขึ้นเครื่องหมายเตือน)' : '');
   }
 
   $('#bk-view').addEventListener('click', async function (e) {
@@ -1711,20 +1781,26 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     if (!btn) return;
     if (btn.id === 'bk-copy') return copyText(bookingMessage(b), $('#bk-msg'));
     if (btn.id === 'bk-edit') return openBookingForm(b);
-    if (btn.id === 'bk-to-entry') return bookingToEntry(b);
-    var action = btn.id === 'bk-cancel' ? 'cancel' : btn.dataset.review;
+    var action = btn.id === 'bk-cancel' ? 'cancel' : btn.id === 'bk-log' ? 'log' : btn.dataset.review;
     if (!action) return;
-    if (action === 'cancel' && !confirm('ยกเลิกการจอง ' + b.title + ' วันที่ ' + thaiDate(b.date) + ' ?')) return;
+    if (action === 'cancel' && !confirm('ยกเลิกการจอง ' + b.title + ' วันที่ ' + thaiDate(b.date) + ' ?' +
+      (b.loggedRows ? '\n\nการจองนี้บันทึกลงตาราง ' + b.loggedRows + ' แล้ว — ต้องลบแถวในชีทเอง' : ''))) return;
     $$('#bk-view button').forEach(function (x) { x.disabled = true; });
+    if (action === 'approved' || action === 'log') btn.textContent = 'กำลังบันทึกลงชีท…';
     try {
-      var res = action === 'cancel'
-        ? await api('cancelBooking', S.token, b.id)
+      var res = action === 'cancel' ? await api('cancelBooking', S.token, b.id)
+        : action === 'log' ? await api('logBooking', S.token, b.id)
         : await api('reviewBooking', S.token, b.id, action, ($('#bk-review-note') || {}).value || '');
       storeBooking(res);
       S.bk = res;
       renderBookingView();
       renderSchedule();
-      toast(action === 'cancel' ? 'ยกเลิกการจองแล้ว' : action === 'approved' ? 'อนุมัติการจอง ' + res.title + ' แล้ว' : 'ไม่อนุมัติการจอง ' + res.title);
+      if (res.loggedRows) S.dash = null; // แดชบอร์ดต้องสรุปใหม่
+      var msg = action === 'cancel' ? 'ยกเลิกการจองแล้ว'
+        : action === 'log' ? (res.logError ? 'บันทึกลงตารางไม่สำเร็จ: ' + res.logError : logResultText(res))
+        : action === 'approved' ? 'อนุมัติการจอง ' + res.title + ' แล้ว — ' + logResultText(res)
+        : 'ไม่อนุมัติการจอง ' + res.title;
+      toast(msg, !!res.logError);
     } catch (err) {
       toast(errText(err), true);
       $$('#bk-view button').forEach(function (x) { x.disabled = false; });
@@ -1807,28 +1883,6 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       toast(editing ? 'บันทึกการแก้ไขแล้ว' : 'ส่งคำขอจองแล้ว — รอผู้ดูแลระบบอนุมัติ');
     });
   });
-
-  /** เติมฟอร์มบันทึกการใช้รถจากการจองที่อนุมัติแล้ว */
-  function bookingToEntry(b) {
-    closeModal();
-    showPage('entry');
-    setMode(b.provider === 'BEM' ? 'bem' : 'exat');
-    var form = $('#form-entry');
-    resetEntry({ date: b.date, worker: String(b.worker || '').replace(/\s*[0-9][0-9\-\s]{6,}$/, '') });
-    form.jobType.value = b.jobType || b.title;
-    var isGateway = /gateway/i.test(b.mediaType);
-    lines(b.places).forEach(function (p) {
-      var np = norm(p);
-      var loc = S.data.locations.find(function (l) { return l.area === p || norm(l.area).indexOf(np) >= 0 || (l.code && norm(l.code) === np); });
-      if (loc) {
-        S.picks.push({ place: loc.area, code: loc.code, expressway: loc.expressway, project: projectFor(loc), editing: !loc.expressway, fee: '', feeText: '', payment: '', touched: {} });
-      } else {
-        S.picks.push({ place: p, code: '', expressway: b.expressway || '', project: (isGateway ? 'Gateway ' : 'Flyover 2.0 ') + b.provider, editing: true, fee: '', feeText: '', payment: '', touched: {} });
-      }
-    });
-    renderPicks();
-    toast('เติมข้อมูลจากการจองแล้ว — ตรวจสอบแล้วกดบันทึก');
-  }
 
   // ---------- สถานที่ ----------
   function renderLocations() {

@@ -53,7 +53,7 @@ function doGet() {
 /* ------------------------------------------------------------------ */
 
 const API_FUNCTIONS = {
-  register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking,
+  register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking,
   addLocation, listUsers, updateUser, resetPassword,
 };
 
@@ -347,7 +347,7 @@ function validationList_(rule) {
 /* แดชบอร์ดสรุปรายปี                                                     */
 /* ------------------------------------------------------------------ */
 
-const DASH_CACHE_KEY = 'dash_v2';
+const DASH_CACHE_KEY = 'dash_v3';
 
 /* ------------------------------------------------------------------ */
 /* ค่าใช้จ่ายตามอัตรา                                                     */
@@ -625,57 +625,53 @@ function getDashboard(token, fresh) {
   const byYear = {};
   const newPart = () => ({
     count: 0, amount: 0, nights: 0, pending: 0, cost: 0, food: 0, charges: 0, noRate: 0,
-    months: Array.from({ length: 12 }, () => ({ count: 0, amount: 0, nights: 0, cost: 0 })),
-    byProject: {}, byExpressway: {}, byWorker: {}, byPlace: {},
+    months: Array.from({ length: 12 }, () => ({ count: 0, amount: 0, nights: 0, cost: 0, food: 0, charges: 0, pending: 0 })),
   });
-  const inc = (map, name) => {
+  // แยกตามหมวด รายเดือน: dims[หมวด][ชื่อ] = { e: { เดือน: [จุด, บาท] }, b: {...} } — เก็บเฉพาะเดือนที่มีข้อมูล
+  const newDims = () => ({ place: {}, project: {}, expressway: {}, worker: {} });
+  const add = (dims, dim, name, side, m, cost) => {
     name = String(name || '').replace(/\s+/g, ' ').trim() || '(ไม่ระบุ)';
-    map[name] = (map[name] || 0) + 1;
+    const d = dims[dim][name] || (dims[dim][name] = {});
+    const s = d[side] || (d[side] = {});
+    const cell = s[m] || (s[m] = [0, 0]);
+    cell[0]++;
+    cell[1] += cost;
   };
   let unknown = 0;
 
   ['exat', 'bem'].forEach(key => {
     const rows = logRows_(key).rows;
     const costs = computeCosts_(rates, key.toUpperCase(), rows);
+    const side = key === 'exat' ? 'e' : 'b';
     rows.forEach((r, i) => {
       if (!r.has) return;
       if (!r.ym) { unknown++; return; }
-      const year = byYear[r.ym.y] || (byYear[r.ym.y] = { exat: newPart(), bem: newPart() });
+      const year = byYear[r.ym.y] || (byYear[r.ym.y] = { exat: newPart(), bem: newPart(), dims: newDims() });
       const part = year[key];
       const month = part.months[r.ym.m - 1];
       const c = costs[i];
+      const cost = c.cost === '' ? 0 : c.cost;
       part.count++;
       month.count++;
       if (c.cost === '') part.noRate++;
       else {
-        part.cost += c.cost;
-        month.cost += c.cost;
+        part.cost += cost;
+        month.cost += cost;
         part.food += c.food || 0;
-        if (c.charged) part.charges++;
+        month.food += c.food || 0;
+        if (c.charged) { part.charges++; month.charges++; }
       }
       if (key === 'exat') {
         part.amount += r.fee;
         month.amount += r.fee;
       } else {
         if (/คิดค่ารถ/.test(r.feeText)) { part.nights++; month.nights++; }
-        if (/^\s*รอ/.test(r.payment)) part.pending++;
+        if (/^\s*รอ/.test(r.payment)) { part.pending++; month.pending++; }
       }
-      inc(part.byProject, r.project);
-      inc(part.byExpressway, r.expressway);
-      inc(part.byWorker, r.worker);
-      inc(part.byPlace, r.place);
-    });
-  });
-
-  // เก็บเฉพาะอันดับต้น ๆ ให้ข้อมูลเล็ก
-  const top = (map, n) => Object.keys(map).map(k => [k, map[k]]).sort((a, b) => b[1] - a[1]).slice(0, n);
-  Object.keys(byYear).forEach(y => {
-    ['exat', 'bem'].forEach(k => {
-      const p = byYear[y][k];
-      p.byProject = top(p.byProject, 8);
-      p.byExpressway = top(p.byExpressway, 8);
-      p.byWorker = top(p.byWorker, 10);
-      p.byPlace = top(p.byPlace, 10);
+      add(year.dims, 'place', r.place, side, r.ym.m, cost);
+      add(year.dims, 'project', r.project, side, r.ym.m, cost);
+      add(year.dims, 'expressway', r.expressway, side, r.ym.m, cost);
+      add(year.dims, 'worker', r.worker, side, r.ym.m, cost);
     });
   });
 
@@ -687,7 +683,7 @@ function getDashboard(token, fresh) {
     rates: rates.map(r => ({ provider: r.provider, expressways: r.expresswayText, rate: r.rate, every: r.every, food: r.food, from: r.from })),
   };
   const json = JSON.stringify(out);
-  if (json.length < 90000) cache.put(DASH_CACHE_KEY, json, 300);
+  if (json.length < 95000) cache.put(DASH_CACHE_KEY, json, 300);
   return out;
 }
 
@@ -731,6 +727,7 @@ const BOOKING_SHEET = 'Bookings';
 const BOOKING_HEADERS = [
   'id', 'title', 'date', 'time', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'note',
   'status', 'requestedBy', 'requestedByName', 'requestedAt', 'reviewedBy', 'reviewedByName', 'reviewedAt', 'reviewNote', 'updatedAt',
+  'loggedRows', 'loggedAt', // แถวที่บันทึกลงตาราง EXAT / BEM แล้ว (กันบันทึกซ้ำ)
 ];
 const BOOKING_FIELDS = ['title', 'date', 'time', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'note'];
 const MEDIA_TYPES = ['Flyover 2.0', 'Gateway Billboard', 'Mainline'];
@@ -743,6 +740,9 @@ function bookingsSheet_(create) {
     sh.getRange(1, 1, 1, BOOKING_HEADERS.length).setValues([BOOKING_HEADERS]);
     sh.getRange(1, 1, sh.getMaxRows(), BOOKING_HEADERS.length).setNumberFormat('@'); // เก็บเป็นข้อความ ไม่ให้ชีทแปลงวันที่เอง
     sh.setFrozenRows(1);
+  } else if (sh && sh.getLastColumn() < BOOKING_HEADERS.length) {
+    // แท็บเดิมก่อนมีคอลัมน์ใหม่ — เขียนหัวตารางให้ครบ (ลำดับคอลัมน์เดิมไม่เปลี่ยน)
+    sh.getRange(1, 1, 1, BOOKING_HEADERS.length).setValues([BOOKING_HEADERS]);
   }
   return sh;
 }
@@ -790,6 +790,7 @@ function bookingOut_(b, user) {
   out.canEdit = canEditBooking_(b, user);
   out.canCancel = b.status !== 'cancelled' && (out.mine || user.role === 'admin');
   out.canReview = user.role === 'admin' && b.status !== 'cancelled';
+  out.canLog = user.role === 'admin' && b.status === 'approved' && !b.loggedRows;
   return out;
 }
 
@@ -860,7 +861,7 @@ function saveBooking(token, form) {
 function reviewBooking(token, id, decision, note) {
   const user = requireUser_(token, true);
   if (decision !== 'approved' && decision !== 'rejected') throw new Error('ผลการพิจารณาไม่ถูกต้อง');
-  return withLock_(() => {
+  const reviewed = withLock_(() => {
     const sh = bookingsSheet_();
     const b = readBookings_(sh).find(x => x.id === String(id || ''));
     if (!b) throw new Error('ไม่พบการจองนี้');
@@ -872,8 +873,82 @@ function reviewBooking(token, id, decision, note) {
     });
     writeBooking_(sh, b.row, b);
     audit_(user.username, decision === 'approved' ? 'approve_booking' : 'reject_booking', BOOKING_SHEET, b.row, { id: b.id, note: b.reviewNote });
-    return bookingOut_(b, user);
+    return b;
   });
+  // อนุมัติแล้ว → บันทึกลงตาราง EXAT / BEM ทันที (ถ้ายังไม่เคยบันทึก)
+  if (decision === 'approved' && !reviewed.loggedRows) return logBookingSafe_(reviewed, user);
+  return bookingOut_(reviewed, user);
+}
+
+/** ผู้ดูแลระบบสั่งบันทึกการจองที่อนุมัติแล้วลงตาราง EXAT / BEM (สำหรับการจองที่อนุมัติก่อนมีระบบนี้) */
+function logBooking(token, id) {
+  const user = requireUser_(token, true);
+  const b = readBookings_(bookingsSheet_()).find(x => x.id === String(id || ''));
+  if (!b) throw new Error('ไม่พบการจองนี้');
+  if (b.status !== 'approved') throw new Error('บันทึกลงตารางได้เฉพาะการจองที่อนุมัติแล้ว');
+  if (b.loggedRows) throw new Error('การจองนี้บันทึกลงตารางแล้ว: ' + b.loggedRows);
+  return logBookingSafe_(b, user);
+}
+
+/**
+ * แปลงการจองเป็นแถวในตาราง EXAT / BEM (1 จุดที่ไป = 1 แถว)
+ * สถานที่ที่ตรงกับแท็บ DataBase ใช้ชื่อ สายทาง และโครงการจากฐานข้อมูล
+ * จุดแรกของคืน: EXAT ค่าอาหาร 400 / BEM "คิดค่ารถ 1 คืน" + "รอออก PR" — จุดถัดไป 0 / เว้นว่าง
+ */
+function bookingToForms_(b) {
+  const key = b.provider === 'BEM' ? 'bem' : 'exat';
+  const locs = readLocations_();
+  const worker = String(b.worker || '').replace(/\s*[0-9][0-9\-\s]{6,}$/, '').trim() || b.requestedByName;
+  const places = String(b.places || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const forms = places.map((p, i) => {
+    const np = norm_(p);
+    const loc = locs.find(l => norm_(l.area) === np) ||
+      locs.find(l => l.code && norm_(l.code) === np) ||
+      locs.find(l => np.length >= 6 && norm_(l.area).indexOf(np) >= 0);
+    const owner = loc ? (/^BEM/i.test(loc.operator) || /BECL|BEM/i.test(loc.mediaSite) ? 'BEM' : 'EXAT') : b.provider;
+    const gateway = loc ? /gateway/i.test(loc.mediaSite) : /gateway/i.test(b.mediaType);
+    const f = {
+      date: b.date, worker, jobType: b.jobType || b.title,
+      place: loc ? loc.area : p,
+      expressway: (loc && loc.expressway) || b.expressway,
+      project: (gateway ? 'Gateway ' : 'Flyover 2.0 ') + owner,
+    };
+    if (key === 'exat') f.fee = i === 0 ? 400 : 0;
+    else { f.feeText = i === 0 ? 'คิดค่ารถ 1 คืน' : ''; f.payment = i === 0 ? 'รอออก PR' : ''; }
+    return f;
+  });
+  return { key, forms };
+}
+
+/** บันทึกการจองลงตาราง แล้วจดเลขลำดับไว้ในการจอง — ถ้าล้มเหลว การอนุมัติยังอยู่ และแจ้งข้อผิดพลาดกลับไป */
+function logBookingSafe_(b, user) {
+  let logError = '';
+  let warnings = [];
+  try {
+    const { key, forms } = bookingToForms_(b);
+    if (!forms.length) throw new Error('การจองนี้ไม่มีจุดที่ไป');
+    const valid = forms.map((f, i) => {
+      try { return validateLogForm_(key, f); } catch (err) { throw new Error('จุดที่ ' + (i + 1) + ': ' + err.message); }
+    });
+    const saved = valid.map(f => addLogRow_(user, key, f));
+    afterLogSaved_(key, [b.date]);
+    warnings = uniq_([].concat.apply([], saved.map(s => s.warnings || [])));
+    b.loggedRows = key.toUpperCase() + ' ลำดับ ' + saved.map(s => s.no).join(', ');
+    b.loggedAt = nowText_();
+    withLock_(() => {
+      const sh = bookingsSheet_();
+      const cur = readBookings_(sh).find(x => x.id === b.id);
+      if (cur) {
+        cur.loggedRows = b.loggedRows;
+        cur.loggedAt = b.loggedAt;
+        writeBooking_(sh, cur.row, cur);
+      }
+    });
+    audit_(user.username, 'log_booking', BOOKING_SHEET, b.row, { id: b.id, rows: b.loggedRows });
+  } catch (err) {
+    logError = String(err && err.message || err);
+  }
+  return Object.assign(bookingOut_(b, user), { logError, logWarnings: warnings });
 }
 
 /** ผู้จองหรือผู้ดูแลระบบยกเลิกการจอง */
