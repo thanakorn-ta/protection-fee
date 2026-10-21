@@ -599,7 +599,6 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         Protection Fee
       </div>
       <nav class="menu" aria-label="เมนูหลัก">
-        <button type="button" data-page="entry" data-admin>บันทึกการใช้รถ</button>
         <button type="button" data-page="schedule">ตารางจอง<span class="count" id="bk-count" hidden></span></button>
         <button type="button" data-page="cancelled">รายการยกเลิก</button>
         <button type="button" data-page="dash" data-admin>แดชบอร์ด</button>
@@ -1182,7 +1181,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 (function () {
   'use strict';
 
-  var S = { token: null, user: null, data: null, mode: 'exat', page: 'entry', locFilter: 'all', users: [] };
+  var S = { token: null, user: null, data: null, mode: 'exat', page: 'schedule', locFilter: 'all', users: [] };
   var MODE_TEXT = {
     exat: {
       subtitle: 'รถคุ้มครอง EXAT — การทางพิเศษแห่งประเทศไทย จ่ายแบบทดรองจ่าย',
@@ -1465,15 +1464,17 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       setMode(S.mode);
       renderLocations();
       resetEntry();
-      showPage(isAdmin ? 'entry' : 'schedule');
+      showPage('schedule');
     } finally {
       $('#loading').hidden = true;
     }
   }
 
   // หน้าที่ผู้ใช้งาน (user) เปิดไม่ได้ — เซิร์ฟเวอร์ก็ปฏิเสธคำสั่งของหน้าเหล่านี้เช่นกัน
+  var HIDDEN_PAGES = ['entry']; // หน้าบันทึกการใช้รถ: ไม่แสดงทั้งผู้ดูแลระบบและผู้ใช้งาน (การจองที่อนุมัติแล้วลงตาราง EXAT / BEM ให้เอง)
   var ADMIN_PAGES = ['entry', 'dash', 'accrue', 'clear', 'users'];
   function showPage(page) {
+    if (HIDDEN_PAGES.indexOf(page) >= 0) page = 'schedule';
     if (ADMIN_PAGES.indexOf(page) >= 0 && (!S.user || S.user.role !== 'admin')) page = 'schedule';
     S.page = page;
     $$('nav.menu button').forEach(function (b) {
