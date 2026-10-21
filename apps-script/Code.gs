@@ -82,16 +82,14 @@ function register(form) {
   form = form || {};
   const username = cleanUsername_(form.username);
   const password = String(form.password || '');
-  const fullName = String(form.fullName || '').trim();
-  const email = String(form.email || '').trim();
+  const fullName = String(form.fullName || '').replace(/\s+/g, ' ').trim();
+  const email = String(form.email || '').trim().toLowerCase();
   const requested = form.role === 'admin' ? 'admin' : 'user'; // ประเภทที่ขอ — ผู้ดูแลระบบเป็นผู้ยืนยัน
 
-  if (!/^[a-z0-9._-]{3,30}$/.test(username)) {
-    throw new Error('ชื่อผู้ใช้ต้องเป็น a-z, 0-9, . _ - ยาว 3–30 ตัวอักษร');
-  }
+  if (!EMPLOYEE_ID_RE.test(username)) throw new Error('ชื่อผู้ใช้ต้องเป็นรหัสพนักงาน เช่น PB00337');
   validatePassword_(password);
-  if (!fullName) throw new Error('กรุณากรอกชื่อ-นามสกุล');
-  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('รูปแบบอีเมลไม่ถูกต้อง');
+  if (!isRealName_(fullName)) throw new Error('กรุณากรอกชื่อและนามสกุลจริง เว้นวรรคระหว่างชื่อกับนามสกุล เช่น สมชาย ใจดี');
+  if (!COMPANY_EMAIL_RE.test(email)) throw new Error('กรุณาใช้อีเมลบริษัท (@planbmedia.co.th) เท่านั้น');
 
   return withLock_(() => {
     const sh = usersSheet_();
@@ -2413,6 +2411,17 @@ function randomPassword_() {
 
 function cleanUsername_(v) {
   return String(v || '').trim().toLowerCase();
+}
+
+// สมัครสมาชิก: ชื่อผู้ใช้ = รหัสพนักงาน (ตัวอักษรนำหน้า + ตัวเลข เช่น PB00337 — เก็บเป็นตัวพิมพ์เล็กเหมือนชื่อผู้ใช้เดิม)
+// บัญชีเดิมที่ไม่ใช่รูปแบบนี้ยังเข้าสู่ระบบได้ตามปกติ
+const EMPLOYEE_ID_RE = /^[a-z]{1,4}[0-9]{3,8}$/;
+const COMPANY_EMAIL_RE = /^[a-z0-9._%+-]+@planbmedia\.co\.th$/;
+
+/** ชื่อและนามสกุลจริง: อย่างน้อย 2 คำ แต่ละคำเป็นตัวอักษรไทย / อังกฤษ 2 ตัวขึ้นไป ไม่มีตัวเลข */
+function isRealName_(name) {
+  const parts = String(name || '').split(' ').filter(Boolean);
+  return parts.length >= 2 && parts.every(p => /^[A-Za-zก-๏.'-]{2,}$/.test(p) && /[A-Za-zก-ฮ]/.test(p));
 }
 
 /* ------------------------------------------------------------------ */

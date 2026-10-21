@@ -389,6 +389,8 @@ p .hol-co { font-size: 14px; padding: 3px 10px; border-radius: 999px; }
 .hol-form .error { grid-column: 1 / -1; }
 #hol-table td.type { white-space: nowrap; }
 /* ประเภทงาน: หมวด + รายละเอียด */
+input.upper { text-transform: uppercase; }
+input.upper::placeholder { text-transform: none; }
 .job-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 10px 12px; align-items: end; }
 .job-preview { grid-column: 1 / -1; margin: 0; font-size: 13px; color: var(--muted); }
 .job-preview b { color: var(--ink); font-weight: 600; }
@@ -517,8 +519,8 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       </div>
 
       <form id="form-login" role="tabpanel" aria-labelledby="tab-login" novalidate>
-        <label class="field">ชื่อผู้ใช้
-          <input name="username" autocomplete="username" placeholder="เช่น staff01" required>
+        <label class="field">รหัสพนักงาน / ชื่อผู้ใช้
+          <input name="username" autocomplete="username" placeholder="เช่น PB00337" required>
         </label>
         <label class="field">รหัสผ่าน
           <input type="password" name="password" autocomplete="current-password" placeholder="อย่างน้อย 8 ตัวอักษร" required>
@@ -550,19 +552,19 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       </form>
 
       <form id="form-register" role="tabpanel" aria-labelledby="tab-register" novalidate hidden>
-        <label class="field">ชื่อผู้ใช้
-          <input name="username" autocomplete="username" placeholder="a-z, 0-9, . _ -" required>
+        <label class="field"><span>รหัสพนักงาน <span class="opt">(ใช้เป็นชื่อผู้ใช้)</span></span>
+          <input name="username" class="upper" autocomplete="username" autocapitalize="characters" spellcheck="false" placeholder="เช่น PB00337" required>
         </label>
-        <label class="field">ชื่อ-นามสกุล
-          <input name="fullName" autocomplete="name" required>
+        <label class="field"><span>ชื่อ-นามสกุล <span class="opt">(ชื่อจริง)</span></span>
+          <input name="fullName" autocomplete="name" placeholder="เช่น สมชาย ใจดี" required>
         </label>
-        <label class="field"><span>อีเมล <span class="opt">(ไม่บังคับ)</span></span>
-          <input type="email" name="email" autocomplete="email">
+        <label class="field"><span>อีเมลบริษัท</span>
+          <input type="email" name="email" autocomplete="email" inputmode="email" spellcheck="false" placeholder="ชื่อ@planbmedia.co.th" required>
         </label>
         <div class="field"><span>ประเภทบัญชีที่ขอ</span>
           <input type="hidden" name="role" value="user">
           <div class="role-pick" role="radiogroup" aria-label="ประเภทบัญชีที่ขอ">
-            <button type="button" role="radio" data-role="user" aria-checked="true"><b>ผู้ใช้งาน (user)</b><small>บันทึกการใช้รถ · จองรถคุ้มครอง · ดูแดชบอร์ด</small></button>
+            <button type="button" role="radio" data-role="user" aria-checked="true"><b>ผู้ใช้งาน (user)</b><small>จองรถคุ้มครอง · ดูตารางจอง · รายการยกเลิก</small></button>
             <button type="button" role="radio" data-role="admin" aria-checked="false"><b>ผู้ดูแลระบบ (admin)</b><small>อนุมัติการจอง · จัดการผู้ใช้ · File Accrue</small></button>
           </div>
         </div>
@@ -1399,10 +1401,22 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     });
   });
 
+  // ชื่อและนามสกุลจริง (เหมือน isRealName_ ใน Code.gs)
+  function realName(name) {
+    var parts = String(name || '').split(' ').filter(Boolean);
+    return parts.length >= 2 && parts.every(function (p) { return /^[A-Za-zก-๏.'-]{2,}$/.test(p) && /[A-Za-zก-ฮ]/.test(p); });
+  }
   $('#form-register').addEventListener('submit', function (e) {
     e.preventDefault();
     var form = e.target;
     var data = formData(form);
+    var bad = function (el, msg) { el.focus(); return showError(form, msg); };
+    data.username = data.username.trim().toUpperCase();
+    data.fullName = data.fullName.replace(/\s+/g, ' ').trim();
+    data.email = data.email.trim().toLowerCase();
+    if (!/^[A-Z]{1,4}[0-9]{3,8}$/.test(data.username)) return bad(form.username, 'กรุณากรอกรหัสพนักงาน เช่น PB00337');
+    if (!realName(data.fullName)) return bad(form.fullName, 'กรุณากรอกชื่อและนามสกุลจริง เว้นวรรคระหว่างชื่อกับนามสกุล เช่น สมชาย ใจดี');
+    if (!/^[a-z0-9._%+-]+@planbmedia\.co\.th$/.test(data.email)) return bad(form.email, 'กรุณาใช้อีเมลบริษัท (@planbmedia.co.th) เท่านั้น');
     if (data.password !== data.confirm) return showError(form, 'รหัสผ่านทั้งสองช่องไม่ตรงกัน');
     submitWith(form, async function () {
       var res = await api('register', data);
