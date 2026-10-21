@@ -1808,7 +1808,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   $$('[data-job-pick]').forEach(function (box) {
     var form = box.closest('form');
     form.jobCategory.innerHTML = '<option value="">— เลือกประเภทงาน —</option>' +
-      JOB_CATEGORIES.concat(JOB_OTHER).map(function (c, i) { return '<option value="' + esc(c) + '">' + (c === JOB_OTHER ? c + ' (พิมพ์เอง)' : (i + 1) + '. ' + c) + '</option>'; }).join('');
+      JOB_CATEGORIES.concat(JOB_OTHER).map(function (c) { return '<option value="' + esc(c) + '">' + (c === JOB_OTHER ? c + ' (พิมพ์เอง)' : c) + '</option>'; }).join('');
     form.jobDetail.dataset.ph = form.jobDetail.placeholder;
     form.jobCategory.addEventListener('change', function () { jobPreview(form); });
     form.jobDetail.addEventListener('input', function () { jobPreview(form); });
