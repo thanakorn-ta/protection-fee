@@ -55,7 +55,7 @@ function doGet() {
 
 const API_FUNCTIONS = {
   register, login, logout, changePassword, requestPasswordReset, resetPasswordWithToken, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
-  getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings, downloadClear, sendClearNow,
+  getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings, getClear, downloadClear, sendClearNow,
   listHolidays, saveHoliday, deleteHoliday,
   addLocation, listUsers, updateUser, reviewUser, resetPassword,
 };
@@ -1589,11 +1589,13 @@ function accrueTriggerOn_() {
   try { return ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === ACCRUE_JOB); } catch (err) { return false; }
 }
 
-function readAccrueLog_() {
+/** ประวัติการส่ง — kind = 'accrue' หรือ 'clear' (แถว File Clear ขึ้นต้นด้วย "File Clear") */
+function readAccrueLog_(kind) {
   const sh = spreadsheet_().getSheetByName(ACCRUE_LOG_SHEET);
   if (!sh || sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, ACCRUE_LOG_HEADERS.length).getDisplayValues()
     .map(r => ({ at: r[0], month: r[1], by: r[2], to: r[3], cc: r[4], exat: Number(r[5]) || 0, bem: Number(r[6]) || 0, files: r[7], status: r[8] }))
+    .filter(x => !kind || (kind === 'clear') === /^File Clear/.test(x.month))
     .reverse().slice(0, 24);
 }
 
@@ -1620,24 +1622,12 @@ function getAccrue(token, y, m) {
       const sentAt = props.getProperty('ACCRUE_SENT_' + y + '_' + x.m) || '';
       const last = props.getProperty('ACCRUE_HASH_' + y + '_' + x.m);
       return { m: x.m, exatCount: x.exat.length, exatTotal: x.exatTotal, bemCount: x.bem.length, bemTotal: x.bemTotal, sentAt,
-        changed: !!(sentAt && last && last !== accrueHash_(x)),
-        clearSentAt: props.getProperty('CLEAR_SENT_' + y + '_' + x.m) || '' };
+        changed: !!(sentAt && last && last !== accrueHash_(x)) };
     }),
-    clear: (function () {
-      const data = clearData_(b);
-      const due = m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 }; // ส่งวันที่ 25 ของเดือนถัดไป
-      const sentAt = props.getProperty('CLEAR_SENT_' + y + '_' + m) || '';
-      return {
-        items: data.items, byWay: data.byWay, amount: data.amount, food: data.food, net: data.net,
-        name: clearFileName_(y, m) + '.xlsx', sentAt,
-        dueDate: due.y + '-' + String(due.m).padStart(2, '0') + '-' + String(Math.min(Number(s.clearDay) || 25, new Date(due.y, due.m, 0).getDate())).padStart(2, '0'),
-        email: Object.assign(clearEmail_(y, m, s, data, !!sentAt), { to: s.to, cc: s.cc }),
-      };
-    })(),
     email: Object.assign(accrueEmail_(y, m, s, !!props.getProperty('ACCRUE_SENT_' + y + '_' + m)), { to: s.to, cc: s.cc }),
     nextSend: nextAccrueDay_(s, now),
     settings: s,
-    log: readAccrueLog_(),
+    log: readAccrueLog_('accrue'),
   };
 }
 
@@ -1844,6 +1834,43 @@ function clearDailyCheck_(s, y, m, d, props) {
     logAccrue_([nowText_(), 'File Clear ' + accrueMonthShort_(p.y, p.m), 'ส่งอัตโนมัติ', s.to, s.cc, '', '', '', 'ส่งไม่สำเร็จ: ' + String(err && err.message || err)]);
     throw err;
   }
+}
+
+/** วันส่ง File Clear ของเดือน y/m (วันที่ตั้งไว้ของเดือนถัดไป) เป็น ISO */
+function clearDueDate_(y, m, s) {
+  const due = m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 };
+  const d = Math.min(Number(s.clearDay) || 25, new Date(due.y, due.m, 0).getDate());
+  return due.y + '-' + String(due.m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+}
+
+/** หน้า File Clear: สรุปทั้งปี + รายการ EXAT ของเดือนที่เลือก + ตัวอย่างอีเมล */
+function getClear(token, y, m) {
+  requireUser_(token, true);
+  const now = new Date();
+  if (!Number(y) || !Number(m)) { // ค่าเริ่มต้น = เดือนก่อนหน้า (เดือนที่จะส่ง File Clear รอบถัดไป)
+    const p = prevMonth_(Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy')), Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'M')));
+    y = Number(y) || p.y;
+    m = Number(m) || p.m;
+  }
+  y = Number(y); m = Number(m);
+  const months = accrueYear_(y);
+  const props = PropertiesService.getScriptProperties();
+  const s = accrueSettingsOut_();
+  const data = clearData_(months[m - 1]);
+  const sentAt = props.getProperty('CLEAR_SENT_' + y + '_' + m) || '';
+  return {
+    y, m, label: accrueMonthShort_(y, m),
+    items: data.items, byWay: data.byWay, amount: data.amount, food: data.food, net: data.net,
+    name: clearFileName_(y, m) + '.xlsx', sentAt, dueDate: clearDueDate_(y, m, s),
+    email: Object.assign(clearEmail_(y, m, s, data, !!sentAt), { to: s.to, cc: s.cc }),
+    summary: months.map(x => {
+      const d = clearData_(x);
+      return { m: x.m, count: d.items.length, amount: d.amount, food: d.food, net: d.net,
+        sentAt: props.getProperty('CLEAR_SENT_' + y + '_' + x.m) || '', dueDate: clearDueDate_(y, x.m, s) };
+    }),
+    settings: s,
+    log: readAccrueLog_('clear'),
+  };
 }
 
 /** ดาวน์โหลด File Clear (.xlsx) ของเดือน y/m */
