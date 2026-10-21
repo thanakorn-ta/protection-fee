@@ -1,7 +1,8 @@
 import { appsScriptUrl } from '@/lib/config';
 import { body, ok, route } from '@/lib/http';
 
-// คำสั่งที่เขียนชีทหลายแถว (บันทึกหลายจุด / คำนวณค่าใช้จ่ายทั้งหมด) อาจใช้เวลาหลายวินาที
+// คำสั่งที่เขียนชีทหลายแถวอาจใช้เวลาหลายวินาที — maxDuration ใช้บน Vercel เท่านั้น
+// (Netlify ไม่อ่านค่านี้ ฟังก์ชันจำกัด ~10 วินาที จึงให้หน้าเว็บเรียก Apps Script ตรงเป็นค่าเริ่มต้น — ดู RPC_MODE ใน app/legacy/route.ts)
 export const maxDuration = 60;
 
 /** ฟังก์ชันใน apps-script/Code.gs ที่หน้าเว็บเรียกได้ (ตรงกับ API_FUNCTIONS) */

@@ -3,7 +3,8 @@
 <head>
 <base target="_top">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0D5C3B">
 <title>Protection Fee</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
@@ -436,6 +437,54 @@ p .hol-co { font-size: 14px; padding: 3px 10px; border-radius: 999px; }
   .seg button { padding: 0 10px; white-space: nowrap; font-size: 15px; }
   form.card { padding: 18px; }
   .me-name { display: none; }
+}
+/* ---------- มือถือ (iOS / Android) และคอมพิวเตอร์ (Windows / macOS) ---------- */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { -webkit-tap-highlight-color: rgba(13, 92, 59, .12); }
+#auth { min-height: 100dvh; }
+.media-view img, .media-view video { max-height: calc(100dvh - 90px); }
+/* รอยบาก / แถบ Home ของ iPhone และ Android (ต้องมี viewport-fit=cover) */
+header.top { padding-top: env(safe-area-inset-top); }
+.top-inner, main.page { padding-left: max(24px, env(safe-area-inset-left)); padding-right: max(24px, env(safe-area-inset-right)); }
+main.page { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
+#toast { bottom: calc(24px + env(safe-area-inset-bottom)); }
+.modal { padding-top: env(safe-area-inset-top); -webkit-overflow-scrolling: touch; }
+.modal-body { padding-bottom: calc(28px + env(safe-area-inset-bottom)); }
+.bk-actions { bottom: calc(12px + env(safe-area-inset-bottom)); }
+/* ปุ่ม / ช่องที่แตะได้ อย่างน้อย 44px */
+.icon-x { width: 44px; height: 44px; }
+.check { min-height: 44px; }
+.check input { width: 22px; height: 22px; flex: none; }
+.seg button, .fsec .seg button { min-height: 44px; }
+.dash-ctl { flex-wrap: wrap; }
+.dash-ctl select { min-width: 120px; }
+/* วันที่ / เวลาบน iOS Safari: ไม่ยุบเมื่อว่าง และไม่ล้นกรอบ */
+input[type="date"], input[type="time"] { -webkit-appearance: none; appearance: none; min-height: 46px; min-width: 0; display: block; text-align: left; background: #fff; }
+input[type="date"]::-webkit-date-and-time-value { text-align: left; }
+/* เลือกไฟล์จากกล้อง / คลังภาพ: input ซ่อนแบบที่ iOS ยังกดผ่าน label ได้ */
+.sr-file { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; pointer-events: none; }
+.cx-drop { position: relative; }
+/* ตารางกว้างเลื่อนในกรอบของตัวเอง */
+.table-wrap { -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+
+/* จอสัมผัส (ไม่มี hover): แท็บเล็ตแสดงปุ่ม + ในวันของปฏิทินเสมอ · มือถือแตะที่วันเพื่อจองได้เลย (ซ่อน + ไม่ให้ทับตัวเลข) */
+@media (hover: none) and (min-width: 641px) {
+  .cal-add { opacity: .55; }
+}
+@media (max-width: 640px) {
+  .cal-add { display: none; }
+}
+/* มือถือ / แท็บเล็ต: ตัวอักษรในช่องกรอก 16px เพื่อไม่ให้ iOS ซูมเองตอนแตะ */
+@media (max-width: 1024px), (pointer: coarse) {
+  input:not([type="checkbox"]):not([type="radio"]), select, textarea { font-size: 16px !important; }
+}
+@media (max-width: 640px) {
+  .top-inner, main.page { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); }
+  main.page { padding-top: 20px; gap: 18px; }
+  .page-head h1 { font-size: 24px; }
+  .dash-ctl, .dash-ctl .field { width: 100%; }
+  .dash-ctl .field { min-width: 0; flex: 1 1 140px; }
+  .dash-ctl .btn { flex: 1 1 100%; }
 }
 </style>
 </head>
@@ -2404,7 +2453,7 @@ p .hol-co { font-size: 14px; padding: 3px 10px; border-radius: 999px; }
         '<label class="field"><span>เหตุผลที่ยกเลิก ' + mark + '</span>' +
           '<textarea id="cx-reason" rows="3" maxlength="1000" placeholder="เช่น ลูกค้าเลื่อนงาน / ฝนตกหนักเข้าพื้นที่ไม่ได้"></textarea></label>' +
         '<div class="field"><span>ภาพหรือวิดีโอประกอบ ' + mark + '</span>' +
-          '<label class="cx-drop" id="cx-drop"><input type="file" id="cx-input" accept="image/*,video/*" multiple hidden>' +
+          '<label class="cx-drop" id="cx-drop"><input type="file" id="cx-input" class="sr-file" accept="image/*,video/*" multiple>' +
             '<b>+ เลือกภาพหรือวิดีโอ</b><span>ถ่ายรูป / เลือกจากเครื่อง หรือลากไฟล์มาวาง · สูงสุด ' + CX_MAX_FILES + ' ไฟล์ ไฟล์ละไม่เกิน ' + CX_MAX_MB + ' MB</span></label>' +
           '<div class="cx-files" id="cx-files"></div></div>' +
         '<div class="cx-progress" id="cx-progress" hidden></div>' +

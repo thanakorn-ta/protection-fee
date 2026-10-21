@@ -1,0 +1,16 @@
+# Netlify — ใช้ได้เมื่อย้ายโฮสต์ (ตอนนี้ระบบจริงอยู่บน Vercel)
+# Netlify ตรวจพบ Next.js และใช้ Next.js Runtime (OpenNext) ให้อัตโนมัติ ไม่ต้องติดตั้งปลั๊กอินเอง
+[build]
+  command = "npm run build"   # รัน prebuild (scripts/embed-legacy.mjs) ก่อน next build
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+# ไฟล์ติดตั้งแอป (PWA) — เปลี่ยนบ่อยได้ ไม่ให้แคชค้าง
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Content-Type = "application/manifest+json"
+    Cache-Control = "public, max-age=3600"

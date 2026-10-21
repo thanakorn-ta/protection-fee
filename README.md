@@ -6,7 +6,7 @@
 
 เว็บแอปสร้างด้วย **Google Apps Script** อ่าน/เขียนข้อมูลลง Google Sheet โดยตรง ไม่ต้องมีเซิร์ฟเวอร์ ใช้ได้ทั้งมือถือและคอมพิวเตอร์
 
-**ใช้งานได้ที่:** [protectionfee.vercel.app](https://protectionfee.vercel.app) (หน้าเว็บบน Vercel เรียก Apps Script ผ่าน /api/rpc) หรือเปิด Apps Script ตรง ๆ ที่ [web app](https://script.google.com/macros/s/AKfycbyyfHHkyzEEIcIKX5VGJL3l_tIcUVR1Og8vzQO7Ac2eo278zbDBkGisGhg-FsoosgnxWQ/exec)
+**ใช้งานได้ที่:** [protectionfee.vercel.app](https://protectionfee.vercel.app) (หน้าเว็บบน Vercel เรียก Apps Script ตรง ถ้าไม่ได้จะผ่าน /api/rpc — ดู [Deploy to Netlify](#deploy-to-netlify)) หรือเปิด Apps Script ตรง ๆ ที่ [web app](https://script.google.com/macros/s/AKfycbyyfHHkyzEEIcIKX5VGJL3l_tIcUVR1Og8vzQO7Ac2eo278zbDBkGisGhg-FsoosgnxWQ/exec)
 > การทำให้ใช้งานได้ของ Apps Script ต้องตั้ง **ผู้ที่มีสิทธิ์เข้าถึง: ทุกคน** — ไม่งั้นเซิร์ฟเวอร์ Vercel เรียกไม่ได้ (ตอบ 401) ข้อมูลยังปลอดภัยเพราะทุกคำสั่งต้องเข้าสู่ระบบก่อน ยกเว้นสมัครสมาชิก/เข้าสู่ระบบ
 โปรเจกต์ Apps Script: [Prorection-fee](https://script.google.com/u/0/home/projects/1Dfzp4iYTOrlvXYnI7RNBSSr3L0mj9j0fGj12V1y7lS0Q44JbDiRj3fi4/edit) · ชีท: [ตารางสรุปการใช้รถคุ้มครอง (รายเดือน)2026](https://docs.google.com/spreadsheets/d/1GZimBywY01PTFBtHd_Is5J4G-ZXguTrgIeH8U8_vC_E/edit)
 
@@ -133,6 +133,46 @@ apps-script/
 2. เลือก **สถานที่** จากรายการ — ระบบเติมสายทางและโครงการจากตาราง DataBase ให้
 3. เข้าหลายจุดในวันเดียวกัน (EXAT): บันทึกทุกจุด แต่คิดค่าใช้จ่ายจุดแรก จุดที่เหลือใส่ `0`
 4. ตาราง BEM: อัปเดต **การชำระเงิน** ในชีทเมื่อ PR ได้รับการจ่ายแล้ว
+
+## มือถือและคอมพิวเตอร์
+
+ใช้ได้บน **iPhone / iPad (Safari)**, **Android (Chrome)**, **Windows (Chrome / Edge)** และ **macOS (Safari / Chrome)** หน้าจอปรับตามความกว้าง 360 px ขึ้นไปจนถึงจอคอมพิวเตอร์
+
+- ไม่มีการเลื่อนหน้าแนวนอน — ตารางกว้างเลื่อนในกรอบของตัวเอง ปุ่มและช่องกรอกสูงอย่างน้อย 44 px
+- ช่องกรอกใช้ตัวอักษร 16 px บนมือถือ (iOS ไม่ซูมหน้าเองตอนแตะ) รองรับรอยบาก / แถบ Home (safe area) และใช้ `100dvh`
+- วันที่ / เวลาใช้ตัวเลือกของเครื่อง แนบภาพ / วิดีโอได้ทั้งจากกล้องและคลังภาพ
+- ปฏิทินบนมือถือ: แตะที่วันเพื่อจองได้เลย (คอมพิวเตอร์มีปุ่ม + เมื่อชี้เมาส์ แท็บเล็ตแสดง + เสมอ)
+
+### ติดตั้งเป็นแอป (PWA)
+
+เปิด [protectionfee.vercel.app](https://protectionfee.vercel.app) แล้ว
+- **iPhone / iPad:** Safari → ปุ่มแชร์ → **เพิ่มไปยังหน้าจอโฮม**
+- **Android:** Chrome → เมนู ⋮ → **ติดตั้งแอป** / เพิ่มลงในหน้าจอหลัก
+- **Windows / macOS:** Chrome หรือ Edge → ไอคอนติดตั้งในช่องที่อยู่เว็บ
+
+แอปเปิดเต็มจอพร้อมไอคอน (`public/manifest.webmanifest`, `public/icons/` — สร้างใหม่ได้ด้วย `scripts/make-icons.ps1`) **ไม่มี service worker** ข้อมูลมาจากเซิร์ฟเวอร์ทุกครั้ง จึงไม่มีข้อมูลเก่าค้าง (ต้องต่ออินเทอร์เน็ต) — ติดตั้งได้เฉพาะเวอร์ชันบน Vercel / Netlify เพราะหน้า Apps Script เปิดใน iframe ของ Google
+
+## Deploy to Netlify
+
+ตอนนี้ระบบจริงอยู่บน Vercel — โค้ดเตรียมไว้ให้ย้ายไป Netlify ได้โดยไม่ต้องแก้
+
+1. Netlify → **Add new site → Import an existing project** → เลือก GitHub `thanakorn-ta/protection-fee` สาขา `main`
+2. Netlify อ่าน [`netlify.toml`](netlify.toml) เอง: build `npm run build`, publish `.next`, Node 20 และใช้ Next.js Runtime ให้อัตโนมัติ
+3. **Environment variables** (Site configuration → Environment variables) — ไม่บังคับ ค่าเริ่มต้นใช้ได้เลย:
+
+   | ตัวแปร | ค่า | ใช้ทำอะไร |
+   |---|---|---|
+   | `APPS_SCRIPT_URL` | URL `/exec` ของ Apps Script | ค่าเริ่มต้นเป็นเว็บแอปจริงอยู่แล้ว |
+   | `RPC_MODE` | `direct` (ค่าเริ่มต้น) หรือ `proxy` | `direct` = เบราว์เซอร์เรียก Apps Script ตรง ไม่ติดเวลาจำกัดของฟังก์ชัน Netlify (~10 วินาที) ถ้าเรียกไม่ได้จะผ่าน `/api/rpc` เอง |
+   | `SPREADSHEET_ID` | ID ของ Google Sheet | เฉพาะแอป Next.js แบบเข้าสู่ระบบด้วย Google (ยังไม่ได้ใช้) |
+
+   ห้ามตั้ง `GOOGLE_CLIENT_ID` + `GOOGLE_SERVICE_ACCOUNT_JSON` + `SESSION_SECRET` พร้อมกัน ถ้ายังไม่พร้อมใช้แอปแบบ Google Sign-In — `middleware.ts` จะเปลี่ยนหน้าแรกไปใช้แอปนั้นแทน
+4. Deploy แล้วเปิดเว็บ ตรวจหน้าเข้าสู่ระบบ / ตารางจอง / File Accrue
+5. **ลิงก์ในอีเมลรีเซ็ตรหัสผ่าน:** ตั้ง Script Property `APP_URL` ใน Apps Script เป็นโดเมน Netlify ใหม่ (เช่น `https://<ชื่อเว็บ>.netlify.app/`) — ค่าเริ่มต้นชี้ไปที่ Vercel
+
+**งานตั้งเวลา (ส่ง File Accrue / File Clear อัตโนมัติ)** อยู่ใน **Apps Script** (ตัวตั้งเวลา `accrueMonthlyJob` ทุกวัน 09:00) ไม่ขึ้นกับ Vercel หรือ Netlify — ย้ายโฮสต์แล้วยังส่งตามปกติ ไม่ต้องตั้ง Scheduled Functions ของ Netlify
+
+โค้ดที่ผูกกับ Vercel มีแค่ `vercel.json` และ `export const maxDuration` ใน `app/api/rpc/route.ts` (Netlify ไม่อ่าน ไม่มีผล)
 
 ## Repository
 
