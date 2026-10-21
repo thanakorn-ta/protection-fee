@@ -203,7 +203,6 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
 .icon-x { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--muted); font-size: 20px; line-height: 1; }
 .icon-x:hover { color: var(--danger); border-color: var(--danger); }
 .link { border: 0; background: none; color: var(--green); text-decoration: underline; text-underline-offset: 3px; padding: 2px 4px; font-size: 14px; }
-.quick .job-chip { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-color: var(--field); color: var(--ink-2); }
 tr.fresh td { background: var(--green-soft); }
 
 /* ---------- แดชบอร์ด ---------- */
@@ -676,7 +675,6 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
             </label>
             <p class="job-preview" data-job-preview hidden></p>
           </div>
-          <div class="quick" id="job-chips" aria-label="ประเภทงานที่ใช้ล่าสุด"></div>
         </section>
 
         <div class="error" data-error hidden></div>
@@ -1544,7 +1542,6 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     if (!S.data) return;
     renderPicks();
     renderRecent();
-    renderJobChips();
   }
   $$('[data-mode]').forEach(function (b) { b.addEventListener('click', function () { setMode(b.dataset.mode); }); });
 
@@ -1815,26 +1812,6 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     form.addEventListener('reset', function () { setTimeout(function () { jobPreview(form); }, 0); });
   });
 
-  // ประเภทงานที่ใช้ล่าสุด กดเพื่อเติม
-  function recentJobs() {
-    var out = [];
-    [S.mode, S.mode === 'exat' ? 'bem' : 'exat'].forEach(function (k) {
-      var r = S.data.recent[k] || { headers: [], rows: [] };
-      var i = (r.headers || []).map(norm).indexOf(norm('ประเภทงาน'));
-      if (i >= 0) r.rows.forEach(function (row) { out.push(row[i]); });
-    });
-    return uniqList(out.concat((S.data.options.jobTypes || []).slice().reverse())).slice(0, 6);
-  }
-  function renderJobChips() {
-    $('#job-chips').innerHTML = recentJobs().map(function (j) {
-      return '<button type="button" class="job-chip" data-job="' + esc(j) + '" title="' + esc(j) + '">' + esc(j) + '</button>';
-    }).join('');
-  }
-  $('#job-chips').addEventListener('click', function (e) {
-    var b = e.target.closest('[data-job]');
-    if (b) setJob($('#form-entry'), b.dataset.job);
-  });
-
   function resetEntry(keep) {
     var form = $('#form-entry');
     form.reset();
@@ -1844,7 +1821,6 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     placeSearch.value = '';
     placeResults.hidden = true;
     renderPicks();
-    renderJobChips();
   }
   $('#form-entry button[type="reset"]').addEventListener('click', function (e) {
     e.preventDefault();
