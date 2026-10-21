@@ -369,6 +369,11 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
 .status.role-user { background: #F2F4F2; color: #43524A; }
 .pending-item select { height: 44px; border: 1.5px solid var(--field); border-radius: 10px; padding: 0 10px; background: #fff; }
 #confirm-dlg { z-index: 12; }
+.pw-wrap { position: relative; display: block; }
+.pw-wrap input { padding-right: 52px !important; }
+.eye { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border: 0; background: transparent; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; cursor: pointer; }
+.eye:hover, .eye[aria-pressed="true"] { color: var(--green); }
+.reset-offer { background: var(--amber-soft); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
 .modal-ask { position: fixed; inset: 0; z-index: 9; background: rgba(20,33,27,.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ask-card { width: 100%; max-width: 400px; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.3); padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 8px; }
 .ask-card h3 { font-size: 18px; }
@@ -436,7 +441,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     </div>
     <div class="lane" style="height:6px"></div>
     <div class="auth-body">
-      <div class="seg" role="tablist" aria-label="เข้าสู่ระบบหรือสมัครสมาชิก">
+      <div class="seg" role="tablist" id="auth-tabs" aria-label="เข้าสู่ระบบหรือสมัครสมาชิก">
         <button type="button" role="tab" id="tab-login" aria-selected="true" aria-controls="form-login">เข้าสู่ระบบ</button>
         <button type="button" role="tab" id="tab-register" aria-selected="false" aria-controls="form-register">สมัครสมาชิก</button>
       </div>
@@ -449,10 +454,29 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
           <input type="password" name="password" autocomplete="current-password" placeholder="อย่างน้อย 8 ตัวอักษร" required>
         </label>
         <div class="error" data-error hidden></div>
+        <div class="reset-offer" id="reset-offer" hidden>
+          <p><b>ลืมรหัสผ่าน?</b> ระบบส่งลิงก์ตั้งรหัสผ่านใหม่ไปที่อีเมลของบัญชี (ถ้าบัญชีไม่มีอีเมล ระบบแจ้งผู้ดูแลระบบให้รีเซ็ตให้)</p>
+          <button type="button" class="btn block" id="btn-reset-request">ส่งลิงก์ตั้งรหัสผ่านใหม่</button>
+          <p class="sub" id="reset-msg" role="status" hidden></p>
+        </div>
         <button type="submit" class="btn primary block" style="min-height:52px">
           เข้าสู่ระบบ
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
         </button>
+      </form>
+
+      <form id="form-reset" novalidate hidden>
+        <h2 style="font-size:20px">ตั้งรหัสผ่านใหม่</h2>
+        <p class="sub">ลิงก์นี้ใช้ได้ครั้งเดียว ภายใน 30 นาทีหลังขอ</p>
+        <label class="field">รหัสผ่านใหม่
+          <input type="password" name="password" autocomplete="new-password" placeholder="อย่างน้อย 8 ตัวอักษร" required>
+        </label>
+        <label class="field">ยืนยันรหัสผ่านใหม่
+          <input type="password" name="confirm" autocomplete="new-password" required>
+        </label>
+        <div class="error" data-error hidden></div>
+        <button type="submit" class="btn primary block" style="min-height:52px">ตั้งรหัสผ่านใหม่</button>
+        <button type="button" class="btn block" id="btn-reset-back">กลับไปหน้าเข้าสู่ระบบ</button>
       </form>
 
       <form id="form-register" role="tabpanel" aria-labelledby="tab-register" novalidate hidden>
@@ -1033,7 +1057,8 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   function errText(err) {
     return String((err && err.message) || err || 'เกิดข้อผิดพลาด')
       .replace(/^(Error|Exception):\s*/, '')
-      .replace(/^SESSION_EXPIRED:\s*/, '');
+      .replace(/^SESSION_EXPIRED:\s*/, '')
+      .replace(/^RESET_AVAILABLE:\s*/, '');
   }
 
   // ---------- storage (อาจใช้ไม่ได้ในบางเบราว์เซอร์) ----------
@@ -1094,6 +1119,9 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     $('#tab-register').setAttribute('aria-selected', String(!isLogin));
     $('#form-login').hidden = !isLogin;
     $('#form-register').hidden = isLogin;
+    $('#form-reset').hidden = true;
+    $('#auth-tabs').hidden = false;
+    if (!isLogin) $('#reset-offer').hidden = true;
     $('#login-note').hidden = !isLogin;
   }
   $('#tab-login').addEventListener('click', function () { showAuthTab('login'); });
@@ -1103,11 +1131,115 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     e.preventDefault();
     var form = e.target;
     submitWith(form, async function () {
-      var res = await api('login', formData(form));
+      try {
+        var res = await api('login', formData(form));
+      } catch (err) {
+        // ผิดครบ 3 ครั้ง (หรือถูกล็อก) → เสนอให้ขอลิงก์ตั้งรหัสผ่านใหม่
+        if (/RESET_AVAILABLE/.test(String(err && err.message))) {
+          $('#reset-offer').hidden = false;
+          $('#reset-msg').hidden = true;
+          $('#btn-reset-request').disabled = false;
+          $('#btn-reset-request').textContent = 'ส่งลิงก์ตั้งรหัสผ่านใหม่';
+        }
+        throw err;
+      }
       S.token = res.token;
       saveToken(res.token);
       form.reset();
+      $('#reset-offer').hidden = true;
       await startApp();
+    });
+  });
+  $('#btn-reset-request').addEventListener('click', async function () {
+    var b = this, user = $('#form-login [name="username"]').value.trim();
+    if (!user) return $('#form-login [name="username"]').focus();
+    b.disabled = true;
+    b.textContent = 'กำลังส่ง…';
+    try {
+      var res = await api('requestPasswordReset', user);
+      $('#reset-msg').textContent = res.message;
+      $('#reset-msg').hidden = false;
+      b.textContent = 'ส่งแล้ว';
+    } catch (err) {
+      $('#reset-msg').textContent = errText(err);
+      $('#reset-msg').hidden = false;
+      b.disabled = false;
+      b.textContent = 'ส่งลิงก์ตั้งรหัสผ่านใหม่';
+    }
+  });
+
+  // หน้า "ตั้งรหัสผ่านใหม่" — เปิดจากลิงก์ในอีเมล (?reset=โทเคน)
+  function resetTokenFromUrl() {
+    try { return new URLSearchParams(window.location.search).get('reset') || ''; } catch (e) { return ''; }
+  }
+  function clearResetUrl() {
+    try { history.replaceState(null, '', window.location.pathname + window.location.hash); } catch (e) { /* ไม่เป็นไร */ }
+  }
+  function showResetForm(token) {
+    S.resetToken = token;
+    $('#auth').hidden = false;
+    $('#app').hidden = true;
+    $('#auth-tabs').hidden = true;
+    $('#form-login').hidden = true;
+    $('#form-register').hidden = true;
+    $('#login-note').hidden = true;
+    $('#form-reset').hidden = false;
+    setTimeout(function () { $('#form-reset [name="password"]').focus(); }, 30);
+  }
+  $('#form-reset').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var form = e.target;
+    var d = formData(form);
+    if (d.password.length < 8) return showError(form, 'รหัสผ่านต้องยาวอย่างน้อย 8 ตัวอักษร');
+    if (d.password !== d.confirm) return showError(form, 'รหัสผ่านทั้งสองช่องไม่ตรงกัน');
+    submitWith(form, async function () {
+      var res = await api('resetPasswordWithToken', S.resetToken, d.password);
+      S.resetToken = '';
+      form.reset();
+      clearResetUrl();
+      showAuthTab('login');
+      $('#form-login [name="username"]').value = res.username || '';
+      $('#form-login [name="password"]').focus();
+      toast(res.message);
+    });
+  });
+  $('#btn-reset-back').addEventListener('click', function () { S.resetToken = ''; clearResetUrl(); showAuthTab('login'); });
+
+  // ปุ่มดวงตา: แสดง / ซ่อนรหัสผ่านที่พิมพ์
+  var EYE_OPEN = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+  var EYE_OFF = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3l18 18"/><path d="M10.6 5.1A10.7 10.7 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3.2 4.1"/><path d="M6.6 6.6C3.9 8.4 2 12 2 12s3.5 7 10 7c1.7 0 3.2-.5 4.5-1.2"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  $$('input[type="password"]').forEach(function (input) {
+    var wrap = document.createElement('span');
+    wrap.className = 'pw-wrap';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'eye';
+    b.setAttribute('aria-pressed', 'false');
+    b.setAttribute('aria-label', 'แสดงรหัสผ่าน');
+    b.title = 'แสดงรหัสผ่าน';
+    b.innerHTML = EYE_OPEN;
+    b.addEventListener('click', function (e) {
+      e.preventDefault();
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      b.setAttribute('aria-pressed', String(show));
+      b.setAttribute('aria-label', show ? 'ซ่อนรหัสผ่าน' : 'แสดงรหัสผ่าน');
+      b.title = b.getAttribute('aria-label');
+      b.innerHTML = show ? EYE_OFF : EYE_OPEN;
+      input.focus();
+    });
+    wrap.appendChild(b);
+    // ซ่อนกลับเมื่อส่งฟอร์ม / ล้างฟอร์ม
+    if (input.form) ['submit', 'reset'].forEach(function (ev) {
+      input.form.addEventListener(ev, function () {
+        input.type = 'password';
+        b.setAttribute('aria-pressed', 'false');
+        b.setAttribute('aria-label', 'แสดงรหัสผ่าน');
+        b.title = 'แสดงรหัสผ่าน';
+        b.innerHTML = EYE_OPEN;
+      });
     });
   });
 
@@ -2677,7 +2809,8 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       return '<tr>' +
         '<td><div style="font-weight:600">' + esc(u.fullName) + (self ? ' <span class="sub">(คุณ)</span>' : '') + '</div><div class="sub">' + esc(u.username) + (u.email ? ' · ' + esc(u.email) : '') + '</div></td>' +
         '<td>' + (rejected ? '<div class="sub">ขอเป็น</div>' + roleBadge(u.requestedRole) : roleSelect(u, 'data-act="role"', self)) + '</td>' +
-        '<td><span class="status ' + esc(u.status) + '">' + esc(STATUS_LABEL[u.status] || u.status) + '</span>' + reviewed + '</td>' +
+        '<td><span class="status ' + esc(u.status) + '">' + esc(STATUS_LABEL[u.status] || u.status) + '</span>' + reviewed +
+          (u.resetRequestedAt ? '<div><span class="status pending" title="บัญชีไม่มีอีเมล — กด รีเซ็ตรหัสผ่าน แล้วแจ้งรหัสชั่วคราวให้ผู้ใช้">ขอรีเซ็ตรหัสผ่าน ' + esc(stamp(u.resetRequestedAt)) + '</span></div>' : '') + '</td>' +
         '<td class="nowrap mono">' + esc(u.lastLogin || '—') + '</td>' +
         '<td class="nowrap" style="text-align:right">' +
           (rejected
@@ -2783,7 +2916,11 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
 
   // ---------- เริ่มต้น ----------
   S.token = loadToken();
-  if (S.token) {
+  var resetToken = resetTokenFromUrl();
+  if (resetToken) {
+    endSession();
+    showResetForm(resetToken);
+  } else if (S.token) {
     startApp().catch(function () { endSession(); });
   } else {
     endSession();

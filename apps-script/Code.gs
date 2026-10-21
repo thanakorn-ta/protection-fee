@@ -54,7 +54,7 @@ function doGet() {
 /* ------------------------------------------------------------------ */
 
 const API_FUNCTIONS = {
-  register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
+  register, login, logout, changePassword, requestPasswordReset, resetPasswordWithToken, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
   getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings,
   addLocation, listUsers, updateUser, reviewUser, resetPassword,
 };
@@ -123,12 +123,15 @@ function login(form) {
   const cache = CacheService.getScriptCache();
   const failKey = 'fail_' + username;
   const fails = Number(cache.get(failKey) || 0);
-  if (fails >= CONFIG.MAX_LOGIN_FAILS) throw new Error('ใส่รหัสผ่านผิดหลายครั้ง กรุณารอ 15 นาทีแล้วลองใหม่');
+  if (fails >= CONFIG.MAX_LOGIN_FAILS) throw new Error('RESET_AVAILABLE: ใส่รหัสผ่านผิด ' + fails + ' ครั้ง บัญชีถูกล็อก 15 นาที — ขอลิงก์ตั้งรหัสผ่านใหม่ได้');
 
   const sh = usersSheet_();
   const user = readUsers_(sh).find(u => u.username === username);
   if (!user || !verify_(password, user)) {
-    cache.put(failKey, String(fails + 1), CONFIG.LOCKOUT_SECONDS);
+    const n = fails + 1;
+    cache.put(failKey, String(n), CONFIG.LOCKOUT_SECONDS);
+    // ผิดครบ 3 ครั้ง → เสนอให้รีเซ็ตรหัสผ่าน · ครบ 5 ครั้ง → ล็อก 15 นาที
+    if (n >= RESET_OFFER_AFTER) throw new Error('RESET_AVAILABLE: ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (ผิด ' + n + ' ครั้ง' + (n < CONFIG.MAX_LOGIN_FAILS ? ' · ครบ ' + CONFIG.MAX_LOGIN_FAILS + ' ครั้งจะถูกล็อก 15 นาที' : ' · ล็อก 15 นาที') + ') — ลืมรหัสผ่าน? ขอลิงก์ตั้งรหัสผ่านใหม่ได้');
     throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
   }
   cache.remove(failKey);
@@ -1729,6 +1732,7 @@ function listUsers(token) {
     requestedRole: u.requestedRole === 'admin' ? 'admin' : 'user',
     reviewedBy: String(u.reviewedBy || ''),
     reviewedAt: formatDateTime_(u.reviewedAt),
+    resetRequestedAt: PropertiesService.getScriptProperties().getProperty('RESET_REQ_' + u.username) || '',
     createdAt: formatDateTime_(u.createdAt),
     lastLogin: formatDateTime_(u.lastLogin),
   }));
@@ -1796,10 +1800,104 @@ function resetPassword(token, username) {
     if (!user) throw new Error('ไม่พบผู้ใช้');
     const temp = randomPassword_();
     setPassword_(user, temp);
+    CacheService.getScriptCache().remove('fail_' + username);
+    PropertiesService.getScriptProperties().deleteProperty('RESET_REQ_' + username);
     audit_(admin.username, 'reset_password', CONFIG.USERS_SHEET, user.row, { username });
     return temp;
   });
 }
+
+/* ------------------------------------------------------------------ */
+/* ลืมรหัสผ่าน — เสนอให้รีเซ็ตเมื่อใส่ผิดครบ 3 ครั้ง (ล็อก 15 นาทีเมื่อครบ 5 ครั้ง)          */
+/* ------------------------------------------------------------------ */
+
+const RESET_OFFER_AFTER = 3;
+const RESET_TOKEN_SECONDS = 30 * 60;
+const RESET_REQUEST_GAP_SECONDS = 5 * 60; // ส่งคำขอได้ 1 ครั้งต่อ 5 นาทีต่อชื่อผู้ใช้
+const DEFAULT_APP_URL = 'https://protectionfee.vercel.app/';
+const RESET_SENT_MESSAGE = 'ถ้ามีบัญชีนี้ ระบบส่งลิงก์รีเซ็ตรหัสผ่านไปที่อีเมลของบัญชีแล้ว (ใช้ได้ 30 นาที) — ถ้าบัญชีไม่มีอีเมล ระบบแจ้งผู้ดูแลระบบให้รีเซ็ตให้';
+
+function sha256_(s) {
+  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(s), Utilities.Charset.UTF_8));
+}
+
+/** ลิงก์ในอีเมลใช้ที่อยู่เว็บที่ตั้งไว้เท่านั้น (Script Property APP_URL) — ไม่รับจากผู้ร้องขอ */
+function appUrl_() {
+  const u = String(PropertiesService.getScriptProperties().getProperty('APP_URL') || DEFAULT_APP_URL).trim();
+  return u.replace(/[?#].*$/, '');
+}
+
+/** ขอรีเซ็ตรหัสผ่าน — ตอบข้อความเดียวกันเสมอ ไม่บอกว่ามีชื่อผู้ใช้นี้หรือไม่ */
+function requestPasswordReset(username) {
+  username = cleanUsername_(username);
+  if (!username) throw new Error('กรุณากรอกชื่อผู้ใช้');
+  const cache = CacheService.getScriptCache();
+  const gapKey = 'rstgap_' + username;
+  if (cache.get(gapKey)) return { message: RESET_SENT_MESSAGE };
+  cache.put(gapKey, '1', RESET_REQUEST_GAP_SECONDS);
+
+  const user = readUsers_(usersSheet_()).find(u => u.username === username);
+  if (!user || user.status !== 'active') {
+    audit_(username, 'reset_request', CONFIG.USERS_SHEET, user ? user.row : '', { result: user ? 'not_active' : 'no_user' });
+    return { message: RESET_SENT_MESSAGE };
+  }
+  const email = String(user.email || '').trim();
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+    const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
+    cache.put('rst_' + sha256_(token), username, RESET_TOKEN_SECONDS); // เก็บเฉพาะค่าแฮชของโทเคน
+    const link = appUrl_() + '?reset=' + token;
+    const name = String(user.fullName || username);
+    MailApp.sendEmail({
+      to: email,
+      subject: 'Protection Fee — ลิงก์ตั้งรหัสผ่านใหม่',
+      body: 'เรียน ' + name + '\n\nมีคำขอตั้งรหัสผ่านใหม่สำหรับบัญชี ' + username + '\nกดลิงก์นี้ภายใน 30 นาที (ใช้ได้ครั้งเดียว):\n' + link +
+        '\n\nถ้าคุณไม่ได้ขอ ไม่ต้องทำอะไร รหัสผ่านเดิมยังใช้ได้',
+      htmlBody: '<div style="font-family:Tahoma,sans-serif;font-size:14px;line-height:1.8">เรียน ' + text_(name).replace(/</g, '&lt;') +
+        '<br><br>มีคำขอตั้งรหัสผ่านใหม่สำหรับบัญชี <b>' + username + '</b><br>' +
+        '<a href="' + link + '" style="display:inline-block;margin:12px 0;padding:10px 18px;background:#14532d;color:#fff;border-radius:8px;text-decoration:none">ตั้งรหัสผ่านใหม่</a><br>' +
+        'ลิงก์ใช้ได้ 30 นาที และใช้ได้ครั้งเดียว — ถ้าคุณไม่ได้ขอ ไม่ต้องทำอะไร รหัสผ่านเดิมยังใช้ได้</div>',
+    });
+    audit_(username, 'reset_request', CONFIG.USERS_SHEET, user.row, { via: 'email' });
+  } else {
+    // ไม่มีอีเมล: แจ้งผู้ดูแลระบบ (แสดงในหน้า ผู้ใช้ + อีเมลถึงผู้ดูแลระบบที่มีอีเมล)
+    PropertiesService.getScriptProperties().setProperty('RESET_REQ_' + username, nowText_());
+    const admins = readUsers_(usersSheet_()).filter(u => u.role === 'admin' && u.status === 'active' && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(u.email || '').trim()));
+    if (admins.length) {
+      try {
+        MailApp.sendEmail({
+          to: admins.map(a => String(a.email).trim()).join(','),
+          subject: 'Protection Fee — ' + username + ' ขอรีเซ็ตรหัสผ่าน',
+          body: 'ผู้ใช้ ' + username + ' (' + (user.fullName || '') + ') ใส่รหัสผ่านผิดหลายครั้งและขอรีเซ็ตรหัสผ่าน แต่บัญชีไม่มีอีเมล\n' +
+            'เปิดหน้า "ผู้ใช้" ในระบบ แล้วกด "รีเซ็ตรหัสผ่าน" เพื่อสร้างรหัสผ่านชั่วคราวให้ผู้ใช้\n' + appUrl_(),
+        });
+      } catch (err) { console.error('notify admins failed', err); }
+    }
+    audit_(username, 'reset_request', CONFIG.USERS_SHEET, user.row, { via: 'admin', notified: admins.length });
+  }
+  return { message: RESET_SENT_MESSAGE };
+}
+
+/** ตั้งรหัสผ่านใหม่จากลิงก์ในอีเมล (ใช้ได้ครั้งเดียว) */
+function resetPasswordWithToken(token, newPassword) {
+  token = String(token || '').trim();
+  if (!/^[0-9a-f]{64}$/i.test(token)) throw new Error('ลิงก์ตั้งรหัสผ่านไม่ถูกต้อง');
+  validatePassword_(String(newPassword || ''));
+  const cache = CacheService.getScriptCache();
+  const key = 'rst_' + sha256_(token);
+  return withLock_(() => {
+    const username = cache.get(key);
+    if (!username) throw new Error('ลิงก์หมดอายุหรือถูกใช้ไปแล้ว — กรุณาขอลิงก์ใหม่');
+    cache.remove(key);
+    const user = readUsers_(usersSheet_()).find(u => u.username === username);
+    if (!user || user.status !== 'active') throw new Error('บัญชีนี้ใช้งานไม่ได้ กรุณาติดต่อผู้ดูแลระบบ');
+    setPassword_(user, String(newPassword));
+    cache.remove('fail_' + username);
+    PropertiesService.getScriptProperties().deleteProperty('RESET_REQ_' + username);
+    audit_(username, 'reset_done', CONFIG.USERS_SHEET, user.row, { via: 'email' });
+    return { message: 'ตั้งรหัสผ่านใหม่แล้ว — เข้าสู่ระบบด้วยรหัสผ่านใหม่ได้เลย', username };
+  });
+}
+
 
 /* ------------------------------------------------------------------ */
 /* Helpers — ผู้ใช้ / session                                            */
