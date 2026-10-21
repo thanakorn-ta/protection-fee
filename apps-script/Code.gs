@@ -234,6 +234,12 @@ function checkLogKey_(key) {
 
 function validateLogForm_(key, form) {
   form = form || {};
+  if (form.jobCategory !== undefined) {
+    const cat = String(form.jobCategory || '').trim();
+    if (!cat) throw new Error('กรุณาเลือกประเภทงาน');
+    if (JOB_CATEGORIES.indexOf(cat) < 0 && cat !== JOB_OTHER) throw new Error('ประเภทงานไม่ถูกต้อง');
+    form = Object.assign({}, form, { jobType: composeJobType_(cat, form.jobDetail) });
+  }
   const date = parseDate_(form.date);
   const labels = { worker: 'ผู้เข้างาน', place: 'สถานที่', expressway: 'สายทาง', project: 'โครงการ', jobType: 'ประเภทงาน' };
   Object.keys(labels).forEach(k => {
@@ -357,7 +363,7 @@ function validationList_(rule) {
 /* แดชบอร์ดสรุปรายปี                                                     */
 /* ------------------------------------------------------------------ */
 
-const DASH_CACHE_KEY = 'dash_v3';
+const DASH_CACHE_KEY = 'dash_v4';
 
 /* ------------------------------------------------------------------ */
 /* ค่าใช้จ่ายตามอัตรา                                                     */
@@ -640,7 +646,7 @@ function getDashboard(token, fresh) {
     months: Array.from({ length: 12 }, () => ({ count: 0, amount: 0, nights: 0, cost: 0, food: 0, charges: 0, pending: 0 })),
   });
   // แยกตามหมวด รายเดือน: dims[หมวด][ชื่อ] = { e: { เดือน: [จุด, บาท] }, b: {...} } — เก็บเฉพาะเดือนที่มีข้อมูล
-  const newDims = () => ({ place: {}, project: {}, expressway: {}, worker: {} });
+  const newDims = () => ({ place: {}, project: {}, expressway: {}, worker: {}, category: {} });
   const add = (dims, dim, name, side, m, cost) => {
     name = String(name || '').replace(/\s+/g, ' ').trim() || '(ไม่ระบุ)';
     const d = dims[dim][name] || (dims[dim][name] = {});
@@ -684,6 +690,7 @@ function getDashboard(token, fresh) {
       add(year.dims, 'project', r.project, side, r.ym.m, cost);
       add(year.dims, 'expressway', r.expressway, side, r.ym.m, cost);
       add(year.dims, 'worker', r.worker, side, r.ym.m, cost);
+      add(year.dims, 'category', jobCategoryOf_(r.jobType), side, r.ym.m, cost);
     });
   });
 
@@ -742,7 +749,31 @@ const BOOKING_HEADERS = [
   'loggedRows', 'loggedAt', // แถวที่บันทึกลงตาราง EXAT / BEM แล้ว (กันบันทึกซ้ำ)
   'phone', // เบอร์ติดต่อผู้เข้างาน
   'prevStatus', 'cancelReason', 'cancelFiles', 'cancelledBy', 'cancelledByName', 'cancelledAt', 'removedRows', // การยกเลิก
+  'jobCategory', // ประเภทงาน (หมวด) — ไว้กรองงาน ข้อความเต็มอยู่ใน jobType
 ];
+
+// ประเภทงาน: เลือกหมวด + พิมพ์รายละเอียดเพิ่ม → บันทึกเป็นข้อความเดียว เช่น "งานติดตั้งสินค้า COM7"
+// (ตาราง EXAT / BEM, File Accrue, File Clear ใช้ข้อความเต็มเหมือนเดิม — ข้อความขึ้นต้นด้วยหมวด จึงกรองในชีทได้)
+const JOB_CATEGORIES = ['งานติดตั้งสินค้า', 'งานตรวจสอบโครงสร้างประจำปี', 'งานตรวจสอบระบบไฟฟ้า'];
+const JOB_OTHER = 'อื่น ๆ';
+
+function composeJobType_(category, detail) {
+  const cat = String(category || '').trim();
+  const d = String(detail || '').replace(/\s+/g, ' ').trim();
+  if (JOB_CATEGORIES.indexOf(cat) < 0) return d;
+  if (d && jobCategoryOf_(d) === cat) return d; // ข้อความบอกหมวดอยู่แล้ว (พิมพ์เอง / ข้อมูลเก่า เช่น "งานติดตั้งงานสินค้า D7")
+  return (cat + ' ' + d).trim();
+}
+
+/** หมวดของข้อความประเภทงาน (ใช้กับข้อมูลเก่าที่ไม่ได้เลือกหมวด) */
+function jobCategoryOf_(text) {
+  const t = norm_(text);
+  for (let i = 0; i < JOB_CATEGORIES.length; i++) if (t.indexOf(norm_(JOB_CATEGORIES[i])) === 0) return JOB_CATEGORIES[i];
+  if (/ตรวจสอบโครงสร้าง|โครงสร้างประจำปี/.test(t)) return JOB_CATEGORIES[1];
+  if (/ไฟฟ้า|ระบบไฟ|ไฟส่องสว่าง/.test(t)) return JOB_CATEGORIES[2];
+  if (/ติดตั้ง|สินค้า/.test(t)) return JOB_CATEGORIES[0];
+  return JOB_OTHER;
+}
 const BOOKING_FIELDS = ['title', 'date', 'time', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'phone', 'note'];
 const MEDIA_TYPES = ['Flyover 2.0', 'Gateway Billboard', 'Mainline'];
 
@@ -814,6 +845,15 @@ function validateBooking_(form) {
   form = form || {};
   const f = {};
   BOOKING_FIELDS.forEach(k => { f[k] = String(form[k] === undefined || form[k] === null ? '' : form[k]).trim(); });
+  if (form.jobCategory !== undefined) {
+    const cat = String(form.jobCategory || '').trim();
+    if (!cat) throw new Error('กรุณาเลือกประเภทงาน');
+    if (JOB_CATEGORIES.indexOf(cat) < 0 && cat !== JOB_OTHER) throw new Error('ประเภทงานไม่ถูกต้อง');
+    f.jobType = text_(composeJobType_(cat, form.jobDetail));
+    f.jobCategory = cat;
+  } else {
+    f.jobCategory = jobCategoryOf_(f.jobType);
+  }
   if (!f.jobType) throw new Error('กรุณากรอกประเภทงาน');
   if (!f.title) f.title = f.jobType; // ไม่มีช่องลูกค้า/สินค้าแล้ว — ใช้ประเภทงานเป็นชื่อการจอง
   if (!f.worker) throw new Error('กรุณากรอกชื่อผู้เข้างาน');

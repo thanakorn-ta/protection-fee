@@ -389,6 +389,14 @@ p .hol-co { font-size: 14px; padding: 3px 10px; border-radius: 999px; }
 .hol-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px; align-items: end; margin: 12px 0; }
 .hol-form .error { grid-column: 1 / -1; }
 #hol-table td.type { white-space: nowrap; }
+/* ประเภทงาน: หมวด + รายละเอียด */
+.job-pick { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 10px 12px; align-items: end; }
+.job-preview { grid-column: 1 / -1; margin: 0; font-size: 13px; color: var(--muted); }
+.job-preview b { color: var(--ink); font-weight: 600; }
+@media (max-width: 640px) { .job-pick { grid-template-columns: 1fr; } }
+.cal-filters { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.cal-filters select { min-height: 44px; border: 1.5px solid var(--field); border-radius: 999px; padding: 0 12px; background: #fff; color: var(--ink); font-size: 15px; max-width: 100%; }
+.cal-filters select.on { border-color: var(--green); color: var(--green); font-weight: 600; }
 .modal-ask { position: fixed; inset: 0; z-index: 9; background: rgba(20,33,27,.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ask-card { width: 100%; max-width: 400px; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.3); padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 8px; }
 .ask-card h3 { font-size: 18px; }
@@ -659,9 +667,15 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
         <section class="step">
           <h2><span class="step-no">3</span>ทำงานอะไร</h2>
-          <label class="field">ประเภทงาน
-            <input name="jobType" list="dl-jobtypes" placeholder="เช่น ติดตั้งสินค้า, ตรวจสอบโครงสร้างประจำปี" required>
-          </label>
+          <div class="job-pick" data-job-pick>
+            <label class="field"><span>ประเภทงาน <span class="req">*</span></span>
+              <select name="jobCategory" required></select>
+            </label>
+            <label class="field"><span>รายละเอียดเพิ่มเติม <span class="opt">(ไม่บังคับ)</span></span>
+              <input name="jobDetail" list="dl-jobtypes" placeholder="เช่น COM7, 2569" autocomplete="off">
+            </label>
+            <p class="job-preview" data-job-preview hidden></p>
+          </div>
           <div class="quick" id="job-chips" aria-label="ประเภทงานที่ใช้ล่าสุด"></div>
         </section>
 
@@ -728,11 +742,12 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
           <button type="button" data-view="month" aria-pressed="true">ปฏิทิน</button>
           <button type="button" data-view="list" aria-pressed="false">รายการ</button>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap" role="group" aria-label="กรองการจอง">
+        <div class="cal-filters" role="group" aria-label="กรองการจอง">
           <button type="button" class="pill" data-bk-filter="all" aria-pressed="true">ทั้งหมด</button>
           <button type="button" class="pill" data-bk-filter="pending" aria-pressed="false">รออนุมัติ</button>
           <button type="button" class="pill" data-bk-filter="approved" aria-pressed="false">อนุมัติแล้ว</button>
           <button type="button" class="pill" data-bk-filter="mine" aria-pressed="false">ของฉัน</button>
+          <select id="bk-cat-filter" aria-label="กรองตามประเภทงาน"></select>
         </div>
       </div>
     </div>
@@ -790,6 +805,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         <div class="table-wrap"><table class="compact" id="dash-places" style="min-width:680px"></table></div>
       </section>
       <div class="grid-2">
+        <section class="card pad"><h2>แยกตามประเภทงาน</h2><div class="bars" id="dash-category"></div></section>
         <section class="card pad"><h2>แยกตามโครงการ</h2><div class="bars" id="dash-project"></div></section>
         <section class="card pad"><h2>แยกตามสายทาง</h2><div class="bars" id="dash-expressway"></div></section>
         <section class="card pad"><h2>ผู้เข้างาน</h2><div class="bars" id="dash-worker"></div></section>
@@ -1072,9 +1088,15 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     <div class="modal-body" id="bk-view"></div>
     <form class="modal-body bk-form" id="bk-form" novalidate hidden>
       <section class="fsec">
-        <label class="field"><span>ประเภทงาน <span class="req">*</span></span>
-          <input name="jobType" list="dl-jobtypes" required placeholder="เช่น ติดตั้ง สินค้า COM7 (Studio7)">
-        </label>
+        <div class="job-pick" data-job-pick>
+          <label class="field"><span>ประเภทงาน <span class="req">*</span></span>
+            <select name="jobCategory" required></select>
+          </label>
+          <label class="field"><span>รายละเอียดเพิ่มเติม <span class="opt">(ไม่บังคับ)</span></span>
+            <input name="jobDetail" placeholder="เช่น COM7 (Studio7), 2569" autocomplete="off">
+          </label>
+          <p class="job-preview" data-job-preview hidden></p>
+        </div>
         <div class="grid2">
           <div class="field"><span>แจ้งใช้รถ</span>
             <input type="hidden" name="provider" value="EXAT">
@@ -1732,6 +1754,67 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     }
   });
 
+  // ---------- ประเภทงาน: เลือกหมวด + พิมพ์รายละเอียดเพิ่ม (เหมือน composeJobType_ ใน Code.gs) ----------
+  var JOB_CATEGORIES = ['งานติดตั้งสินค้า', 'งานตรวจสอบโครงสร้างประจำปี', 'งานตรวจสอบระบบไฟฟ้า'];
+  var JOB_OTHER = 'อื่น ๆ';
+  function jobCategoryOf(text) {
+    var t = norm(text);
+    for (var i = 0; i < JOB_CATEGORIES.length; i++) if (t.indexOf(norm(JOB_CATEGORIES[i])) === 0) return JOB_CATEGORIES[i];
+    if (/ตรวจสอบโครงสร้าง|โครงสร้างประจำปี/.test(t)) return JOB_CATEGORIES[1];
+    if (/ไฟฟ้า|ระบบไฟ|ไฟส่องสว่าง/.test(t)) return JOB_CATEGORIES[2];
+    if (/ติดตั้ง|สินค้า/.test(t)) return JOB_CATEGORIES[0];
+    return JOB_OTHER;
+  }
+  function composeJob(cat, detail) {
+    var d = String(detail || '').replace(/\s+/g, ' ').trim();
+    if (JOB_CATEGORIES.indexOf(cat) < 0) return d;
+    if (d && jobCategoryOf(d) === cat) return d; // ข้อความบอกหมวดอยู่แล้ว
+    return (cat + ' ' + d).trim();
+  }
+  /** ข้อความเดิม → { cat, detail } ที่ประกอบกลับได้ข้อความเดิม */
+  function splitJob(text, cat) {
+    var t = String(text || '').replace(/\s+/g, ' ').trim();
+    if (!t) return { cat: '', detail: '' };
+    cat = cat || jobCategoryOf(t);
+    if (JOB_CATEGORIES.indexOf(cat) >= 0 && t.indexOf(cat) === 0) {
+      var rest = t.slice(cat.length).trim();
+      if (composeJob(cat, rest) === t) return { cat: cat, detail: rest };
+    }
+    return composeJob(cat, t) === t ? { cat: cat, detail: t } : { cat: JOB_OTHER, detail: t };
+  }
+  function jobPick(form) {
+    var box = form.querySelector('[data-job-pick]');
+    return { cat: form.jobCategory.value, detail: form.jobDetail.value, text: composeJob(form.jobCategory.value, form.jobDetail.value), box: box };
+  }
+  function setJob(form, text, cat) {
+    var s = splitJob(text, cat);
+    form.jobCategory.value = s.cat;
+    form.jobDetail.value = s.detail;
+    jobPreview(form);
+  }
+  function jobPreview(form) {
+    var j = jobPick(form), p = j.box.querySelector('[data-job-preview]');
+    form.jobDetail.placeholder = j.cat === JOB_OTHER ? 'พิมพ์ประเภทงาน' : (form.jobDetail.dataset.ph || form.jobDetail.placeholder);
+    p.hidden = !j.text;
+    p.innerHTML = 'จะบันทึกเป็น: <b>' + esc(j.text) + '</b>';
+  }
+  /** ตรวจหมวด / รายละเอียด — คืนข้อความผิดพลาด หรือ '' ถ้าถูกต้อง */
+  function jobError(form) {
+    var j = jobPick(form);
+    if (!j.cat) { form.jobCategory.focus(); return 'กรุณาเลือกประเภทงาน'; }
+    if (!j.text) { form.jobDetail.focus(); return 'กรุณาพิมพ์ประเภทงานในช่องรายละเอียดเพิ่มเติม'; }
+    return '';
+  }
+  $$('[data-job-pick]').forEach(function (box) {
+    var form = box.closest('form');
+    form.jobCategory.innerHTML = '<option value="">— เลือกประเภทงาน —</option>' +
+      JOB_CATEGORIES.concat(JOB_OTHER).map(function (c, i) { return '<option value="' + esc(c) + '">' + (c === JOB_OTHER ? c + ' (พิมพ์เอง)' : (i + 1) + '. ' + c) + '</option>'; }).join('');
+    form.jobDetail.dataset.ph = form.jobDetail.placeholder;
+    form.jobCategory.addEventListener('change', function () { jobPreview(form); });
+    form.jobDetail.addEventListener('input', function () { jobPreview(form); });
+    form.addEventListener('reset', function () { setTimeout(function () { jobPreview(form); }, 0); });
+  });
+
   // ประเภทงานที่ใช้ล่าสุด กดเพื่อเติม
   function recentJobs() {
     var out = [];
@@ -1749,7 +1832,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   }
   $('#job-chips').addEventListener('click', function (e) {
     var b = e.target.closest('[data-job]');
-    if (b) $('#form-entry [name="jobType"]').value = b.dataset.job;
+    if (b) setJob($('#form-entry'), b.dataset.job);
   });
 
   function resetEntry(keep) {
@@ -1772,7 +1855,8 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   $('#form-entry').addEventListener('submit', function (e) {
     e.preventDefault();
     var form = e.target;
-    var common = { date: form.date.value, worker: form.worker.value.trim(), jobType: form.jobType.value.trim() };
+    var job = jobPick(form);
+    var common = { date: form.date.value, worker: form.worker.value.trim(), jobType: job.text, jobCategory: job.cat, jobDetail: job.detail.trim() };
     if (!common.date) return showError(form, 'กรุณาเลือกวันที่');
     if (!common.worker) { form.worker.focus(); return showError(form, 'กรุณากรอกผู้เข้างาน'); }
     if (!S.picks.length) { placeSearch.focus(); return showError(form, 'กรุณาเลือกสถานที่อย่างน้อย 1 จุด'); }
@@ -1787,7 +1871,8 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         return showError(form, 'จุดที่ ' + (i + 1) + ': ค่าอาหาร/รถคุ้มครองต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป');
       }
     }
-    if (!common.jobType) { form.jobType.focus(); return showError(form, 'กรุณากรอกประเภทงาน'); }
+    var jobErr = jobError(form);
+    if (jobErr) return showError(form, jobErr);
 
     var mode = S.mode;
     var places = S.picks.map(function (p) {
@@ -1987,6 +2072,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
           '<div class="bar-track"><span class="exat" style="width:' + (o.exat / top * 100) + '%"></span><span class="bem" style="width:' + (o.bem / top * 100) + '%"></span></div></div>';
       }).join('') : '<p class="sub">ไม่มีข้อมูลในช่วงนี้</p>';
     }
+    bars('#dash-category', dimList('category'));
     bars('#dash-project', dimList('project'));
     bars('#dash-expressway', dimList('expressway'));
     bars('#dash-worker', dimList('worker'));
@@ -2061,7 +2147,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   var TH_MONTHS_LONG = ['มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน', 'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'];
   var TH_DAYS = ['อา.', 'จ.', 'อ.', 'พ.', 'พฤ.', 'ศ.', 'ส.'];
   var nowD = new Date();
-  S.cal = { y: nowD.getFullYear(), m: nowD.getMonth(), view: window.innerWidth < 760 ? 'list' : 'month', filter: 'all', bookings: [], pending: [], expanded: {} };
+  S.cal = { y: nowD.getFullYear(), m: nowD.getMonth(), view: window.innerWidth < 760 ? 'list' : 'month', filter: 'all', cat: '', bookings: [], pending: [], expanded: {} };
   S.bk = null;
 
   function isoOf(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
@@ -2193,9 +2279,11 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     }
   }
 
+  function bookingCategory(b) { return b.jobCategory || jobCategoryOf(b.jobType || b.title); }
   function visibleBookings() {
-    var f = S.cal.filter;
+    var f = S.cal.filter, cat = S.cal.cat;
     return S.cal.bookings.filter(function (b) {
+      if (cat && bookingCategory(b) !== cat) return false;
       if (f === 'mine') return b.mine;
       if (f === 'all') return true;
       return b.status === f;
@@ -2294,6 +2382,9 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   $('#cal-today').addEventListener('click', function () { var t = new Date(); S.cal.y = t.getFullYear(); S.cal.m = t.getMonth(); loadSchedule(); });
   $$('[data-view]').forEach(function (b) { b.addEventListener('click', function () { S.cal.view = b.dataset.view; renderSchedule(); }); });
   $$('[data-bk-filter]').forEach(function (b) { b.addEventListener('click', function () { S.cal.filter = b.dataset.bkFilter; renderSchedule(); }); });
+  $('#bk-cat-filter').innerHTML = '<option value="">ทุกประเภทงาน</option>' +
+    JOB_CATEGORIES.concat(JOB_OTHER).map(function (c) { return '<option value="' + esc(c) + '">' + esc(c) + '</option>'; }).join('');
+  $('#bk-cat-filter').addEventListener('change', function () { S.cal.cat = this.value; this.classList.toggle('on', !!this.value); renderSchedule(); });
   $('#btn-new-booking').addEventListener('click', function () { openBookingForm(null, today()); });
   $('#page-schedule').addEventListener('click', function (e) {
     var ev = e.target.closest('[data-bk]');
@@ -2321,7 +2412,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   function stayOpen() {
     $('#bk-ask').hidden = true;
     var form = $('#bk-form');
-    if (!form.hidden) form.jobType.focus();
+    if (!form.hidden) form.jobCategory.focus();
   }
   $('#bk-close').addEventListener('click', askClose);
   $('#bk-ask-stay').addEventListener('click', stayOpen);
@@ -3032,9 +3123,10 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     var v = b
       ? Object.assign({}, b, { jobType: b.jobType || b.title }, splitWorker(b.worker, b.phone))
       : { date: dateIso || today(), provider: 'EXAT', mediaType: 'Flyover 2.0', worker: LS.get('worker'), phone: LS.get('bkPhone') };
-    ['date', 'time', 'provider', 'mediaType', 'expressway', 'meetingPoint', 'places', 'jobType', 'worker', 'phone', 'note'].forEach(function (k) {
+    ['date', 'time', 'provider', 'mediaType', 'expressway', 'meetingPoint', 'places', 'worker', 'phone', 'note'].forEach(function (k) {
       if (form[k] && v[k] !== undefined) form[k].value = v[k];
     });
+    setJob(form, v.jobType || '', b && b.jobCategory);
     if (!form.provider.value) form.provider.value = 'EXAT';
     setSeg(form, 'provider');
     $('#bk-modal-title').textContent = b ? 'แก้ไขการจอง' : 'จองรถคุ้มครอง';
@@ -3044,7 +3136,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     showModal(true);
     $('#bk-modal').scrollTop = 0;
     updateDateNote();
-    setTimeout(function () { form.jobType.focus(); }, 30);
+    setTimeout(function () { form.jobCategory.focus(); }, 30);
   }
   $('#bk-cancel-edit').addEventListener('click', askClose);
   $('#bk-place-add').addEventListener('click', function () {
@@ -3072,7 +3164,9 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     var data = formData(form);
     delete data[''];
     var bad = function (el, msg) { el.focus(); return showError(form, msg); };
-    if (!data.jobType.trim()) return bad(form.jobType, 'กรุณากรอกประเภทงาน');
+    var jobErr = jobError(form);
+    if (jobErr) return showError(form, jobErr);
+    data.jobType = composeJob(data.jobCategory, data.jobDetail);
     if (!data.date) return bad(form.date, 'กรุณาเลือกวันที่');
     if (!lines(data.places).length) return bad($('#bk-place-pick'), 'กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด');
     if (!data.worker.trim()) return bad(form.worker, 'กรุณากรอกชื่อผู้เข้างาน');
