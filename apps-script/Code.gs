@@ -1507,7 +1507,18 @@ function accrueMonthlyJob() {
   if (!isAccrueDay_(s, y, m, d)) return;
   const props = PropertiesService.getScriptProperties();
   const dayKey = 'ACCRUE_DAY_' + y + '_' + m + '_' + d;
-  if (props.getProperty(dayKey)) return; // วันนี้ตรวจแล้ว
+  // กันส่งซ้อน (ตัวตั้งเวลาเก่า/ใหม่ หรือสั่งรันจากตัวแก้ไขพร้อมกัน)
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5 * 60 * 1000)) return;
+  try {
+    if (props.getProperty(dayKey)) return; // วันนี้ตรวจแล้ว
+    accrueDailyCheck_(s, y, m, props, dayKey);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function accrueDailyCheck_(s, y, m, props, dayKey) {
   try {
     const bucket = accrueYear_(y)[m - 1];
     const hash = accrueHash_(bucket);
