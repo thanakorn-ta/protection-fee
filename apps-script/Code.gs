@@ -55,7 +55,7 @@ function doGet() {
 
 const API_FUNCTIONS = {
   register, login, logout, changePassword, requestPasswordReset, resetPasswordWithToken, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
-  getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings,
+  getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings, downloadClear, sendClearNow,
   addLocation, listUsers, updateUser, reviewUser, resetPassword,
 };
 
@@ -1195,6 +1195,7 @@ const ACCRUE_DEFAULTS = {
   greeting: 'น้องหม่อง', ccLabel: 'ผู้เกี่ยวข้อง', signOff: 'ขอบคุณครับ',
   checker: 'นายณัฐวุฒิ อู่ยายโสม', timeIn: '22', timeOut: '4',
   autoSend: true, sendDays: '21, 25, 27, 30, 31', sendHour: 9,
+  clearAuto: true, clearDay: 25, // File Clear ของเดือนก่อนหน้า
 };
 const ACCRUE_JOB = 'accrueMonthlyJob';
 const ACCRUE_LOG_SHEET = 'ประวัติส่ง File Accrue';
@@ -1262,6 +1263,7 @@ function accrueYear_(y) {
         bucket.exat.push({
           no: r.no, iso: r.iso, project: r.project, expressway: r.expressway, jobType: r.jobType, place: r.place,
           worker: r.worker, qty: 1, price, amount: price, noRate: c.note === 'no-rate',
+          food: c.cost === '' ? 0 : Number(c.food) || 0, // ค่าอาหาร (จุดแรกของคืน) — ใช้ใน File Clear
         });
         return;
       }
@@ -1321,20 +1323,23 @@ function buildAccrueFile_(key, y, m, bucket) {
   if (key === 'exat') layoutExatAccrue_(sh, y, m, bucket.exat, s);
   else layoutBemAccrue_(sh, y, m, bucket.bem);
   SpreadsheetApp.flush();
+  const blob = archiveAndExport_(ss, 'ACCRUE_FILE_' + key + '_' + y + '_' + m, name);
+  return { key, name: name + '.xlsx', total, count: (key === 'exat' ? bucket.exat : bucket.bem).length, url: ss.getUrl(), blob };
+}
 
+/** เก็บไฟล์ไว้ในโฟลเดอร์ File Accrue (แทนไฟล์เดิมของเดือนเดียวกัน) แล้วส่งออกเป็น .xlsx */
+function archiveAndExport_(ss, prop, name) {
   const props = PropertiesService.getScriptProperties();
-  const prop = 'ACCRUE_FILE_' + key + '_' + y + '_' + m;
   const old = props.getProperty(prop);
   const file = DriveApp.getFileById(ss.getId());
   try { file.moveTo(accrueFolder_()); } catch (err) { /* อยู่ใน My Drive */ }
   if (old && old !== ss.getId()) { try { DriveApp.getFileById(old).setTrashed(true); } catch (err) { /* ลบไปแล้ว */ } }
   props.setProperty(prop, ss.getId());
-
   const res = UrlFetchApp.fetch('https://docs.google.com/spreadsheets/d/' + ss.getId() + '/export?format=xlsx', {
     headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() }, muteHttpExceptions: true,
   });
   if (res.getResponseCode() !== 200) throw new Error('ส่งออกไฟล์ Excel ไม่สำเร็จ (HTTP ' + res.getResponseCode() + ')');
-  return { key, name: name + '.xlsx', total, count: (key === 'exat' ? bucket.exat : bucket.bem).length, url: ss.getUrl(), blob: res.getBlob().setName(name + '.xlsx') };
+  return res.getBlob().setName(name + '.xlsx');
 }
 
 function styleBlock_(range, opts) {
@@ -1507,23 +1512,28 @@ function isAccrueDay_(s, y, m, d) {
  */
 function accrueMonthlyJob() {
   const s = accrueSettings_();
-  if (!s.autoSend) return;
+  if (!s.autoSend && !s.clearAuto) return;
   const now = new Date();
   const y = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy'));
   const m = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'M'));
   const d = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'd'));
-  if (!isAccrueDay_(s, y, m, d)) return;
   const props = PropertiesService.getScriptProperties();
   const dayKey = 'ACCRUE_DAY_' + y + '_' + m + '_' + d;
   // กันส่งซ้อน (ตัวตั้งเวลาเก่า/ใหม่ หรือสั่งรันจากตัวแก้ไขพร้อมกัน)
   const lock = LockService.getScriptLock();
   if (!lock.tryLock(5 * 60 * 1000)) return;
+  let error = null;
   try {
-    if (props.getProperty(dayKey)) return; // วันนี้ตรวจแล้ว
-    accrueDailyCheck_(s, y, m, props, dayKey);
+    // File Accrue ของเดือนนี้ (วันที่ตั้งไว้ · เฉพาะเมื่อข้อมูลเปลี่ยน)
+    if (s.autoSend && isAccrueDay_(s, y, m, d) && !props.getProperty(dayKey)) {
+      try { accrueDailyCheck_(s, y, m, props, dayKey); } catch (err) { error = err; }
+    }
+    // File Clear ของเดือนก่อนหน้า (วันที่ 25 · ครั้งเดียว)
+    try { clearDailyCheck_(s, y, m, d, props); } catch (err) { error = error || err; }
   } finally {
     lock.releaseLock();
   }
+  if (error) throw error;
 }
 
 function accrueDailyCheck_(s, y, m, props, dayKey) {
@@ -1549,7 +1559,7 @@ function accrueDailyCheck_(s, y, m, props, dayKey) {
 
 /** เปิด / ปิด ตัวตั้งเวลา (ทำงานทุกวันตามชั่วโมงที่ตั้ง แล้วตรวจเองว่าวันนี้เป็นวันส่งหรือไม่) */
 function ensureAccrueTrigger_(s) {
-  const sig = s.autoSend ? 'daily@' + s.sendHour : '';
+  const sig = s.autoSend || s.clearAuto ? 'daily@' + s.sendHour : '';
   const props = PropertiesService.getScriptProperties();
   const existing = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === ACCRUE_JOB);
   if (existing.length && props.getProperty('ACCRUE_TRIGGER') === sig) return;
@@ -1608,8 +1618,20 @@ function getAccrue(token, y, m) {
       const sentAt = props.getProperty('ACCRUE_SENT_' + y + '_' + x.m) || '';
       const last = props.getProperty('ACCRUE_HASH_' + y + '_' + x.m);
       return { m: x.m, exatCount: x.exat.length, exatTotal: x.exatTotal, bemCount: x.bem.length, bemTotal: x.bemTotal, sentAt,
-        changed: !!(sentAt && last && last !== accrueHash_(x)) };
+        changed: !!(sentAt && last && last !== accrueHash_(x)),
+        clearSentAt: props.getProperty('CLEAR_SENT_' + y + '_' + x.m) || '' };
     }),
+    clear: (function () {
+      const data = clearData_(b);
+      const due = m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 }; // ส่งวันที่ 25 ของเดือนถัดไป
+      const sentAt = props.getProperty('CLEAR_SENT_' + y + '_' + m) || '';
+      return {
+        items: data.items, byWay: data.byWay, amount: data.amount, food: data.food, net: data.net,
+        name: clearFileName_(y, m) + '.xlsx', sentAt,
+        dueDate: due.y + '-' + String(due.m).padStart(2, '0') + '-' + String(Math.min(Number(s.clearDay) || 25, new Date(due.y, due.m, 0).getDate())).padStart(2, '0'),
+        email: Object.assign(clearEmail_(y, m, s, data, !!sentAt), { to: s.to, cc: s.cc }),
+      };
+    })(),
     email: Object.assign(accrueEmail_(y, m, s, !!props.getProperty('ACCRUE_SENT_' + y + '_' + m)), { to: s.to, cc: s.cc }),
     nextSend: nextAccrueDay_(s, now),
     settings: s,
@@ -1651,6 +1673,8 @@ function saveAccrueSettings(token, form) {
     autoSend: form.autoSend === undefined ? s.autoSend : form.autoSend === true || form.autoSend === 'true' || form.autoSend === 'on',
     sendDays: accrueDays_({ sendDays: form.sendDays === undefined ? s.sendDays : form.sendDays }).join(', '),
     sendHour: Math.min(23, Math.max(0, Math.floor(Number(form.sendHour === undefined ? s.sendHour : form.sendHour)))),
+    clearAuto: form.clearAuto === undefined ? s.clearAuto : form.clearAuto === true || form.clearAuto === 'true' || form.clearAuto === 'on',
+    clearDay: Math.min(31, Math.max(1, Math.floor(Number(form.clearDay) || s.clearDay || 25))),
   };
   if (!next.to) throw new Error('กรุณากรอกอีเมลผู้รับ (ถึง)');
   PropertiesService.getScriptProperties().setProperty(ACCRUE_PROP, JSON.stringify(next));
@@ -1666,6 +1690,179 @@ function setupAccrue() {
   UrlFetchApp.fetch('https://www.googleapis.com/discovery/v1/apis', { muteHttpExceptions: true });
   console.log('MailApp เหลือโควตาวันนี้: ' + MailApp.getRemainingDailyQuota() + ' ฉบับ · ตัวตั้งเวลา: ' + (accrueTriggerOn_() ? 'เปิด' : 'ปิด'));
 }
+
+/* ------------------------------------------------------------------ */
+/* File Clear — สรุป EXAT ของเดือนก่อนหน้า เพื่อสั่งจ่ายเช็คให้การทางพิเศษฯ (ส่งทุกวันที่ 25)    */
+/* ------------------------------------------------------------------ */
+
+const CLEAR_WAYS = ['ฉลองรัช', 'เฉลิมมหานคร', 'ศรีรัช'];
+
+function prevMonth_(y, m) { return m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 }; }
+
+function money_(n) { return Number(n || 0).toLocaleString('en-US'); }
+
+/** รายการ EXAT ของเดือน + สรุปแยกสายทาง (จำนวน − ค่าอาหาร = คงเหลือ ที่ต้องสั่งจ่าย) */
+function clearData_(bucket) {
+  const items = bucket.exat;
+  const ways = CLEAR_WAYS.slice();
+  items.forEach(x => { if (x.expressway && !ways.some(w => norm_(w) === norm_(x.expressway))) ways.push(x.expressway); });
+  const byWay = ways.map(w => {
+    const xs = items.filter(x => norm_(x.expressway) === norm_(w));
+    const amount = xs.reduce((t, x) => t + x.price, 0);
+    const food = xs.reduce((t, x) => t + (x.food || 0), 0);
+    return { way: w, amount, food, net: amount - food };
+  });
+  const amount = items.reduce((t, x) => t + x.price, 0);
+  const food = items.reduce((t, x) => t + (x.food || 0), 0);
+  return { items, byWay, amount, food, net: amount - food };
+}
+
+function clearFileName_(y, m) {
+  return 'File Clear ค่ารถคุ้มครองเดือน ' + THAI_MONTHS[m - 1] + ' ' + String((y + 543) % 100).padStart(2, '0');
+}
+
+function layoutClear_(sh, y, m, data) {
+  sh.setName('All');
+  const W = 12;
+  const items = data.items;
+  const n = items.length;
+  sh.getRange(1, 1, 1, W).merge().setValue('รายการค่ารถคุ้มครองการทางพิเศษแห่งประเทศไทย ประจำเดือน : ' + TH_MONTHS_FULL[m - 1] + ' ' + (y + 543));
+  styleBlock_(sh.getRange(1, 1, 1, W), { size: 20, bold: true, align: 'center' });
+  sh.setRowHeight(1, 52);
+  const head = ['ลำดับ', 'วันที่', 'โครงการ', 'EXAT/BEM', 'พื้นที่', 'ประเภทป้าย', 'ประเภทงาน', 'สถานที่', 'จำนวน\n(จุด)', 'ราคา / จุด', 'ค่าอาหาร', 'ผู้ควบคุมงาน'];
+  sh.getRange(3, 1, 1, W).setValues([head]);
+  styleBlock_(sh.getRange(3, 1, 1, W), { bold: true, align: 'center', wrap: true, bg: '#FCE4D6', border: true });
+  sh.setRowHeight(3, 48);
+  if (n) {
+    sh.getRange(4, 1, n, W).setValues(items.map((x, i) => [i + 1, accrueDateText_(x.iso), x.project, 'EXAT', x.expressway, x.project, x.jobType, x.place, x.qty, x.price, x.food || 0, x.worker]));
+    styleBlock_(sh.getRange(4, 1, n, W), { align: 'center', border: true });
+    styleBlock_(sh.getRange(4, 7, n, 2), { align: 'left', wrap: true });
+    sh.getRange(4, 10, n, 2).setNumberFormat('#,##0');
+  }
+  const tr = 4 + n;
+  sh.getRange(tr, 8).setValue('รวม');
+  sh.getRange(tr, 10).setFormula(n ? '=SUM(J4:J' + (tr - 1) + ')' : '=0');
+  sh.getRange(tr, 11).setFormula(n ? '=SUM(K4:K' + (tr - 1) + ')' : '=0');
+  sh.getRange(tr, 10, 1, 2).setNumberFormat('#,##0');
+  styleBlock_(sh.getRange(tr, 8, 1, 4), { bold: true, align: 'center' });
+
+  // สรุปแยกสายทาง (คงเหลือ = จำนวน − ค่าอาหาร = ยอดสั่งจ่ายเช็ค)
+  const s0 = tr + 5;
+  sh.getRange(s0, 8, 1, 4).setValues([['สายทาง', 'จำนวน', 'ค่าอาหาร', 'คงเหลือ']]);
+  styleBlock_(sh.getRange(s0, 8, 1, 4), { bold: true, align: 'center', bg: '#DDEBF7', border: true });
+  const k = data.byWay.length;
+  sh.getRange(s0 + 1, 8, k, 3).setValues(data.byWay.map(w => [w.way, w.amount, w.food]));
+  sh.getRange(s0 + 1, 11, k, 1).setFormulas(data.byWay.map((w, i) => ['=I' + (s0 + 1 + i) + '-J' + (s0 + 1 + i)]));
+  const st = s0 + 1 + k;
+  sh.getRange(st, 8).setValue('รวม');
+  sh.getRange(st, 9, 1, 3).setFormulas([['=SUM(I' + (s0 + 1) + ':I' + (st - 1) + ')', '=SUM(J' + (s0 + 1) + ':J' + (st - 1) + ')', '=SUM(K' + (s0 + 1) + ':K' + (st - 1) + ')']]);
+  styleBlock_(sh.getRange(s0 + 1, 8, k + 1, 4), { align: 'center', border: true });
+  styleBlock_(sh.getRange(st, 8, 1, 4), { bold: true, bg: '#FFF2CC' });
+  sh.getRange(s0 + 1, 9, k + 1, 3).setNumberFormat('#,##0');
+  [62, 110, 150, 95, 105, 150, 380, 430, 80, 95, 95, 150].forEach((w, i) => sh.setColumnWidth(i + 1, w));
+  sh.setFrozenRows(3);
+}
+
+function buildClearFile_(y, m, bucket) {
+  const data = clearData_(bucket);
+  const name = clearFileName_(y, m);
+  const ss = SpreadsheetApp.create(name);
+  try { ss.setSpreadsheetLocale('th_TH'); ss.setSpreadsheetTimeZone(CONFIG.TIMEZONE); } catch (err) { /* ใช้ค่าเริ่มต้น */ }
+  layoutClear_(ss.getSheets()[0], y, m, data);
+  SpreadsheetApp.flush();
+  const blob = archiveAndExport_(ss, 'CLEAR_FILE_' + y + '_' + m, name);
+  return { name: name + '.xlsx', data, url: ss.getUrl(), blob };
+}
+
+/** อีเมล File Clear ตามข้อความที่กำหนด */
+function clearEmail_(y, m, s, data, revised) {
+  const mon = TH_MONTHS_FULL[m - 1];
+  const yr = y + 543;
+  const subject = (revised ? 'RE: ' : '') + 'นำส่ง File Clear ค่ารถคุ้มครอง เดือน' + mon + ' ปี ' + yr;
+  const intro = (revised ? 'นำส่ง File Clear แก้ไขเพิ่มเติม ค่ารถคุ้มครอง เดือน ' : 'นำส่ง File Clear ค่ารถคุ้มครอง เดือน ') + mon + ' ปี ' + yr + ' พร้อมรายละเอียดดังนี้';
+  const detail = ['สรุปค่ารถคุ้มครอง เดือน ' + mon + ' ' + yr]
+    .concat(data.byWay.map(w => '- ' + w.way + ' จำนวน ' + money_(w.net) + ' บาท'));
+  const total = 'รวม ' + money_(data.net) + ' บาท';
+  const plain = 'เรียน\t' + s.greeting + '\nสำเนา\t' + s.ccLabel + '\nเรื่อง\tนำส่ง File Clear ค่ารถคุ้มครอง เดือน' + mon + ' ปี ' + yr +
+    '\n\t' + intro + '\n\nรายละเอียด\n\n' + detail.join('\n') + '\n\n' + total + '\n\n\t\t' + s.signOff;
+  const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const row = (a, b) => '<tr><td style="padding:2px 28px 2px 0;vertical-align:top">' + esc(a) + '</td><td style="padding:2px 0">' + esc(b) + '</td></tr>';
+  const html = '<div style="font-family:Tahoma,sans-serif;font-size:14px;line-height:1.9">' +
+    '<table style="border-collapse:collapse">' + row('เรียน', s.greeting) + row('สำเนา', s.ccLabel) +
+    row('เรื่อง', 'นำส่ง File Clear ค่ารถคุ้มครอง เดือน' + mon + ' ปี ' + yr) + row('', intro) + '</table>' +
+    '<p style="margin:16px 0 4px"><b>รายละเอียด</b></p>' +
+    '<p style="margin:0">' + detail.map(esc).join('<br>') + '</p>' +
+    '<p style="margin:12px 0 0"><b>' + esc(total) + '</b></p>' +
+    '<p style="margin:28px 0 0 120px">' + esc(s.signOff) + '</p></div>';
+  return { subject, plain, html };
+}
+
+/** สร้าง File Clear ของเดือน y/m แล้วส่งอีเมล */
+function sendClear_(y, m, by) {
+  const s = accrueSettings_();
+  const to = checkEmails_(emailList_(s.to), 'ถึง');
+  const cc = checkEmails_(emailList_(s.cc), 'สำเนา');
+  if (!to.length) throw new Error('ยังไม่ได้ตั้งอีเมลผู้รับ (ถึง)');
+  const bucket = accrueYear_(y)[m - 1];
+  const props = PropertiesService.getScriptProperties();
+  const when = nowText_();
+  const label = 'File Clear ' + accrueMonthShort_(y, m);
+  if (!bucket.exat.length) {
+    logAccrue_([when, label, by, to.join(', '), cc.join(', '), '0', '', '', 'ไม่ได้ส่ง — ไม่มีการใช้รถคุ้มครอง EXAT ในเดือนนี้']);
+    return { sent: false, reason: 'ไม่มีการใช้รถคุ้มครอง EXAT ในเดือน ' + accrueMonthShort_(y, m) };
+  }
+  const revised = !!props.getProperty('CLEAR_SENT_' + y + '_' + m);
+  const f = buildClearFile_(y, m, bucket);
+  const mail = clearEmail_(y, m, s, f.data, revised);
+  const msg = { to: to.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, attachments: [f.blob] };
+  if (cc.length) msg.cc = cc.join(',');
+  MailApp.sendEmail(msg);
+  logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(f.data.net), '', f.name + ' ' + f.url, revised ? 'ส่งแล้ว (แก้ไขเพิ่มเติม)' : 'ส่งแล้ว']);
+  props.setProperty('CLEAR_SENT_' + y + '_' + m, when);
+  return { sent: true, at: when, to, cc, subject: mail.subject, revised, file: f.name, net: f.data.net };
+}
+
+/**
+ * ตรวจรายวัน: ตั้งแต่วันที่ส่ง (ค่าเริ่มต้น 25) ของเดือนนี้ ถ้ายังไม่เคยส่ง File Clear ของเดือนก่อนหน้า → ส่ง (ครั้งเดียว)
+ * ส่งไม่สำเร็จจะลองใหม่วันถัดไป
+ */
+function clearDailyCheck_(s, y, m, d, props) {
+  if (!s.clearAuto) return;
+  const last = new Date(y, m, 0).getDate();
+  if (d < Math.min(Number(s.clearDay) || 25, last)) return;
+  const p = prevMonth_(y, m);
+  if (props.getProperty('CLEAR_SENT_' + p.y + '_' + p.m)) return;
+  const dayKey = 'CLEAR_DAY_' + y + '_' + m + '_' + d;
+  if (props.getProperty(dayKey)) return;
+  props.setProperty(dayKey, nowText_());
+  try {
+    const res = sendClear_(p.y, p.m, 'ส่งอัตโนมัติ');
+    if (!res.sent) props.setProperty('CLEAR_SENT_' + p.y + '_' + p.m, 'ไม่มีรายการ ' + nowText_()); // ไม่ต้องตรวจซ้ำทุกวัน
+  } catch (err) {
+    logAccrue_([nowText_(), 'File Clear ' + accrueMonthShort_(p.y, p.m), 'ส่งอัตโนมัติ', s.to, s.cc, '', '', '', 'ส่งไม่สำเร็จ: ' + String(err && err.message || err)]);
+    throw err;
+  }
+}
+
+/** ดาวน์โหลด File Clear (.xlsx) ของเดือน y/m */
+function downloadClear(token, y, m) {
+  requireUser_(token, true);
+  y = Number(y); m = Number(m);
+  if (!(m >= 1 && m <= 12) || !(y > 2000)) throw new Error('เดือนไม่ถูกต้อง');
+  const f = buildClearFile_(y, m, accrueYear_(y)[m - 1]);
+  return { name: f.name, mime: f.blob.getContentType(), data: Utilities.base64Encode(f.blob.getBytes()), url: f.url };
+}
+
+/** ผู้ดูแลระบบสั่งส่ง File Clear ของเดือน y/m ทันที */
+function sendClearNow(token, y, m) {
+  const user = requireUser_(token, true);
+  y = Number(y); m = Number(m);
+  if (!(m >= 1 && m <= 12) || !(y > 2000)) throw new Error('เดือนไม่ถูกต้อง');
+  const res = withLock_(() => sendClear_(y, m, user.fullName || user.username));
+  audit_(user.username, 'send_clear', ACCRUE_LOG_SHEET, '', { y, m, sent: res.sent, net: res.net || 0 });
+  return res;
+}
+
 
 /* ------------------------------------------------------------------ */
 /* สถานที่ (DataBase Locations)                                          */

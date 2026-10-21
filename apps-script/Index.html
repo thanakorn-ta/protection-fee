@@ -840,7 +840,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     <div class="page-head">
       <div>
         <h1>File Accrue ค่ารถคุ้มครอง</h1>
-        <p>สรุปค่ารถคุ้มครองรายเดือน แยกไฟล์ EXAT / BEM ตามรูปแบบที่ใช้ส่ง — ส่งอีเมลอัตโนมัติวันที่ <span id="ac-day">21, 25, 27, 30, 31</span> ของทุกเดือน เฉพาะเมื่อข้อมูลมีการอัปเดต</p>
+        <p>สรุปค่ารถคุ้มครองรายเดือน แยกไฟล์ EXAT / BEM ตามรูปแบบที่ใช้ส่ง — ส่ง File Accrue อัตโนมัติวันที่ <span id="ac-day">21, 25, 27, 30, 31</span> เฉพาะเมื่อข้อมูลมีการอัปเดต · ส่ง File Clear ของเดือนก่อนหน้าวันที่ 25</p>
       </div>
       <div class="dash-ctl">
         <label class="field">ปี<select id="ac-year"></select></label>
@@ -867,6 +867,22 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
         <div class="table-wrap"><table class="compact ac-table" id="ac-bem" style="min-width:760px"></table></div>
       </section>
 
+      <section class="card table-card" id="ac-clear-card">
+        <div class="table-head ac-head">
+          <h2><span class="fnum">C</span>File Clear (EXAT) <small id="ac-clear-name"></small></h2>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button type="button" class="btn sm" id="ac-clear-download">ดาวน์โหลด .xlsx</button>
+            <button type="button" class="btn primary sm" id="ac-clear-send">ส่ง File Clear ตอนนี้</button>
+          </div>
+        </div>
+        <p class="sub" id="ac-clear-note" style="padding:0 16px"></p>
+        <div class="table-wrap"><table class="compact ac-table" id="ac-clear" style="min-width:1040px"></table></div>
+        <div class="grid-2" style="padding:16px">
+          <div><h3 style="font-size:15px;margin-bottom:8px">สรุปแยกสายทาง (ยอดสั่งจ่ายเช็ค)</h3><div class="table-wrap"><table class="compact" id="ac-clear-sum"></table></div></div>
+          <div><h3 style="font-size:15px;margin-bottom:8px">อีเมล File Clear</h3><div class="ac-mail" id="ac-clear-mail" style="margin-top:0"></div></div>
+        </div>
+      </section>
+
       <div class="grid-2">
         <section class="card pad">
           <div class="ac-head"><h2><span class="fnum">3</span>อีเมลแจ้ง</h2><button type="button" class="btn primary sm" id="ac-send">ส่งอีเมลตอนนี้</button></div>
@@ -887,7 +903,11 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
             <label class="field"><span>ส่งวันที่ <small>คั่นด้วย ,</small></span><input name="sendDays" placeholder="21, 25, 27, 30, 31" inputmode="numeric"></label>
             <label class="field">เวลา (ชั่วโมง)<input name="sendHour" type="number" min="0" max="23"></label>
           </div>
-          <label class="check"><input type="checkbox" name="autoSend"> ส่งอีเมลอัตโนมัติทุกเดือน (เดือนปัจจุบัน)</label>
+          <label class="check"><input type="checkbox" name="autoSend"> ส่ง File Accrue อัตโนมัติ (เดือนปัจจุบัน)</label>
+          <div class="grid2">
+            <label class="check" style="align-self:end"><input type="checkbox" name="clearAuto"> ส่ง File Clear อัตโนมัติ (เดือนก่อนหน้า)</label>
+            <label class="field">File Clear ส่งวันที่<input name="clearDay" type="number" min="1" max="31"></label>
+          </div>
           <div class="error" data-error hidden></div>
           <button type="submit" class="btn primary block">บันทึกการตั้งค่า</button>
         </form>
@@ -2489,7 +2509,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     $('#ac-sum-title').textContent = 'สรุปค่ารถคุ้มครองรายเดือน ปี ' + be(d.y);
     var sum = { ec: 0, et: 0, bc: 0, bt: 0 };
     $('#ac-summary').innerHTML =
-      '<thead><tr><th>เดือน</th><th class="num">EXAT (จุด)</th><th class="num">EXAT (บาท)</th><th class="num">BEM (คืน)</th><th class="num">BEM (บาท)</th><th class="num">รวม (บาท)</th><th>ส่งอีเมล</th></tr></thead><tbody>' +
+      '<thead><tr><th>เดือน</th><th class="num">EXAT (จุด)</th><th class="num">EXAT (บาท)</th><th class="num">BEM (คืน)</th><th class="num">BEM (บาท)</th><th class="num">รวม (บาท)</th><th>File Accrue</th><th>File Clear</th></tr></thead><tbody>' +
       d.summary.map(function (x) {
         sum.ec += x.exatCount; sum.et += x.exatTotal; sum.bc += x.bemCount; sum.bt += x.bemTotal;
         var dash = function (v) { return v ? fmt(v) : '<span class="sub">–</span>'; };
@@ -2497,9 +2517,10 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
           '<td class="num">' + dash(x.exatCount) + '</td><td class="num">' + dash(x.exatTotal) + '</td>' +
           '<td class="num">' + dash(x.bemCount) + '</td><td class="num">' + dash(x.bemTotal) + '</td>' +
           '<td class="num"><b>' + dash(x.exatTotal + x.bemTotal) + '</b></td>' +
-          '<td>' + (x.sentAt ? '<span class="status approved">ส่งแล้ว ' + esc(stamp(x.sentAt)) + '</span>' + (x.changed ? ' <span class="status pending" title="ข้อมูลเปลี่ยนหลังส่งล่าสุด — จะส่งแก้ไขเพิ่มเติมรอบถัดไป">มีอัปเดต</span>' : '') : '<span class="sub">ยังไม่ส่ง</span>') + '</td></tr>';
+          '<td>' + (x.sentAt ? '<span class="status approved">ส่งแล้ว ' + esc(stamp(x.sentAt)) + '</span>' + (x.changed ? ' <span class="status pending" title="ข้อมูลเปลี่ยนหลังส่งล่าสุด — จะส่งแก้ไขเพิ่มเติมรอบถัดไป">มีอัปเดต</span>' : '') : '<span class="sub">ยังไม่ส่ง</span>') + '</td>' +
+          '<td>' + (x.clearSentAt ? '<span class="status approved">ส่งแล้ว ' + esc(stamp(x.clearSentAt)) + '</span>' : '<span class="sub">ยังไม่ส่ง</span>') + '</td></tr>';
       }).join('') +
-      '<tr class="current"><td><b>รวมทั้งปี</b></td><td class="num">' + fmt(sum.ec) + '</td><td class="num">' + fmt(sum.et) + '</td><td class="num">' + fmt(sum.bc) + '</td><td class="num">' + fmt(sum.bt) + '</td><td class="num"><b>' + fmt(sum.et + sum.bt) + '</b></td><td></td></tr></tbody>';
+      '<tr class="current"><td><b>รวมทั้งปี</b></td><td class="num">' + fmt(sum.ec) + '</td><td class="num">' + fmt(sum.et) + '</td><td class="num">' + fmt(sum.bc) + '</td><td class="num">' + fmt(sum.bt) + '</td><td class="num"><b>' + fmt(sum.et + sum.bt) + '</b></td><td></td><td></td></tr></tbody>';
 
     // ไฟล์ที่ 1: EXAT
     $('#ac-exat-name').textContent = ex.name;
@@ -2535,10 +2556,35 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       ? (st.triggerOn ? 'ส่งอัตโนมัติวันที่ ' + st.sendDays + ' ของทุกเดือน เวลา ' + st.sendHour + ':00–' + (Number(st.sendHour) + 1) + ':00 น. จากบัญชีเจ้าของ Apps Script — ครั้งแรกของเดือนส่งเสมอ ครั้งถัดไปส่งเฉพาะเมื่อข้อมูลเปลี่ยน (หัวเรื่อง RE: … แก้ไขเพิ่มเติม) · เดือนที่ไม่มีวันที่ 30/31 ส่งวันสุดท้ายของเดือนแทน' + (d.nextSend ? ' · รอบถัดไป ' + thaiDate(d.nextSend) : '') : 'ตั้งให้ส่งอัตโนมัติแล้ว แต่ตัวตั้งเวลายังไม่ทำงาน — กด “บันทึกการตั้งค่า” อีกครั้ง')
       : 'ปิดการส่งอัตโนมัติอยู่ — ส่งเองด้วยปุ่ม “ส่งอีเมลตอนนี้”';
 
+    // File Clear (EXAT ของเดือนที่เลือก — ส่งวันที่ 25 ของเดือนถัดไป)
+    var c = d.clear;
+    $('#ac-clear-name').textContent = c.name;
+    $('#ac-clear-note').innerHTML = 'สรุป EXAT ของเดือน ' + esc(d.label) + ' เพื่อสั่งจ่ายเช็คให้การทางพิเศษแห่งประเทศไทย — ' +
+      (c.sentAt ? '<span class="status approved">ส่งแล้ว ' + esc(stamp(c.sentAt)) + '</span>'
+        : (st.clearAuto ? 'จะส่งอัตโนมัติวันที่ ' + esc(thaiDate(c.dueDate)) + ' เวลา ' + st.sendHour + ':00 น.' : 'ปิดการส่งอัตโนมัติอยู่ — กด “ส่ง File Clear ตอนนี้”'));
+    $('#ac-clear').innerHTML =
+      '<thead><tr><th>ลำดับ</th><th>วันที่</th><th>โครงการ</th><th>EXAT/BEM</th><th>พื้นที่</th><th>ประเภทป้าย</th><th>ประเภทงาน</th><th>สถานที่</th><th class="num">จำนวน (จุด)</th><th class="num">ราคา / จุด</th><th class="num">ค่าอาหาร</th><th>ผู้ควบคุมงาน</th></tr></thead><tbody>' +
+      (c.items.length ? c.items.map(function (x, i) {
+        return '<tr><td>' + (i + 1) + '</td><td>' + esc(thaiDate(x.iso)) + '</td><td>' + esc(x.project) + '</td><td>EXAT</td><td>' + esc(x.expressway) + '</td><td>' + esc(x.project) + '</td>' +
+          '<td class="l">' + esc(x.jobType) + '</td><td class="l">' + esc(x.place) + '</td><td class="num">' + x.qty + '</td><td class="num">' + fmt(x.price) + '</td>' +
+          '<td class="num">' + (x.food ? fmt(x.food) : '0') + '</td><td>' + esc(x.worker) + '</td></tr>';
+      }).join('') + '<tr class="tot"><td colspan="9" style="text-align:right">รวม</td><td class="num">' + fmt(c.amount) + '</td><td class="num">' + fmt(c.food) + '</td><td></td></tr>'
+        : '<tr><td class="empty" colspan="12">ไม่มีการใช้รถคุ้มครอง EXAT ในเดือนนี้</td></tr>') + '</tbody>';
+    $('#ac-clear-sum').innerHTML =
+      '<thead><tr><th>สายทาง</th><th class="num">จำนวน</th><th class="num">ค่าอาหาร</th><th class="num">คงเหลือ</th></tr></thead><tbody>' +
+      c.byWay.map(function (w) { return '<tr><td>' + esc(w.way) + '</td><td class="num">' + fmt(w.amount) + '</td><td class="num">' + fmt(w.food) + '</td><td class="num"><b>' + fmt(w.net) + '</b></td></tr>'; }).join('') +
+      '<tr class="current"><td><b>รวม</b></td><td class="num">' + fmt(c.amount) + '</td><td class="num">' + fmt(c.food) + '</td><td class="num"><b>' + fmt(c.net) + '</b></td></tr></tbody>';
+    $('#ac-clear-mail').innerHTML =
+      '<div class="mh"><span>ถึง</span><b>' + esc(c.email.to || '—') + '</b><span>สำเนา</span><b>' + esc(c.email.cc || '— ยังไม่ได้ตั้ง —') + '</b><span>เรื่อง</span><b>' + esc(c.email.subject) + '</b></div>' +
+      '<div class="mb">' + c.email.html + '</div>' +
+      '<div class="att">' + (c.items.length ? '<span>📎 ' + esc(c.name) + '</span>' : '<span>ไม่มีไฟล์แนบ — เดือนนี้ไม่มีรายการ EXAT</span>') + '</div>';
+
     var f = $('#form-accrue');
     ['to', 'cc', 'greeting', 'ccLabel', 'signOff', 'checker', 'timeIn', 'timeOut', 'sendDays', 'sendHour'].forEach(function (k) { f[k].value = st[k] === undefined ? '' : st[k]; });
     f.cc.value = String(st.cc || '').split(/\s*,\s*/).filter(Boolean).join('\n');
     f.autoSend.checked = !!st.autoSend;
+    f.clearAuto.checked = !!st.clearAuto;
+    f.clearDay.value = st.clearDay || 25;
 
     $('#ac-log').innerHTML =
       '<thead><tr><th>วันที่ส่ง</th><th>เดือน</th><th>ส่งโดย</th><th>ถึง / สำเนา</th><th class="num">EXAT</th><th class="num">BEM</th><th>สถานะ</th></tr></thead><tbody>' +
@@ -2583,6 +2629,44 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       }
     });
   });
+  $('#ac-clear-download').addEventListener('click', async function () {
+    var b = this, label = b.textContent;
+    b.disabled = true;
+    b.textContent = 'กำลังสร้างไฟล์…';
+    try {
+      var f = await api('downloadClear', S.token, S.ac.y, S.ac.m);
+      saveBase64(f.name, f.mime, f.data);
+      toast('ดาวน์โหลด ' + f.name + ' แล้ว');
+    } catch (err) {
+      toast(errText(err), true);
+    } finally {
+      b.disabled = false;
+      b.textContent = label;
+    }
+  });
+  $('#ac-clear-send').addEventListener('click', async function () {
+    var d = S.ac.data, b = this;
+    if (!d) return;
+    var c = d.clear;
+    var ok = await askConfirm({
+      title: 'ส่ง File Clear เดือน ' + d.label + '?',
+      text: 'ถึง ' + (c.email.to || '—') + (c.email.cc ? ' · สำเนา ' + c.email.cc : '') + ' · ยอดสั่งจ่าย ' + fmt(c.net) + ' บาท' + (c.sentAt ? ' — เคยส่งแล้ว จะส่งเป็น “แก้ไขเพิ่มเติม”' : ''),
+      ok: 'ส่งอีเมล',
+    });
+    if (!ok) return;
+    b.disabled = true;
+    b.textContent = 'กำลังสร้างไฟล์และส่ง…';
+    try {
+      var res = await api('sendClearNow', S.token, S.ac.y, S.ac.m);
+      toast(res.sent ? 'ส่ง File Clear ' + d.label + ' แล้ว' : res.reason, !res.sent);
+      await loadAccrue(S.ac.y, S.ac.m);
+    } catch (err) {
+      toast(errText(err), true);
+    } finally {
+      b.disabled = false;
+      b.textContent = 'ส่ง File Clear ตอนนี้';
+    }
+  });
   $('#ac-send').addEventListener('click', async function () {
     var d = S.ac.data, b = this;
     if (!d) return;
@@ -2605,6 +2689,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     var form = e.target;
     var data = formData(form);
     data.autoSend = form.autoSend.checked;
+    data.clearAuto = form.clearAuto.checked;
     data.cc = data.cc.split(/[\s,;]+/).filter(Boolean).join(', ');
     submitWith(form, async function () {
       var s = await api('saveAccrueSettings', S.token, data);
