@@ -374,6 +374,18 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
 .eye { position: absolute; right: 2px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border: 0; background: transparent; color: var(--muted); display: inline-flex; align-items: center; justify-content: center; border-radius: 8px; cursor: pointer; }
 .eye:hover, .eye[aria-pressed="true"] { color: var(--green); }
 .reset-offer { background: var(--amber-soft); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; }
+/* วันหยุดนักขัตฤกษ์ */
+.cal-day.holiday { background: #FFF1F2; }
+.cal-day.holiday.out { background: #F7EDEE; }
+.cal-day.holiday .cal-num { color: #B4232F; font-weight: 700; }
+.cal-day.today.holiday .cal-num { color: #fff; }
+.hol { font-size: 11px; line-height: 1.3; color: #B4232F; background: #FFE1E4; border-radius: 6px; padding: 2px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hol-swatch { display: inline-flex; padding: 3px 10px; border-radius: 999px; font-size: 14px; background: #FFE1E4; color: #B4232F; }
+.hol-strip { background: #FFF1F2; color: #8A1C25; border: 1px solid #FFD5DA; border-radius: 12px; padding: 10px 14px; font-size: 14px; line-height: 1.7; }
+.hol-note { color: #B4232F; font-weight: 500; }
+.hol-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px; align-items: end; margin: 12px 0; }
+.hol-form .error { grid-column: 1 / -1; }
+#hol-table td.type { white-space: nowrap; }
 .modal-ask { position: fixed; inset: 0; z-index: 9; background: rgba(20,33,27,.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ask-card { width: 100%; max-width: 400px; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.3); padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 8px; }
 .ask-card h3 { font-size: 18px; }
@@ -675,7 +687,20 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     <div class="loading-box" id="cal-loading" hidden>กำลังโหลดตารางจอง…</div>
     <div class="cal" id="cal-month"></div>
     <div class="blist" id="cal-list" hidden></div>
-    <p class="sub">กดวันที่ว่างเพื่อจองวันนั้น · กดรายการเพื่อดูรายละเอียด แก้ไข หรืออนุมัติ · สี: <span class="status pending">รออนุมัติ</span> <span class="status approved">อนุมัติแล้ว</span> <span class="status cancelled">ไม่อนุมัติ</span> · การจองที่ยกเลิกย้ายไปหน้า “รายการยกเลิก”</p>
+    <p class="sub">กดวันที่ว่างเพื่อจองวันนั้น · กดรายการเพื่อดูรายละเอียด แก้ไข หรืออนุมัติ · สี: <span class="status pending">รออนุมัติ</span> <span class="status approved">อนุมัติแล้ว</span> <span class="status cancelled">ไม่อนุมัติ</span> <span class="hol-swatch">วันหยุดนักขัตฤกษ์</span> · การจองที่ยกเลิกย้ายไปหน้า “รายการยกเลิก”</p>
+
+    <!-- วันหยุดนักขัตฤกษ์ (ผู้ดูแลระบบเพิ่ม / แก้ไขได้) -->
+    <section class="card pad" id="hol-card" data-admin>
+      <div class="ac-head"><h2 id="hol-title">วันหยุดนักขัตฤกษ์</h2><span class="sub">ข้อมูลจากประกาศวันหยุดสถาบันการเงินของ ธปท. — เพิ่มวันหยุดพิเศษ / ชดเชยที่ ครม. ประกาศภายหลังได้ที่นี่</span></div>
+      <form class="hol-form" id="form-holiday" novalidate>
+        <label class="field">วันที่<input type="date" name="date" required></label>
+        <label class="field">ชื่อวันหยุด<input name="name" required placeholder="เช่น วันหยุดพิเศษ (มติ ครม.)"></label>
+        <label class="field">ประเภท<select name="type"><option>พิเศษ</option><option>ชดเชย</option><option>วันหยุด</option></select></label>
+        <button type="submit" class="btn primary">เพิ่มวันหยุด</button>
+        <div class="error" data-error hidden></div>
+      </form>
+      <div class="table-wrap"><table class="compact" id="hol-table"></table></div>
+    </section>
   </main>
 
   <!-- แดชบอร์ด -->
@@ -973,7 +998,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       <section class="fsec">
         <h3><span class="fnum">1</span>วัน เวลา และจุดนัดพบ</h3>
         <div class="grid2">
-          <label class="field"><span>วันที่ใช้รถคุ้มครอง <span class="req">*</span></span><input type="date" name="date" required></label>
+          <label class="field"><span>วันที่ใช้รถคุ้มครอง <span class="req">*</span></span><input type="date" name="date" required><small class="hol-note" id="bk-date-note" hidden></small></label>
           <label class="field">เวลา<input name="time" placeholder="เช่น 22.00 น."></label>
           <label class="field">สายทาง<input name="expressway" list="dl-expressways" placeholder="เช่น ศรีรัช"></label>
           <label class="field">จุดนัดพบ<input name="meetingPoint" placeholder="เช่น ด่านศรีนครินทร์"></label>
@@ -1973,6 +1998,81 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     return out.join('\n');
   }
 
+  // ---------- วันหยุดนักขัตฤกษ์ ----------
+  S.hol = {}; // วันที่ ISO → [{ name, type }]
+  S.holYears = {}; // ปีที่โหลดครบแล้ว → รายการ
+  function setHolidayYear(y, list) {
+    Object.keys(S.hol).forEach(function (iso) { if (iso.slice(0, 4) === String(y)) delete S.hol[iso]; });
+    addHolidays(list);
+    S.holYears[y] = list;
+  }
+  function addHolidays(list) {
+    (list || []).forEach(function (h) {
+      var cur = S.hol[h.date] = S.hol[h.date] || [];
+      if (!cur.some(function (x) { return x.name === h.name; })) cur.push({ name: h.name, type: h.type });
+    });
+  }
+  function holidayText(iso) { return (S.hol[iso] || []).map(function (h) { return h.name; }).join(' · '); }
+  async function ensureHolidayYear(y) {
+    if (S.holYears[y]) return S.holYears[y];
+    try { setHolidayYear(y, await api('listHolidays', S.token, y)); } catch (err) { S.holYears[y] = S.holYears[y] || null; }
+    return S.holYears[y] || [];
+  }
+  // หมายเหตุใต้ช่องวันที่ในฟอร์มจอง — แจ้งเฉย ๆ ไม่ห้ามจอง
+  async function updateDateNote() {
+    var form = $('#bk-form'), note = $('#bk-date-note'), iso = form.date.value;
+    if (!iso) { note.hidden = true; return; }
+    await ensureHolidayYear(Number(iso.slice(0, 4)));
+    if (form.date.value !== iso) return;
+    var t = holidayText(iso);
+    note.textContent = t ? 'วันนี้เป็นวันหยุด: ' + t : '';
+    note.hidden = !t;
+  }
+  $('#bk-form').date.addEventListener('change', updateDateNote);
+  $('#bk-form').date.addEventListener('input', updateDateNote);
+
+  async function renderHolidayAdmin() {
+    if (!S.user || S.user.role !== 'admin') return;
+    var y = S.cal.y;
+    $('#hol-title').textContent = 'วันหยุดนักขัตฤกษ์ ปี ' + (y + 543);
+    var list = await ensureHolidayYear(y);
+    if (S.cal.y !== y) return;
+    $('#hol-table').innerHTML =
+      '<thead><tr><th>วันที่</th><th>ชื่อวันหยุด</th><th>ประเภท</th><th>ที่มา</th><th></th></tr></thead><tbody>' +
+      ((list || []).length ? list.map(function (h) {
+        return '<tr><td class="nowrap">' + esc(thaiDateLong(h.date)) + '</td><td>' + esc(h.name) + '</td><td class="type">' + esc(h.type) + '</td>' +
+          '<td class="sub">' + esc(h.source) + '</td><td><button type="button" class="btn sm danger" data-hol-del="' + esc(h.date) + '" data-hol-name="' + esc(h.name) + '">ลบ</button></td></tr>';
+      }).join('') : '<tr><td class="empty" colspan="5">ยังไม่มีข้อมูลวันหยุดของปีนี้ — เพิ่มได้จากฟอร์มด้านบน</td></tr>') + '</tbody>';
+  }
+  $('#form-holiday').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var form = e.target, d = formData(form);
+    if (!d.date) return showError(form, 'กรุณาเลือกวันที่');
+    if (!d.name.trim()) return showError(form, 'กรุณากรอกชื่อวันหยุด');
+    submitWith(form, async function () {
+      var list = await api('saveHoliday', S.token, d);
+      setHolidayYear(Number(d.date.slice(0, 4)), list);
+      form.reset();
+      toast('เพิ่มวันหยุด ' + d.name + ' (' + thaiDate(d.date) + ') แล้ว');
+      renderSchedule();
+    });
+  });
+  $('#hol-table').addEventListener('click', async function (e) {
+    var b = e.target.closest('[data-hol-del]');
+    if (!b) return;
+    var date = b.dataset.holDel, name = b.dataset.holName;
+    if (!await askConfirm({ title: 'ลบวันหยุด “' + name + '”?', text: thaiDateLong(date) + ' จะไม่แสดงเป็นวันหยุดในปฏิทินอีก', ok: 'ลบ', danger: true })) return;
+    b.disabled = true;
+    try {
+      setHolidayYear(Number(date.slice(0, 4)), await api('deleteHoliday', S.token, date, name));
+      toast('ลบวันหยุด ' + name + ' แล้ว');
+      renderSchedule();
+    } catch (err) {
+      toast(errText(err), true);
+      b.disabled = false;
+    }
+  });
+
   async function loadSchedule() {
     var first = new Date(S.cal.y, S.cal.m, 1);
     var start = new Date(S.cal.y, S.cal.m, 1 - first.getDay());
@@ -1984,6 +2084,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       var res = await api('listBookings', S.token, S.cal.range[0], S.cal.range[1]);
       S.cal.bookings = res.bookings;
       S.cal.pending = res.pending;
+      addHolidays(res.holidays);
       setBookingBadge(res.pending.length);
       renderSchedule();
     } catch (err) {
@@ -2027,6 +2128,9 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       var inMonth = list.filter(function (b) { return b.date.slice(0, 7) === monthKey; });
       $('#cal-list').innerHTML = inMonth.length ? inMonth.map(bookingItem).join('')
         : '<div class="list-empty">ยังไม่มีการจองในเดือนนี้ — กด “จองรถคุ้มครอง” เพื่อเพิ่ม</div>';
+      var hols = Object.keys(S.hol).filter(function (iso) { return iso.slice(0, 7) === monthKey; }).sort();
+      if (hols.length) $('#cal-list').insertAdjacentHTML('afterbegin', '<div class="hol-strip"><b>วันหยุดเดือนนี้:</b> ' + hols.map(function (iso) { return esc(thaiDate(iso) + ' ' + holidayText(iso)); }).join(' · ') + '</div>');
+      renderHolidayAdmin();
       return;
     }
 
@@ -2042,11 +2146,13 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
         var d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + w * 7 + dw);
         var iso = isoOf(d);
         var evs = byDate[iso] || [];
-        var cls = 'cal-day' + (d.getMonth() !== S.cal.m ? ' out' : '') + (dw === 0 || dw === 6 ? ' weekend' : '') + (iso === todayIso ? ' today' : '');
+        var hol = holidayText(iso);
+        var cls = 'cal-day' + (d.getMonth() !== S.cal.m ? ' out' : '') + (dw === 0 || dw === 6 ? ' weekend' : '') + (hol ? ' holiday' : '') + (iso === todayIso ? ' today' : '');
         var max = S.cal.expanded[iso] ? evs.length : 3;
         html += '<div class="' + cls + '" data-date="' + iso + '">' +
           '<button type="button" class="cal-add" data-new="' + iso + '" aria-label="จองวันที่ ' + esc(thaiDate(iso)) + '">+</button>' +
           '<span class="cal-num">' + d.getDate() + '</span>' +
+          (hol ? '<span class="hol" title="' + esc(hol) + '">' + esc(hol) + '</span>' : '') +
           evs.slice(0, max).map(function (b) {
             return '<button type="button" class="ev ' + esc(b.status) + '" data-bk="' + esc(b.id) + '" title="' + esc(evLabel(b) + ' — ' + BK_STATUS[b.status]) + '">' + esc(evLabel(b)) + '</button>';
           }).join('') +
@@ -2057,6 +2163,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       if (start.getMonth() !== S.cal.m && w >= 4 && new Date(start.getFullYear(), start.getMonth(), start.getDate() + (w + 1) * 7).getMonth() !== S.cal.m) break;
     }
     $('#cal-month').innerHTML = html;
+    renderHolidayAdmin();
   }
 
   function bookingItem(b) {
@@ -2143,6 +2250,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     $('#bk-modal-status').innerHTML = '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status] || b.status) + '</span>';
     var kv = [
       ['วันที่', thaiDateLong(b.date) + (b.time ? ' · ' + b.time : '')],
+      ['วันหยุด', holidayText(b.date)],
       ['แจ้งใช้รถ', b.provider],
       ['Media Type', b.mediaType],
       ['สายทาง', b.expressway],
@@ -2758,6 +2866,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     form.hidden = false;
     showModal(true);
     $('#bk-modal').scrollTop = 0;
+    updateDateNote();
     setTimeout(function () { form.jobType.focus(); }, 30);
   }
   $('#bk-cancel-edit').addEventListener('click', askClose);

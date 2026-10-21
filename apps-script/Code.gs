@@ -56,6 +56,7 @@ function doGet() {
 const API_FUNCTIONS = {
   register, login, logout, changePassword, requestPasswordReset, resetPasswordWithToken, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
   getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings, downloadClear, sendClearNow,
+  listHolidays, saveHoliday, deleteHoliday,
   addLocation, listUsers, updateUser, reviewUser, resetPassword,
 };
 
@@ -839,6 +840,7 @@ function listBookings(token, from, to) {
   return {
     bookings: inRange.map(b => bookingOut_(b, user)),
     pending: user.role === 'admin' ? pending.map(b => bookingOut_(b, user)) : [],
+    holidays: holidaysBetween_(from, to),
   };
 }
 
@@ -1861,6 +1863,134 @@ function sendClearNow(token, y, m) {
   const res = withLock_(() => sendClear_(y, m, user.fullName || user.username));
   audit_(user.username, 'send_clear', ACCRUE_LOG_SHEET, '', { y, m, sent: res.sent, net: res.net || 0 });
   return res;
+}
+
+
+/* ------------------------------------------------------------------ */
+/* วันหยุดนักขัตฤกษ์ — เก็บในแท็บ "วันหยุดนักขัตฤกษ์" (แก้ไข/เพิ่มได้จากหน้า ตารางจอง โดยผู้ดูแลระบบ) */
+/* ------------------------------------------------------------------ */
+
+const HOLIDAY_SHEET = 'วันหยุดนักขัตฤกษ์';
+const HOLIDAY_HEADERS = ['วันที่', 'ชื่อวันหยุด', 'ประเภท', 'ที่มา'];
+const HOLIDAY_TYPES = ['วันหยุด', 'ชดเชย', 'พิเศษ'];
+const BOT_2569 = 'ประกาศ ธปท. ที่ 31/2568 (วันหยุดสถาบันการเงิน ปี 2569)';
+const BOT_2570 = 'ประกาศ ธปท. ที่ 37/2569 (วันหยุดสถาบันการเงิน ปี 2570)';
+const BOT_WEEKEND = ' — ตรงวันหยุดสุดสัปดาห์ (ระบุในวันชดเชยของประกาศ)';
+// ที่มา: หน้า "วันหยุดของสถาบันการเงิน" ของธนาคารแห่งประเทศไทย (bot.or.th) ตรวจเมื่อ 21 ต.ค. 2569
+const HOLIDAY_SEED = [
+  ['2026-01-01', 'วันขึ้นปีใหม่', 'วันหยุด', BOT_2569],
+  ['2026-01-02', 'วันหยุดพิเศษ (เพิ่มเป็นกรณีพิเศษ)', 'พิเศษ', BOT_2569],
+  ['2026-03-03', 'วันมาฆบูชา', 'วันหยุด', BOT_2569],
+  ['2026-04-06', 'วันจักรี', 'วันหยุด', BOT_2569],
+  ['2026-04-13', 'วันสงกรานต์', 'วันหยุด', BOT_2569],
+  ['2026-04-14', 'วันสงกรานต์', 'วันหยุด', BOT_2569],
+  ['2026-04-15', 'วันสงกรานต์', 'วันหยุด', BOT_2569],
+  ['2026-05-01', 'วันแรงงานแห่งชาติ', 'วันหยุด', BOT_2569],
+  ['2026-05-04', 'วันฉัตรมงคล', 'วันหยุด', BOT_2569],
+  ['2026-05-31', 'วันวิสาขบูชา', 'วันหยุด', BOT_2569 + BOT_WEEKEND],
+  ['2026-06-01', 'ชดเชยวันวิสาขบูชา', 'ชดเชย', BOT_2569],
+  ['2026-06-03', 'วันเฉลิมพระชนมพรรษา พระบรมราชินี', 'วันหยุด', BOT_2569],
+  ['2026-07-28', 'วันเฉลิมพระชนมพรรษา พระบาทสมเด็จพระเจ้าอยู่หัว', 'วันหยุด', BOT_2569],
+  ['2026-07-29', 'วันอาสาฬหบูชา', 'วันหยุด', BOT_2569],
+  ['2026-08-12', 'วันแม่แห่งชาติ', 'วันหยุด', BOT_2569],
+  ['2026-10-13', 'วันนวมินทรมหาราช', 'วันหยุด', BOT_2569],
+  ['2026-10-16', 'วันหยุดพิเศษ สถาบันการเงินในกรุงเทพฯ', 'พิเศษ', 'ประกาศ ธปท. ที่ 26/2569'],
+  ['2026-10-23', 'วันปิยมหาราช', 'วันหยุด', BOT_2569],
+  ['2026-12-05', 'วันพ่อแห่งชาติ', 'วันหยุด', BOT_2569 + BOT_WEEKEND],
+  ['2026-12-07', 'ชดเชยวันพ่อแห่งชาติ', 'ชดเชย', BOT_2569],
+  ['2026-12-10', 'วันรัฐธรรมนูญ', 'วันหยุด', BOT_2569],
+  ['2026-12-31', 'วันสิ้นปี', 'วันหยุด', BOT_2569],
+  ['2027-01-01', 'วันขึ้นปีใหม่', 'วันหยุด', BOT_2570],
+  ['2027-02-21', 'วันมาฆบูชา', 'วันหยุด', BOT_2570 + BOT_WEEKEND],
+  ['2027-02-22', 'ชดเชยวันมาฆบูชา', 'ชดเชย', BOT_2570],
+  ['2027-04-06', 'วันจักรี', 'วันหยุด', BOT_2570],
+  ['2027-04-13', 'วันสงกรานต์', 'วันหยุด', BOT_2570],
+  ['2027-04-14', 'วันสงกรานต์', 'วันหยุด', BOT_2570],
+  ['2027-04-15', 'วันสงกรานต์', 'วันหยุด', BOT_2570],
+  ['2027-05-01', 'วันแรงงานแห่งชาติ', 'วันหยุด', BOT_2570 + BOT_WEEKEND],
+  ['2027-05-03', 'ชดเชยวันแรงงานแห่งชาติ', 'ชดเชย', BOT_2570],
+  ['2027-05-04', 'วันฉัตรมงคล', 'วันหยุด', BOT_2570],
+  ['2027-05-20', 'วันวิสาขบูชา', 'วันหยุด', BOT_2570],
+  ['2027-06-03', 'วันเฉลิมพระชนมพรรษา พระบรมราชินี', 'วันหยุด', BOT_2570],
+  ['2027-07-18', 'วันอาสาฬหบูชา', 'วันหยุด', BOT_2570 + BOT_WEEKEND],
+  ['2027-07-19', 'ชดเชยวันอาสาฬหบูชา', 'ชดเชย', BOT_2570],
+  ['2027-07-28', 'วันเฉลิมพระชนมพรรษา พระบาทสมเด็จพระเจ้าอยู่หัว', 'วันหยุด', BOT_2570],
+  ['2027-08-12', 'วันแม่แห่งชาติ', 'วันหยุด', BOT_2570],
+  ['2027-10-13', 'วันนวมินทรมหาราช', 'วันหยุด', BOT_2570],
+  ['2027-10-23', 'วันปิยมหาราช', 'วันหยุด', BOT_2570 + BOT_WEEKEND],
+  ['2027-10-25', 'ชดเชยวันปิยมหาราช', 'ชดเชย', BOT_2570],
+  ['2027-12-05', 'วันพ่อแห่งชาติ', 'วันหยุด', BOT_2570 + BOT_WEEKEND],
+  ['2027-12-06', 'ชดเชยวันพ่อแห่งชาติ', 'ชดเชย', BOT_2570],
+  ['2027-12-10', 'วันรัฐธรรมนูญ', 'วันหยุด', BOT_2570],
+  ['2027-12-31', 'วันสิ้นปี', 'วันหยุด', BOT_2570],
+];
+
+/** แท็บวันหยุด — สร้างพร้อมข้อมูลปี 2569–2570 ครั้งแรก */
+function holidaySheet_() {
+  const ss = spreadsheet_();
+  let sh = ss.getSheetByName(HOLIDAY_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(HOLIDAY_SHEET);
+    sh.getRange(1, 1, 1, HOLIDAY_HEADERS.length).setValues([HOLIDAY_HEADERS]).setFontWeight('bold');
+    sh.getRange(2, 1, HOLIDAY_SEED.length, HOLIDAY_HEADERS.length).setNumberFormat('@').setValues(HOLIDAY_SEED);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function readHolidays_() {
+  const sh = holidaySheet_();
+  if (sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, HOLIDAY_HEADERS.length).getValues().map((r, i) => {
+    const date = r[0] instanceof Date ? Utilities.formatDate(r[0], sheetTz_(), 'yyyy-MM-dd') : dateIsoOf_('', String(r[0]).trim()) || String(r[0]).trim();
+    return { row: i + 2, date, name: String(r[1] || '').trim(), type: String(r[2] || '').trim() || 'วันหยุด', source: String(r[3] || '').trim() };
+  }).filter(h => /^\d{4}-\d{2}-\d{2}$/.test(h.date) && h.name)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function holidaysBetween_(from, to) {
+  return readHolidays_().filter(h => (!from || h.date >= from) && (!to || h.date <= to))
+    .map(h => ({ date: h.date, name: h.name, type: h.type, source: h.source }));
+}
+
+/** ผู้ดูแลระบบเพิ่ม / แก้ไขวันหยุด (วันเดียวกันชื่อเดียวกัน = แก้ไข) */
+function saveHoliday(token, form) {
+  const user = requireUser_(token, true);
+  form = form || {};
+  const date = String(form.date || '').trim();
+  parseDate_(date);
+  const name = text_(form.name).slice(0, 120);
+  if (!name) throw new Error('กรุณากรอกชื่อวันหยุด');
+  const type = HOLIDAY_TYPES.indexOf(form.type) >= 0 ? form.type : 'พิเศษ';
+  const source = text_(form.source || ('เพิ่มโดย ' + (user.fullName || user.username))).slice(0, 200);
+  return withLock_(() => {
+    const sh = holidaySheet_();
+    const cur = readHolidays_().find(h => h.date === date && (h.name === name || form.original === h.name));
+    const row = cur ? cur.row : Math.max(sh.getLastRow(), 1) + 1;
+    sh.getRange(row, 1, 1, HOLIDAY_HEADERS.length).setNumberFormat('@').setValues([[date, name, type, source]]);
+    audit_(user.username, cur ? 'update_holiday' : 'add_holiday', HOLIDAY_SHEET, row, { date, name, type });
+    return holidaysBetween_(date.slice(0, 4) + '-01-01', date.slice(0, 4) + '-12-31');
+  });
+}
+
+function deleteHoliday(token, date, name) {
+  const user = requireUser_(token, true);
+  date = String(date || '').trim();
+  return withLock_(() => {
+    const sh = holidaySheet_();
+    const cur = readHolidays_().find(h => h.date === date && h.name === String(name || '').trim());
+    if (!cur) throw new Error('ไม่พบวันหยุดนี้');
+    sh.deleteRow(cur.row);
+    audit_(user.username, 'delete_holiday', HOLIDAY_SHEET, cur.row, { date, name: cur.name });
+    return holidaysBetween_(date.slice(0, 4) + '-01-01', date.slice(0, 4) + '-12-31');
+  });
+}
+
+/** วันหยุดทั้งปี (สำหรับรายการจัดการ) */
+function listHolidays(token, year) {
+  requireUser_(token);
+  const y = Number(year) || Number(Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy'));
+  return holidaysBetween_(y + '-01-01', y + '-12-31');
 }
 
 
