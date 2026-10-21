@@ -800,7 +800,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     <div class="page-head">
       <div>
         <h1>File Accrue ค่ารถคุ้มครอง</h1>
-        <p>สรุปค่ารถคุ้มครองรายเดือน แยกไฟล์ EXAT / BEM ตามรูปแบบที่ใช้ส่ง — ส่งอีเมลอัตโนมัติทุกวันที่ <span id="ac-day">21</span></p>
+        <p>สรุปค่ารถคุ้มครองรายเดือน แยกไฟล์ EXAT / BEM ตามรูปแบบที่ใช้ส่ง — ส่งอีเมลอัตโนมัติวันที่ <span id="ac-day">21, 25, 27, 30, 31</span> ของทุกเดือน เฉพาะเมื่อข้อมูลมีการอัปเดต</p>
       </div>
       <div class="dash-ctl">
         <label class="field">ปี<select id="ac-year"></select></label>
@@ -844,7 +844,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
             <label class="field">ผู้ตรวจสอบ (EXAT)<input name="checker"></label>
             <label class="field">BEM เวลาเข้า<input name="timeIn"></label>
             <label class="field">BEM เวลาออก<input name="timeOut"></label>
-            <label class="field">ส่งทุกวันที่<input name="sendDay" type="number" min="1" max="28"></label>
+            <label class="field"><span>ส่งวันที่ <small>คั่นด้วย ,</small></span><input name="sendDays" placeholder="21, 25, 27, 30, 31" inputmode="numeric"></label>
             <label class="field">เวลา (ชั่วโมง)<input name="sendHour" type="number" min="0" max="23"></label>
           </div>
           <label class="check"><input type="checkbox" name="autoSend"> ส่งอีเมลอัตโนมัติทุกเดือน (เดือนปัจจุบัน)</label>
@@ -2300,7 +2300,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     for (var yy = thisYear + 1; yy >= thisYear - 4; yy--) years.push(yy);
     $('#ac-year').innerHTML = years.map(function (y) { return '<option value="' + y + '"' + (y === d.y ? ' selected' : '') + '>พ.ศ. ' + be(y) + '</option>'; }).join('');
     $('#ac-month').innerHTML = TH_MONTHS_LONG.map(function (n, i) { return '<option value="' + (i + 1) + '"' + (i + 1 === d.m ? ' selected' : '') + '>' + n + '</option>'; }).join('');
-    $('#ac-day').textContent = d.settings.sendDay;
+    $('#ac-day').textContent = d.settings.sendDays;
 
     var ex = d.exat, bm = d.bem;
     function kpi(cls, label, num, sub) {
@@ -2324,7 +2324,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
           '<td class="num">' + dash(x.exatCount) + '</td><td class="num">' + dash(x.exatTotal) + '</td>' +
           '<td class="num">' + dash(x.bemCount) + '</td><td class="num">' + dash(x.bemTotal) + '</td>' +
           '<td class="num"><b>' + dash(x.exatTotal + x.bemTotal) + '</b></td>' +
-          '<td>' + (x.sentAt ? '<span class="status approved">ส่งแล้ว ' + esc(stamp(x.sentAt)) + '</span>' : '<span class="sub">ยังไม่ส่ง</span>') + '</td></tr>';
+          '<td>' + (x.sentAt ? '<span class="status approved">ส่งแล้ว ' + esc(stamp(x.sentAt)) + '</span>' + (x.changed ? ' <span class="status pending" title="ข้อมูลเปลี่ยนหลังส่งล่าสุด — จะส่งแก้ไขเพิ่มเติมรอบถัดไป">มีอัปเดต</span>' : '') : '<span class="sub">ยังไม่ส่ง</span>') + '</td></tr>';
       }).join('') +
       '<tr class="current"><td><b>รวมทั้งปี</b></td><td class="num">' + fmt(sum.ec) + '</td><td class="num">' + fmt(sum.et) + '</td><td class="num">' + fmt(sum.bc) + '</td><td class="num">' + fmt(sum.bt) + '</td><td class="num"><b>' + fmt(sum.et + sum.bt) + '</b></td><td></td></tr></tbody>';
 
@@ -2359,11 +2359,11 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       '<div class="att">' + (att.length ? att.map(function (n) { return '<span>📎 ' + esc(n) + '</span>'; }).join('') : '<span>ไม่มีไฟล์แนบ — เดือนนี้ไม่มีรายการ</span>') + '</div>';
     var st = d.settings;
     $('#ac-auto').textContent = st.autoSend
-      ? (st.triggerOn ? 'ส่งอัตโนมัติทุกวันที่ ' + st.sendDay + ' เวลา ' + st.sendHour + ':00–' + (Number(st.sendHour) + 1) + ':00 น. (ไฟล์ของเดือนนั้น) จากบัญชีเจ้าของ Apps Script' : 'ตั้งให้ส่งอัตโนมัติแล้ว แต่ตัวตั้งเวลายังไม่ทำงาน — กด “บันทึกการตั้งค่า” อีกครั้ง')
+      ? (st.triggerOn ? 'ส่งอัตโนมัติวันที่ ' + st.sendDays + ' ของทุกเดือน เวลา ' + st.sendHour + ':00–' + (Number(st.sendHour) + 1) + ':00 น. จากบัญชีเจ้าของ Apps Script — ครั้งแรกของเดือนส่งเสมอ ครั้งถัดไปส่งเฉพาะเมื่อข้อมูลเปลี่ยน (หัวเรื่อง RE: … แก้ไขเพิ่มเติม) · เดือนที่ไม่มีวันที่ 30/31 ส่งวันสุดท้ายของเดือนแทน' + (d.nextSend ? ' · รอบถัดไป ' + thaiDate(d.nextSend) : '') : 'ตั้งให้ส่งอัตโนมัติแล้ว แต่ตัวตั้งเวลายังไม่ทำงาน — กด “บันทึกการตั้งค่า” อีกครั้ง')
       : 'ปิดการส่งอัตโนมัติอยู่ — ส่งเองด้วยปุ่ม “ส่งอีเมลตอนนี้”';
 
     var f = $('#form-accrue');
-    ['to', 'cc', 'greeting', 'ccLabel', 'signOff', 'checker', 'timeIn', 'timeOut', 'sendDay', 'sendHour'].forEach(function (k) { f[k].value = st[k] === undefined ? '' : st[k]; });
+    ['to', 'cc', 'greeting', 'ccLabel', 'signOff', 'checker', 'timeIn', 'timeOut', 'sendDays', 'sendHour'].forEach(function (k) { f[k].value = st[k] === undefined ? '' : st[k]; });
     f.cc.value = String(st.cc || '').split(/\s*,\s*/).filter(Boolean).join('\n');
     f.autoSend.checked = !!st.autoSend;
 
@@ -2439,7 +2439,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       S.ac.data.email.to = s.to;
       S.ac.data.email.cc = s.cc;
       await loadAccrue(S.ac.y, S.ac.m);
-      toast('บันทึกการตั้งค่าแล้ว' + (s.autoSend ? ' — ส่งอัตโนมัติทุกวันที่ ' + s.sendDay : ''));
+      toast('บันทึกการตั้งค่าแล้ว' + (s.autoSend ? ' — ส่งอัตโนมัติวันที่ ' + s.sendDays : ''));
     });
   });
 

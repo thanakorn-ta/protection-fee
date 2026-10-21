@@ -1186,7 +1186,7 @@ const ACCRUE_DEFAULTS = {
   to: 'teraporn.ru@planbmedia.co.th', cc: '',
   greeting: 'น้องหม่อง', ccLabel: 'ผู้เกี่ยวข้อง', signOff: 'ขอบคุณครับ',
   checker: 'นายณัฐวุฒิ อู่ยายโสม', timeIn: '22', timeOut: '4',
-  autoSend: true, sendDay: 21, sendHour: 9,
+  autoSend: true, sendDays: '21, 25, 27, 30, 31', sendHour: 9,
 };
 const ACCRUE_JOB = 'accrueMonthlyJob';
 const ACCRUE_LOG_SHEET = 'ประวัติส่ง File Accrue';
@@ -1423,13 +1423,14 @@ function logAccrue_(row) {
   range.setValues([row.map(longText_)]);
 }
 
-function accrueEmail_(y, m, s) {
+/** อีเมลแจ้ง — ครั้งแรกของเดือนตามรูปแบบเดิม · ส่งซ้ำเพราะข้อมูลเปลี่ยน = "RE: … แก้ไขเพิ่มเติม" ตามตัวอย่าง */
+function accrueEmail_(y, m, s, revised) {
   const label = accrueMonthShort_(y, m);
-  const subject = 'นำส่ง File Accrue ค่ารถคุ้มครอง เดือน' + label;
-  const lines = [
-    ['เรียน', s.greeting], ['สำเนา', s.ccLabel],
-    ['เรื่อง', 'นำส่ง File Accrue ค่ารถคุ้มครอง เดือน' + label + '  รายละเอียดตามไฟล์แนบ'],
-  ];
+  const base = 'นำส่ง File Accrue ค่ารถคุ้มครอง เดือน' + label;
+  const subject = (revised ? 'RE: ' : '') + base;
+  const lines = [['เรียน', s.greeting], ['สำเนา', s.ccLabel]];
+  if (revised) lines.push(['เรื่อง', 'นำส่ง File Accrue แก้ไขเพิ่มเติม ค่ารถคุ้มครอง เดือน' + label], ['', base + '  รายละเอียดตามไฟล์แนบ']);
+  else lines.push(['เรื่อง', base + '  รายละเอียดตามไฟล์แนบ']);
   const plain = lines.map(l => l[0] + '\t' + l[1]).join('\n') + '\n\n\t\t' + s.signOff;
   const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const html = '<div style="font-family:Tahoma,sans-serif;font-size:14px;line-height:1.9">' +
@@ -1438,13 +1439,24 @@ function accrueEmail_(y, m, s) {
   return { subject, plain, html };
 }
 
+/** ลายนิ้วมือของข้อมูลเดือนนั้น — ถ้าเหมือนครั้งที่ส่งล่าสุด = ไม่มีการอัปเดต ไม่ต้องส่งซ้ำ */
+function accrueHash_(bucket) {
+  const data = {
+    exat: bucket.exat.map(x => [x.iso, x.project, x.expressway, x.jobType, x.place, x.worker, x.qty, x.price]),
+    bem: bucket.bem.map(x => [x.iso, x.timeIn, x.timeOut, x.jobs, x.places, x.amount]),
+  };
+  return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, JSON.stringify(data), Utilities.Charset.UTF_8));
+}
+
 /** สร้างไฟล์ EXAT / BEM ของเดือนนั้นแล้วส่งอีเมล — คืนผลการส่ง */
-function sendAccrue_(y, m, by) {
+function sendAccrue_(y, m, by, bucket) {
   const s = accrueSettings_();
   const to = checkEmails_(emailList_(s.to), 'ถึง');
   const cc = checkEmails_(emailList_(s.cc), 'สำเนา');
   if (!to.length) throw new Error('ยังไม่ได้ตั้งอีเมลผู้รับ (ถึง)');
-  const bucket = accrueYear_(y)[m - 1];
+  bucket = bucket || accrueYear_(y)[m - 1];
+  const props = PropertiesService.getScriptProperties();
+  const revised = !!props.getProperty('ACCRUE_SENT_' + y + '_' + m);
   const files = [];
   if (bucket.exat.length) files.push(buildAccrueFile_('exat', y, m, bucket));
   if (bucket.bem.length) files.push(buildAccrueFile_('bem', y, m, bucket));
@@ -1454,42 +1466,92 @@ function sendAccrue_(y, m, by) {
     logAccrue_([when, label, by, to.join(', '), cc.join(', '), '0', '0', '', 'ไม่ได้ส่ง — ไม่มีการใช้รถคุ้มครองในเดือนนี้']);
     return { sent: false, reason: 'ไม่มีการใช้รถคุ้มครองในเดือน ' + label };
   }
-  const mail = accrueEmail_(y, m, s);
+  const mail = accrueEmail_(y, m, s, revised);
   const msg = { to: to.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, attachments: files.map(f => f.blob) };
   if (cc.length) msg.cc = cc.join(',');
   MailApp.sendEmail(msg);
-  logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n'), 'ส่งแล้ว']);
-  PropertiesService.getScriptProperties().setProperty('ACCRUE_SENT_' + y + '_' + m, when);
-  return { sent: true, at: when, to, cc, subject: mail.subject, files: files.map(f => ({ name: f.name, total: f.total, count: f.count })) };
+  logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n'), revised ? 'ส่งแล้ว (แก้ไขเพิ่มเติม)' : 'ส่งแล้ว']);
+  props.setProperty('ACCRUE_SENT_' + y + '_' + m, when);
+  props.setProperty('ACCRUE_HASH_' + y + '_' + m, accrueHash_(bucket));
+  return { sent: true, at: when, to, cc, subject: mail.subject, revised, files: files.map(f => ({ name: f.name, total: f.total, count: f.count })) };
 }
 
-/** ตัวตั้งเวลา: ทุกวันที่ 21 ส่ง File Accrue ของเดือนปัจจุบัน (ส่งครั้งเดียวต่อเดือน) */
+/** วันที่ที่ตั้งให้ส่ง เช่น "21, 25, 27, 30, 31" → [21, 25, 27, 30, 31] */
+function accrueDays_(s) {
+  const list = String(s.sendDays || '').split(/[\s,;]+/).map(Number).filter(d => d >= 1 && d <= 31);
+  return uniq_(list.length ? list : [21]).sort((a, b) => a - b);
+}
+
+/**
+ * วันนี้เป็นวันส่งหรือไม่ — เดือนที่ไม่มีวันที่ 30 / 31 (เช่น ก.พ.) วันนั้นเลื่อนมาเป็นวันสุดท้ายของเดือน
+ * เพื่อให้ข้อมูลที่อัปเดตช่วงปลายเดือนยังถูกส่ง
+ */
+function isAccrueDay_(s, y, m, d) {
+  const last = new Date(y, m, 0).getDate();
+  return accrueDays_(s).some(x => Math.min(x, last) === d);
+}
+
+/**
+ * ตัวตั้งเวลา (ทำงานทุกวัน ช่วงเวลาที่ตั้งไว้): ถ้าวันนี้เป็นวันส่ง
+ * - ยังไม่เคยส่งเดือนนี้ → ส่ง
+ * - เคยส่งแล้ว และข้อมูลเปลี่ยนจากครั้งที่ส่งล่าสุด → ส่ง "แก้ไขเพิ่มเติม"
+ * - ข้อมูลไม่เปลี่ยน → ไม่ส่งซ้ำ
+ */
 function accrueMonthlyJob() {
   const s = accrueSettings_();
   if (!s.autoSend) return;
   const now = new Date();
   const y = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy'));
   const m = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'M'));
+  const d = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'd'));
+  if (!isAccrueDay_(s, y, m, d)) return;
   const props = PropertiesService.getScriptProperties();
-  if (props.getProperty('ACCRUE_AUTO_' + y + '_' + m)) return;
+  const dayKey = 'ACCRUE_DAY_' + y + '_' + m + '_' + d;
+  if (props.getProperty(dayKey)) return; // วันนี้ตรวจแล้ว
   try {
-    sendAccrue_(y, m, 'ส่งอัตโนมัติ');
-    props.setProperty('ACCRUE_AUTO_' + y + '_' + m, nowText_());
+    const bucket = accrueYear_(y)[m - 1];
+    const hash = accrueHash_(bucket);
+    const sentAt = props.getProperty('ACCRUE_SENT_' + y + '_' + m);
+    const lastHash = props.getProperty('ACCRUE_HASH_' + y + '_' + m);
+    if (sentAt && !lastHash) {
+      // ส่งไปก่อนมีระบบตรวจการเปลี่ยนแปลง — ใช้ข้อมูลตอนนี้เป็นจุดเริ่ม ไม่ส่งซ้ำ
+      props.setProperty('ACCRUE_HASH_' + y + '_' + m, hash);
+    } else if (sentAt && lastHash === hash) {
+      // ไม่มีการอัปเดต
+    } else if (bucket.exat.length || bucket.bem.length) {
+      sendAccrue_(y, m, 'ส่งอัตโนมัติ', bucket);
+    }
+    props.setProperty(dayKey, nowText_());
   } catch (err) {
     logAccrue_([nowText_(), accrueMonthShort_(y, m), 'ส่งอัตโนมัติ', s.to, s.cc, '', '', '', 'ส่งไม่สำเร็จ: ' + String(err && err.message || err)]);
     throw err;
   }
 }
 
-/** เปิด / ปิด ตัวตั้งเวลาให้ตรงกับการตั้งค่า */
+/** เปิด / ปิด ตัวตั้งเวลา (ทำงานทุกวันตามชั่วโมงที่ตั้ง แล้วตรวจเองว่าวันนี้เป็นวันส่งหรือไม่) */
 function ensureAccrueTrigger_(s) {
-  const sig = s.autoSend ? s.sendDay + '@' + s.sendHour : '';
+  const sig = s.autoSend ? 'daily@' + s.sendHour : '';
   const props = PropertiesService.getScriptProperties();
   const existing = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === ACCRUE_JOB);
   if (existing.length && props.getProperty('ACCRUE_TRIGGER') === sig) return;
   existing.forEach(t => ScriptApp.deleteTrigger(t));
-  if (sig) ScriptApp.newTrigger(ACCRUE_JOB).timeBased().onMonthDay(s.sendDay).atHour(s.sendHour).inTimezone(CONFIG.TIMEZONE).create();
+  if (sig) ScriptApp.newTrigger(ACCRUE_JOB).timeBased().everyDays(1).atHour(s.sendHour).inTimezone(CONFIG.TIMEZONE).create();
   props.setProperty('ACCRUE_TRIGGER', sig);
+}
+
+/** วันส่งถัดไป (วันนี้นับด้วย ถ้ายังไม่ถึงเวลาส่ง) เป็น ISO */
+function nextAccrueDay_(s, now) {
+  let y = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy'));
+  let m = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'M'));
+  let d = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'd'));
+  if (Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'H')) > Number(s.sendHour)) d++;
+  for (let i = 0; i < 62; i++) {
+    const last = new Date(y, m, 0).getDate();
+    if (d > last) { d = 1; m++; if (m > 12) { m = 1; y++; } continue; }
+    if (isAccrueDay_(s, y, m, d)) return y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+    d++;
+  }
+  return '';
 }
 
 function accrueTriggerOn_() {
@@ -1523,8 +1585,14 @@ function getAccrue(token, y, m) {
     y, m, label: accrueMonthShort_(y, m),
     exat: { items: b.exat, total: b.exatTotal, name: accrueFileName_('exat', y, m, b.exatTotal) + '.xlsx' },
     bem: { items: b.bem, total: b.bemTotal, name: accrueFileName_('bem', y, m, b.bemTotal) + '.xlsx' },
-    summary: months.map(x => ({ m: x.m, exatCount: x.exat.length, exatTotal: x.exatTotal, bemCount: x.bem.length, bemTotal: x.bemTotal, sentAt: props.getProperty('ACCRUE_SENT_' + y + '_' + x.m) || '' })),
-    email: Object.assign(accrueEmail_(y, m, s), { to: s.to, cc: s.cc }),
+    summary: months.map(x => {
+      const sentAt = props.getProperty('ACCRUE_SENT_' + y + '_' + x.m) || '';
+      const last = props.getProperty('ACCRUE_HASH_' + y + '_' + x.m);
+      return { m: x.m, exatCount: x.exat.length, exatTotal: x.exatTotal, bemCount: x.bem.length, bemTotal: x.bemTotal, sentAt,
+        changed: !!(sentAt && last && last !== accrueHash_(x)) };
+    }),
+    email: Object.assign(accrueEmail_(y, m, s, !!props.getProperty('ACCRUE_SENT_' + y + '_' + m)), { to: s.to, cc: s.cc }),
+    nextSend: nextAccrueDay_(s, now),
     settings: s,
     log: readAccrueLog_(),
   };
@@ -1562,13 +1630,13 @@ function saveAccrueSettings(token, form) {
     greeting: str('greeting'), ccLabel: str('ccLabel'), signOff: str('signOff'), checker: str('checker'),
     timeIn: str('timeIn', 10), timeOut: str('timeOut', 10),
     autoSend: form.autoSend === undefined ? s.autoSend : form.autoSend === true || form.autoSend === 'true' || form.autoSend === 'on',
-    sendDay: Math.min(28, Math.max(1, Math.floor(Number(form.sendDay) || s.sendDay))),
+    sendDays: accrueDays_({ sendDays: form.sendDays === undefined ? s.sendDays : form.sendDays }).join(', '),
     sendHour: Math.min(23, Math.max(0, Math.floor(Number(form.sendHour === undefined ? s.sendHour : form.sendHour)))),
   };
   if (!next.to) throw new Error('กรุณากรอกอีเมลผู้รับ (ถึง)');
   PropertiesService.getScriptProperties().setProperty(ACCRUE_PROP, JSON.stringify(next));
   ensureAccrueTrigger_(next);
-  audit_(user.username, 'accrue_settings', '', '', { to: next.to, cc: next.cc, autoSend: next.autoSend, day: next.sendDay, hour: next.sendHour });
+  audit_(user.username, 'accrue_settings', '', '', { to: next.to, cc: next.cc, autoSend: next.autoSend, days: next.sendDays, hour: next.sendHour });
   return accrueSettingsOut_();
 }
 
