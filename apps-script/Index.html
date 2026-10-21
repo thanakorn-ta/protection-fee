@@ -505,10 +505,10 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
         Protection Fee
       </div>
       <nav class="menu" aria-label="เมนูหลัก">
-        <button type="button" data-page="entry">บันทึกการใช้รถ</button>
+        <button type="button" data-page="entry" data-admin>บันทึกการใช้รถ</button>
         <button type="button" data-page="schedule">ตารางจอง<span class="count" id="bk-count" hidden></span></button>
         <button type="button" data-page="cancelled">รายการยกเลิก</button>
-        <button type="button" data-page="dash">แดชบอร์ด</button>
+        <button type="button" data-page="dash" data-admin>แดชบอร์ด</button>
         <button type="button" data-page="locations">สถานที่</button>
         <button type="button" data-page="accrue" data-admin>File Accrue</button>
         <button type="button" data-page="users" data-admin>ผู้ใช้</button>
@@ -1176,13 +1176,16 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       setMode(S.mode);
       renderLocations();
       resetEntry();
-      showPage('entry');
+      showPage(isAdmin ? 'entry' : 'schedule');
     } finally {
       $('#loading').hidden = true;
     }
   }
 
+  // หน้าที่ผู้ใช้งาน (user) เปิดไม่ได้ — เซิร์ฟเวอร์ก็ปฏิเสธคำสั่งของหน้าเหล่านี้เช่นกัน
+  var ADMIN_PAGES = ['entry', 'dash', 'accrue', 'users'];
   function showPage(page) {
+    if (ADMIN_PAGES.indexOf(page) >= 0 && (!S.user || S.user.role !== 'admin')) page = 'schedule';
     S.page = page;
     $$('nav.menu button').forEach(function (b) {
       if (b.dataset.page === page) b.setAttribute('aria-current', 'page');

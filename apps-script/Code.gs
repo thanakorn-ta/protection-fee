@@ -190,7 +190,7 @@ function getAppData(token) {
 
 function addLogEntry(token, key, form) {
   checkLogKey_(key);
-  const user = requireUser_(token);
+  const user = requireUser_(token, true); // บันทึกการใช้รถ: เฉพาะผู้ดูแลระบบ
   const f = validateLogForm_(key, form);
   const r = addLogRow_(user, key, f);
   afterLogSaved_(key, [String(f.date)]);
@@ -203,7 +203,7 @@ function addLogEntry(token, key, form) {
  */
 function addLogEntries(token, key, common, places) {
   checkLogKey_(key);
-  const user = requireUser_(token);
+  const user = requireUser_(token, true); // บันทึกการใช้รถ: เฉพาะผู้ดูแลระบบ
   if (!Array.isArray(places) || !places.length) throw new Error('กรุณาเลือกสถานที่อย่างน้อย 1 จุด');
   if (places.length > 30) throw new Error('บันทึกได้ครั้งละไม่เกิน 30 จุด');
   const forms = places.map((p, i) => {
@@ -624,7 +624,7 @@ function dateIsoOf_(raw, disp) {
  * cost = ค่าใช้จ่ายตามอัตรา, amount = ค่าอาหาร/รถคุ้มครองที่กรอกในชีท (EXAT)
  */
 function getDashboard(token, fresh) {
-  requireUser_(token);
+  requireUser_(token, true); // แดชบอร์ด: เฉพาะผู้ดูแลระบบ
   const cache = CacheService.getScriptCache();
   const hit = fresh ? null : cache.get(DASH_CACHE_KEY);
   if (hit) return JSON.parse(hit);
