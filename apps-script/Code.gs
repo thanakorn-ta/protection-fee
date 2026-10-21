@@ -1872,7 +1872,7 @@ function sendClearNow(token, y, m) {
 
 const HOLIDAY_SHEET = 'วันหยุดนักขัตฤกษ์';
 const HOLIDAY_HEADERS = ['วันที่', 'ชื่อวันหยุด', 'ประเภท', 'ที่มา'];
-const HOLIDAY_TYPES = ['วันหยุด', 'ชดเชย', 'พิเศษ'];
+const HOLIDAY_TYPES = ['วันหยุด', 'ชดเชย', 'พิเศษ', 'บริษัท']; // บริษัท = วันหยุดของบริษัท (คำสั่งบริษัท)
 const BOT_2569 = 'ประกาศ ธปท. ที่ 31/2568 (วันหยุดสถาบันการเงิน ปี 2569)';
 const BOT_2570 = 'ประกาศ ธปท. ที่ 37/2569 (วันหยุดสถาบันการเงิน ปี 2570)';
 const BOT_WEEKEND = ' — ตรงวันหยุดสุดสัปดาห์ (ระบุในวันชดเชยของประกาศ)';
@@ -1925,7 +1925,30 @@ const HOLIDAY_SEED = [
   ['2027-12-31', 'วันสิ้นปี', 'วันหยุด', BOT_2570],
 ];
 
-/** แท็บวันหยุด — สร้างพร้อมข้อมูลปี 2569–2570 ครั้งแรก */
+// วันหยุดของบริษัท (แพลน บี มีเดีย และบริษัทในเครือ) — คำสั่งบริษัท ที่ 006/2568 ลงวันที่ 21 ต.ค. 2568
+const COMPANY_2569 = 'คำสั่งบริษัท ที่ 006/2568 (วันหยุดประจำปี 2569)';
+const HOLIDAY_SEED_COMPANY_2569 = [
+  ['2026-01-01', 'วันขึ้นปีใหม่'],
+  ['2026-03-03', 'วันมาฆบูชา'],
+  ['2026-04-13', 'วันสงกรานต์'],
+  ['2026-04-14', 'วันสงกรานต์'],
+  ['2026-04-15', 'วันสงกรานต์'],
+  ['2026-05-01', 'วันแรงงานแห่งชาติ'],
+  ['2026-06-03', 'วันเฉลิมพระชนมพรรษา พระบรมราชินี'],
+  ['2026-07-28', 'วันเฉลิมพระชนมพรรษา พระบาทสมเด็จพระเจ้าอยู่หัว'],
+  ['2026-07-29', 'วันอาสาฬหบูชา'],
+  ['2026-08-12', 'วันแม่แห่งชาติ'],
+  ['2026-10-13', 'วันนวมินทรมหาราช'],
+  ['2026-10-23', 'วันปิยมหาราช'],
+  ['2026-12-07', 'ชดเชยวันพ่อแห่งชาติ'],
+  ['2026-12-10', 'วันรัฐธรรมนูญ'],
+  ['2026-12-30', 'วันสิ้นปี (เพิ่มเติม)'],
+  ['2026-12-31', 'วันสิ้นปี'],
+].map(r => [r[0], r[1], 'บริษัท', COMPANY_2569]);
+// ชุดข้อมูลที่เพิ่มภายหลัง — ใส่ลงแท็บที่มีอยู่แล้วครั้งเดียว (ถ้าผู้ดูแลระบบลบภายหลัง จะไม่ถูกเพิ่มกลับ)
+const HOLIDAY_SEED_EXTRA = [{ key: 'HOLIDAY_SEED_COMPANY_2569', rows: HOLIDAY_SEED_COMPANY_2569 }];
+
+/** แท็บวันหยุด — สร้างพร้อมข้อมูลปี 2569–2570 ครั้งแรก และเติมชุดข้อมูลใหม่ที่ยังไม่เคยใส่ */
 function holidaySheet_() {
   const ss = spreadsheet_();
   let sh = ss.getSheetByName(HOLIDAY_SHEET);
@@ -1935,6 +1958,20 @@ function holidaySheet_() {
     sh.getRange(2, 1, HOLIDAY_SEED.length, HOLIDAY_HEADERS.length).setNumberFormat('@').setValues(HOLIDAY_SEED);
     sh.setFrozenRows(1);
   }
+  const props = PropertiesService.getScriptProperties();
+  HOLIDAY_SEED_EXTRA.forEach(seed => {
+    if (props.getProperty(seed.key)) return;
+    const have = {};
+    if (sh.getLastRow() >= 2) {
+      sh.getRange(2, 1, sh.getLastRow() - 1, 3).getValues().forEach(r => {
+        const d = r[0] instanceof Date ? Utilities.formatDate(r[0], sheetTz_(), 'yyyy-MM-dd') : String(r[0]).trim();
+        have[d + '|' + String(r[1]).trim() + '|' + String(r[2]).trim()] = 1;
+      });
+    }
+    const rows = seed.rows.filter(r => !have[r[0] + '|' + r[1] + '|' + r[2]]);
+    if (rows.length) sh.getRange(sh.getLastRow() + 1, 1, rows.length, HOLIDAY_HEADERS.length).setNumberFormat('@').setValues(rows);
+    props.setProperty(seed.key, nowText_());
+  });
   return sh;
 }
 
@@ -1965,7 +2002,7 @@ function saveHoliday(token, form) {
   const source = text_(form.source || ('เพิ่มโดย ' + (user.fullName || user.username))).slice(0, 200);
   return withLock_(() => {
     const sh = holidaySheet_();
-    const cur = readHolidays_().find(h => h.date === date && (h.name === name || form.original === h.name));
+    const cur = readHolidays_().find(h => h.date === date && h.type === type && (h.name === name || form.original === h.name));
     const row = cur ? cur.row : Math.max(sh.getLastRow(), 1) + 1;
     sh.getRange(row, 1, 1, HOLIDAY_HEADERS.length).setNumberFormat('@').setValues([[date, name, type, source]]);
     audit_(user.username, cur ? 'update_holiday' : 'add_holiday', HOLIDAY_SHEET, row, { date, name, type });
@@ -1973,15 +2010,15 @@ function saveHoliday(token, form) {
   });
 }
 
-function deleteHoliday(token, date, name) {
+function deleteHoliday(token, date, name, type) {
   const user = requireUser_(token, true);
   date = String(date || '').trim();
   return withLock_(() => {
     const sh = holidaySheet_();
-    const cur = readHolidays_().find(h => h.date === date && h.name === String(name || '').trim());
+    const cur = readHolidays_().find(h => h.date === date && h.name === String(name || '').trim() && (!type || h.type === type));
     if (!cur) throw new Error('ไม่พบวันหยุดนี้');
     sh.deleteRow(cur.row);
-    audit_(user.username, 'delete_holiday', HOLIDAY_SHEET, cur.row, { date, name: cur.name });
+    audit_(user.username, 'delete_holiday', HOLIDAY_SHEET, cur.row, { date, name: cur.name, type: cur.type });
     return holidaysBetween_(date.slice(0, 4) + '-01-01', date.slice(0, 4) + '-12-31');
   });
 }

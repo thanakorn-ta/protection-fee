@@ -381,6 +381,8 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
 .cal-day.today.holiday .cal-num { color: #fff; }
 .hol { font-size: 11px; line-height: 1.3; color: #B4232F; background: #FFE1E4; border-radius: 6px; padding: 2px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hol-swatch { display: inline-flex; padding: 3px 10px; border-radius: 999px; font-size: 14px; background: #FFE1E4; color: #B4232F; }
+.hol-co { display: inline-flex; align-self: flex-start; font-size: 11px; line-height: 1.3; padding: 2px 6px; border-radius: 6px; background: #E5EDFF; color: #1F3A8A; font-weight: 600; white-space: nowrap; }
+p .hol-co { font-size: 14px; padding: 3px 10px; border-radius: 999px; }
 .hol-strip { background: #FFF1F2; color: #8A1C25; border: 1px solid #FFD5DA; border-radius: 12px; padding: 10px 14px; font-size: 14px; line-height: 1.7; }
 .hol-note { color: #B4232F; font-weight: 500; }
 .hol-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px; align-items: end; margin: 12px 0; }
@@ -687,15 +689,15 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     <div class="loading-box" id="cal-loading" hidden>กำลังโหลดตารางจอง…</div>
     <div class="cal" id="cal-month"></div>
     <div class="blist" id="cal-list" hidden></div>
-    <p class="sub">กดวันที่ว่างเพื่อจองวันนั้น · กดรายการเพื่อดูรายละเอียด แก้ไข หรืออนุมัติ · สี: <span class="status pending">รออนุมัติ</span> <span class="status approved">อนุมัติแล้ว</span> <span class="status cancelled">ไม่อนุมัติ</span> <span class="hol-swatch">วันหยุดนักขัตฤกษ์</span> · การจองที่ยกเลิกย้ายไปหน้า “รายการยกเลิก”</p>
+    <p class="sub">กดวันที่ว่างเพื่อจองวันนั้น · กดรายการเพื่อดูรายละเอียด แก้ไข หรืออนุมัติ · สี: <span class="status pending">รออนุมัติ</span> <span class="status approved">อนุมัติแล้ว</span> <span class="status cancelled">ไม่อนุมัติ</span> <span class="hol-swatch">วันหยุดนักขัตฤกษ์</span> <span class="hol-co">หยุดบริษัท</span> · การจองที่ยกเลิกย้ายไปหน้า “รายการยกเลิก”</p>
 
     <!-- วันหยุดนักขัตฤกษ์ (ผู้ดูแลระบบเพิ่ม / แก้ไขได้) -->
     <section class="card pad" id="hol-card" data-admin>
-      <div class="ac-head"><h2 id="hol-title">วันหยุดนักขัตฤกษ์</h2><span class="sub">ข้อมูลจากประกาศวันหยุดสถาบันการเงินของ ธปท. — เพิ่มวันหยุดพิเศษ / ชดเชยที่ ครม. ประกาศภายหลังได้ที่นี่</span></div>
+      <div class="ac-head"><h2 id="hol-title">วันหยุดนักขัตฤกษ์</h2><span class="sub">วันหยุดราชการจากประกาศ ธปท. และวันหยุดของบริษัทจากคำสั่งบริษัท — เพิ่มวันหยุดพิเศษ / ชดเชยที่ประกาศภายหลังได้ที่นี่</span></div>
       <form class="hol-form" id="form-holiday" novalidate>
         <label class="field">วันที่<input type="date" name="date" required></label>
         <label class="field">ชื่อวันหยุด<input name="name" required placeholder="เช่น วันหยุดพิเศษ (มติ ครม.)"></label>
-        <label class="field">ประเภท<select name="type"><option>พิเศษ</option><option>ชดเชย</option><option>วันหยุด</option></select></label>
+        <label class="field">ประเภท<select name="type"><option>พิเศษ</option><option>ชดเชย</option><option>วันหยุด</option><option value="บริษัท">บริษัท (วันหยุดของบริษัท)</option></select></label>
         <button type="submit" class="btn primary">เพิ่มวันหยุด</button>
         <div class="error" data-error hidden></div>
       </form>
@@ -2009,10 +2011,16 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   function addHolidays(list) {
     (list || []).forEach(function (h) {
       var cur = S.hol[h.date] = S.hol[h.date] || [];
-      if (!cur.some(function (x) { return x.name === h.name; })) cur.push({ name: h.name, type: h.type });
+      if (!cur.some(function (x) { return x.name === h.name && x.type === h.type; })) cur.push({ name: h.name, type: h.type });
     });
   }
-  function holidayText(iso) { return (S.hol[iso] || []).map(function (h) { return h.name; }).join(' · '); }
+  // ชื่อวันหยุด (ไม่ซ้ำ) — ประเภท "บริษัท" = บริษัทหยุดตามคำสั่งบริษัท
+  function holidayText(iso) {
+    var names = [];
+    (S.hol[iso] || []).forEach(function (h) { if (names.indexOf(h.name) < 0) names.push(h.name); });
+    return names.join(' · ');
+  }
+  function companyOff(iso) { return (S.hol[iso] || []).some(function (h) { return h.type === 'บริษัท'; }); }
   async function ensureHolidayYear(y) {
     if (S.holYears[y]) return S.holYears[y];
     try { setHolidayYear(y, await api('listHolidays', S.token, y)); } catch (err) { S.holYears[y] = S.holYears[y] || null; }
@@ -2025,7 +2033,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     await ensureHolidayYear(Number(iso.slice(0, 4)));
     if (form.date.value !== iso) return;
     var t = holidayText(iso);
-    note.textContent = t ? 'วันนี้เป็นวันหยุด: ' + t : '';
+    note.textContent = t ? 'วันนี้เป็นวันหยุด: ' + t + (companyOff(iso) ? ' · บริษัทหยุด' : '') : '';
     note.hidden = !t;
   }
   $('#bk-form').date.addEventListener('change', updateDateNote);
@@ -2041,7 +2049,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       '<thead><tr><th>วันที่</th><th>ชื่อวันหยุด</th><th>ประเภท</th><th>ที่มา</th><th></th></tr></thead><tbody>' +
       ((list || []).length ? list.map(function (h) {
         return '<tr><td class="nowrap">' + esc(thaiDateLong(h.date)) + '</td><td>' + esc(h.name) + '</td><td class="type">' + esc(h.type) + '</td>' +
-          '<td class="sub">' + esc(h.source) + '</td><td><button type="button" class="btn sm danger" data-hol-del="' + esc(h.date) + '" data-hol-name="' + esc(h.name) + '">ลบ</button></td></tr>';
+          '<td class="sub">' + esc(h.source) + '</td><td><button type="button" class="btn sm danger" data-hol-del="' + esc(h.date) + '" data-hol-name="' + esc(h.name) + '" data-hol-type="' + esc(h.type) + '">ลบ</button></td></tr>';
       }).join('') : '<tr><td class="empty" colspan="5">ยังไม่มีข้อมูลวันหยุดของปีนี้ — เพิ่มได้จากฟอร์มด้านบน</td></tr>') + '</tbody>';
   }
   $('#form-holiday').addEventListener('submit', function (e) {
@@ -2060,11 +2068,11 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   $('#hol-table').addEventListener('click', async function (e) {
     var b = e.target.closest('[data-hol-del]');
     if (!b) return;
-    var date = b.dataset.holDel, name = b.dataset.holName;
+    var date = b.dataset.holDel, name = b.dataset.holName, type = b.dataset.holType;
     if (!await askConfirm({ title: 'ลบวันหยุด “' + name + '”?', text: thaiDateLong(date) + ' จะไม่แสดงเป็นวันหยุดในปฏิทินอีก', ok: 'ลบ', danger: true })) return;
     b.disabled = true;
     try {
-      setHolidayYear(Number(date.slice(0, 4)), await api('deleteHoliday', S.token, date, name));
+      setHolidayYear(Number(date.slice(0, 4)), await api('deleteHoliday', S.token, date, name, type));
       toast('ลบวันหยุด ' + name + ' แล้ว');
       renderSchedule();
     } catch (err) {
@@ -2129,7 +2137,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       $('#cal-list').innerHTML = inMonth.length ? inMonth.map(bookingItem).join('')
         : '<div class="list-empty">ยังไม่มีการจองในเดือนนี้ — กด “จองรถคุ้มครอง” เพื่อเพิ่ม</div>';
       var hols = Object.keys(S.hol).filter(function (iso) { return iso.slice(0, 7) === monthKey; }).sort();
-      if (hols.length) $('#cal-list').insertAdjacentHTML('afterbegin', '<div class="hol-strip"><b>วันหยุดเดือนนี้:</b> ' + hols.map(function (iso) { return esc(thaiDate(iso) + ' ' + holidayText(iso)); }).join(' · ') + '</div>');
+      if (hols.length) $('#cal-list').insertAdjacentHTML('afterbegin', '<div class="hol-strip"><b>วันหยุดเดือนนี้:</b> ' + hols.map(function (iso) { return esc(thaiDate(iso) + ' ' + holidayText(iso) + (companyOff(iso) ? ' (บริษัทหยุด)' : '')); }).join(' · ') + '</div>');
       renderHolidayAdmin();
       return;
     }
@@ -2153,6 +2161,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
           '<button type="button" class="cal-add" data-new="' + iso + '" aria-label="จองวันที่ ' + esc(thaiDate(iso)) + '">+</button>' +
           '<span class="cal-num">' + d.getDate() + '</span>' +
           (hol ? '<span class="hol" title="' + esc(hol) + '">' + esc(hol) + '</span>' : '') +
+          (companyOff(iso) ? '<span class="hol-co" title="วันหยุดของบริษัท">หยุดบริษัท</span>' : '') +
           evs.slice(0, max).map(function (b) {
             return '<button type="button" class="ev ' + esc(b.status) + '" data-bk="' + esc(b.id) + '" title="' + esc(evLabel(b) + ' — ' + BK_STATUS[b.status]) + '">' + esc(evLabel(b)) + '</button>';
           }).join('') +
