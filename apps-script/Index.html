@@ -360,6 +360,15 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
 #ac-summary tr.current td { background: var(--amber-soft); font-weight: 600; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 15px; }
 .check input { width: 20px; height: 20px; }
+.role-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 8px; }
+.role-pick button { text-align: left; padding: 10px 12px; border: 1.5px solid var(--field); border-radius: 12px; background: #fff; color: var(--ink); display: flex; flex-direction: column; gap: 2px; font-weight: 400; }
+.role-pick button b { font-size: 15px; }
+.role-pick button small { color: var(--muted); font-size: 13px; }
+.role-pick button[aria-checked="true"] { border-color: var(--green); background: var(--green-soft); box-shadow: inset 0 0 0 1px var(--green); }
+.status.role-admin { background: #E8EEFF; color: #1F3A8A; }
+.status.role-user { background: #F2F4F2; color: #43524A; }
+.pending-item select { height: 44px; border: 1.5px solid var(--field); border-radius: 10px; padding: 0 10px; background: #fff; }
+#confirm-dlg { z-index: 12; }
 .modal-ask { position: fixed; inset: 0; z-index: 9; background: rgba(20,33,27,.5); display: flex; align-items: center; justify-content: center; padding: 16px; }
 .ask-card { width: 100%; max-width: 400px; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,.3); padding: 22px 20px 18px; display: flex; flex-direction: column; gap: 8px; }
 .ask-card h3 { font-size: 18px; }
@@ -456,6 +465,13 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
         <label class="field"><span>อีเมล <span class="opt">(ไม่บังคับ)</span></span>
           <input type="email" name="email" autocomplete="email">
         </label>
+        <div class="field"><span>ประเภทบัญชีที่ขอ</span>
+          <input type="hidden" name="role" value="user">
+          <div class="role-pick" role="radiogroup" aria-label="ประเภทบัญชีที่ขอ">
+            <button type="button" role="radio" data-role="user" aria-checked="true"><b>ผู้ใช้งาน (user)</b><small>บันทึกการใช้รถ · จองรถคุ้มครอง · ดูแดชบอร์ด</small></button>
+            <button type="button" role="radio" data-role="admin" aria-checked="false"><b>ผู้ดูแลระบบ (admin)</b><small>อนุมัติการจอง · จัดการผู้ใช้ · File Accrue</small></button>
+          </div>
+        </div>
         <div class="grid2">
           <label class="field">รหัสผ่าน
             <input type="password" name="password" autocomplete="new-password" placeholder="8 ตัวขึ้นไป" required>
@@ -468,13 +484,13 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
         <button type="submit" class="btn primary block" style="min-height:52px">สมัครสมาชิก</button>
         <div class="steps">
           <div><b>1</b><span>ผู้สมัครคนแรกเป็นผู้ดูแลระบบอัตโนมัติ</span></div>
-          <div><b class="amber">2</b><span>คนถัดไปต้องรอผู้ดูแลระบบอนุมัติ</span></div>
+          <div><b class="amber">2</b><span>คนถัดไปเลือกประเภทบัญชีได้ แต่ผู้ดูแลระบบต้องกดยืนยันว่าอนุมัติหรือไม่อนุมัติก่อนเข้าใช้งาน</span></div>
         </div>
       </form>
 
       <div class="note" id="login-note">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A6200" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;margin-top:1px"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/></svg>
-        <div>บัญชีใหม่ต้องรอผู้ดูแลระบบอนุมัติก่อนเข้าใช้งาน ลืมรหัสผ่านให้ติดต่อผู้ดูแลระบบเพื่อรีเซ็ต</div>
+        <div>บัญชีใหม่ (ทั้งผู้ใช้งานและผู้ดูแลระบบ) ต้องรอผู้ดูแลระบบยืนยันก่อนเข้าใช้งาน ลืมรหัสผ่านให้ติดต่อผู้ดูแลระบบเพื่อรีเซ็ต</div>
       </div>
     </div>
   </div>
@@ -754,7 +770,7 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     <div class="page-head">
       <div>
         <h1>จัดการผู้ใช้</h1>
-        <p>อนุมัติผู้สมัครใหม่ กำหนดสิทธิ์ และรีเซ็ตรหัสผ่าน</p>
+        <p>ยืนยันผู้สมัครใหม่ (อนุมัติ / ไม่อนุมัติ และเลือกประเภท admin / user) กำหนดสิทธิ์ และรีเซ็ตรหัสผ่าน</p>
       </div>
     </div>
     <div class="pending-box" id="pending-box" hidden>
@@ -960,6 +976,18 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   </div>
 </div>
 
+<!-- ยืนยันการกระทำ (แทน confirm() ของเบราว์เซอร์) -->
+<div class="modal-ask" id="confirm-dlg" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-text" hidden>
+  <div class="ask-card">
+    <h3 id="confirm-title"></h3>
+    <p id="confirm-text"></p>
+    <div class="actions">
+      <button type="button" class="btn" id="confirm-no">ยกเลิก</button>
+      <button type="button" class="btn primary" id="confirm-yes">ยืนยัน</button>
+    </div>
+  </div>
+</div>
+
 <!-- ดูภาพ / วิดีโอแนบ -->
 <div class="media-view" id="media-view" role="dialog" aria-modal="true" aria-label="ไฟล์แนบ" hidden>
   <div id="mv-body"></div>
@@ -1092,10 +1120,20 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
       var res = await api('register', data);
       var username = data.username;
       form.reset();
+      form.role.value = 'user'; // ช่องซ่อนไม่ถูกล้างด้วย reset()
+      syncRolePick();
       showAuthTab('login');
       $('#form-login [name="username"]').value = username;
       toast(res.message);
     });
+  });
+
+  function syncRolePick() {
+    var v = $('#form-register [name="role"]').value;
+    $$('#form-register [data-role]').forEach(function (b) { b.setAttribute('aria-checked', String(b.dataset.role === v)); });
+  }
+  $$('#form-register [data-role]').forEach(function (b) {
+    b.addEventListener('click', function () { $('#form-register [name="role"]').value = b.dataset.role; syncRolePick(); });
   });
 
   function endSession() {
@@ -2599,7 +2637,6 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
   });
 
   // ---------- ผู้ใช้ ----------
-  var STATUS_LABEL = { active: 'ใช้งาน', pending: 'รออนุมัติ', disabled: 'ระงับ' };
 
   async function loadUsers() {
     try {
@@ -2610,32 +2647,65 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     }
   }
 
+  var STATUS_LABEL = { active: 'ใช้งาน', pending: 'รออนุมัติ', disabled: 'ระงับ', rejected: 'ไม่อนุมัติ' };
+  var ROLE_LABEL = { admin: 'ผู้ดูแลระบบ (admin)', user: 'ผู้ใช้งาน (user)' };
+  function roleBadge(r) { return '<span class="status role-' + (r === 'admin' ? 'admin' : 'user') + '">' + esc(ROLE_LABEL[r] || ROLE_LABEL.user) + '</span>'; }
+  function roleSelect(u, attr, disabled) {
+    return '<select ' + attr + ' data-user="' + esc(u.username) + '" aria-label="ประเภทบัญชีของ ' + esc(u.username) + '"' + (disabled ? ' disabled' : '') + '>' +
+      ['user', 'admin'].map(function (r) { return '<option value="' + r + '"' + ((attr === 'data-act="role"' ? u.role : u.requestedRole) === r ? ' selected' : '') + '>' + (r === 'admin' ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน') + '</option>'; }).join('') +
+    '</select>';
+  }
   function renderUsers() {
     var me = S.user.username;
     var pending = S.users.filter(function (u) { return u.status === 'pending'; });
     var others = S.users.filter(function (u) { return u.status !== 'pending'; });
     $('#pending-box').hidden = !pending.length;
-    $('#pending-title').textContent = 'รออนุมัติ ' + pending.length + ' คน';
+    $('#pending-title').textContent = 'รอยืนยัน ' + pending.length + ' คน';
     $('#pending-list').innerHTML = pending.map(function (u) {
-      return '<div class="pending-item"><div><span style="font-weight:600">' + esc(u.fullName) + '</span>' +
-        '<span class="sub">' + esc(u.username) + (u.email ? ' · ' + esc(u.email) : '') + ' · สมัคร ' + esc(u.createdAt) + '</span></div>' +
+      return '<div class="pending-item"><div><span style="font-weight:600">' + esc(u.fullName) + ' ' + roleBadge(u.requestedRole) + '</span>' +
+        '<span class="sub">' + esc(u.username) + (u.email ? ' · ' + esc(u.email) : '') + ' · สมัคร ' + esc(u.createdAt) + ' · ขอเป็น ' + esc(ROLE_LABEL[u.requestedRole]) + '</span></div>' +
+        '<label class="sub" style="display:flex;align-items:center;gap:6px">อนุมัติเป็น ' + roleSelect(u, 'data-review-role') + '</label>' +
         '<button type="button" class="btn primary" data-act="approve" data-user="' + esc(u.username) + '">อนุมัติ</button>' +
-        '<button type="button" class="btn" data-act="reject" data-user="' + esc(u.username) + '">ปฏิเสธ</button></div>';
+        '<button type="button" class="btn danger" data-act="reject" data-user="' + esc(u.username) + '">ไม่อนุมัติ</button></div>';
     }).join('');
     $('#users-body').innerHTML = others.length ? others.map(function (u) {
-      var self = u.username === me;
+      var self = u.username === me, rejected = u.status === 'rejected';
+      var reviewed = u.reviewedBy ? '<div class="sub">' + (rejected ? 'ไม่อนุมัติ' : 'ยืนยัน') + 'โดย ' + esc(u.reviewedBy) + (u.reviewedAt ? ' · ' + esc(u.reviewedAt) : '') + '</div>' : '';
       return '<tr>' +
         '<td><div style="font-weight:600">' + esc(u.fullName) + (self ? ' <span class="sub">(คุณ)</span>' : '') + '</div><div class="sub">' + esc(u.username) + (u.email ? ' · ' + esc(u.email) : '') + '</div></td>' +
-        '<td><select data-act="role" data-user="' + esc(u.username) + '" aria-label="สิทธิ์ของ ' + esc(u.username) + '"' + (self ? ' disabled' : '') + '>' +
-          ['user', 'admin'].map(function (r) { return '<option value="' + r + '"' + (u.role === r ? ' selected' : '') + '>' + (r === 'admin' ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน') + '</option>'; }).join('') +
-        '</select></td>' +
-        '<td><span class="status ' + esc(u.status) + '">' + esc(STATUS_LABEL[u.status] || u.status) + '</span></td>' +
+        '<td>' + (rejected ? '<div class="sub">ขอเป็น</div>' + roleBadge(u.requestedRole) : roleSelect(u, 'data-act="role"', self)) + '</td>' +
+        '<td><span class="status ' + esc(u.status) + '">' + esc(STATUS_LABEL[u.status] || u.status) + '</span>' + reviewed + '</td>' +
         '<td class="nowrap mono">' + esc(u.lastLogin || '—') + '</td>' +
         '<td class="nowrap" style="text-align:right">' +
-          '<button type="button" class="btn sm" data-act="reset" data-user="' + esc(u.username) + '">รีเซ็ตรหัสผ่าน</button> ' +
-          (self ? '' : '<button type="button" class="btn sm danger" data-act="toggle" data-user="' + esc(u.username) + '" data-status="' + esc(u.status) + '">' + (u.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน') + '</button>') +
+          (rejected
+            ? '<button type="button" class="btn sm" data-act="approve" data-user="' + esc(u.username) + '">อนุมัติ</button>'
+            : '<button type="button" class="btn sm" data-act="reset" data-user="' + esc(u.username) + '">รีเซ็ตรหัสผ่าน</button> ' +
+              (self ? '' : '<button type="button" class="btn sm danger" data-act="toggle" data-user="' + esc(u.username) + '" data-status="' + esc(u.status) + '">' + (u.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน') + '</button>')) +
         '</td></tr>';
     }).join('') : '<tr><td class="empty" colspan="5">ยังไม่มีผู้ใช้</td></tr>';
+  }
+
+  // กล่องยืนยันในหน้า (ไม่ใช้ confirm() ของเบราว์เซอร์)
+  function askConfirm(o) {
+    return new Promise(function (resolve) {
+      var dlg = $('#confirm-dlg'), yes = $('#confirm-yes'), no = $('#confirm-no');
+      $('#confirm-title').textContent = o.title;
+      $('#confirm-text').textContent = o.text || '';
+      yes.textContent = o.ok || 'ยืนยัน';
+      yes.className = 'btn ' + (o.danger ? 'primary danger-fill' : 'primary');
+      no.textContent = o.cancel || 'ยกเลิก';
+      dlg.hidden = false;
+      yes.focus();
+      function done(v) {
+        dlg.hidden = true;
+        yes.onclick = no.onclick = dlg.onclick = document.onkeydown = null;
+        resolve(v);
+      }
+      yes.onclick = function () { done(true); };
+      no.onclick = function () { done(false); };
+      dlg.onclick = function (e) { if (e.target === dlg) done(false); };
+      document.onkeydown = function (e) { if (e.key === 'Escape') { e.preventDefault(); done(false); } };
+    });
   }
 
   async function userAction(fn, args, okMsg) {
@@ -2654,15 +2724,34 @@ nav.menu .count { display: inline-flex; min-width: 20px; height: 20px; padding: 
     var b = e.target.closest('button[data-act]');
     if (!b) return;
     var u = b.dataset.user;
-    b.disabled = true;
-    if (b.dataset.act === 'approve') await userAction('updateUser', [u, { status: 'active' }], 'อนุมัติ ' + u + ' แล้ว');
-    if (b.dataset.act === 'reject') await userAction('updateUser', [u, { status: 'disabled' }], 'ปฏิเสธ ' + u + ' แล้ว');
+    var user = S.users.find(function (x) { return x.username === u; }) || { username: u, fullName: u };
+    var who = user.fullName + ' (' + u + ')';
+    if (b.dataset.act === 'approve') {
+      var sel = b.parentNode.querySelector('[data-review-role]');
+      var role = sel ? sel.value : user.requestedRole;
+      var ok = await askConfirm({
+        title: 'ยืนยันอนุมัติ ' + u + ' เป็น ' + ROLE_LABEL[role] + '?',
+        text: who + ' ขอเป็น ' + ROLE_LABEL[user.requestedRole] + (role !== user.requestedRole ? ' — คุณเลือกอนุมัติเป็น ' + ROLE_LABEL[role] : '') + ' · หลังอนุมัติเข้าใช้งานได้ทันที',
+        ok: 'อนุมัติ',
+      });
+      if (!ok) return;
+      b.disabled = true;
+      return userAction('reviewUser', [u, 'approve', role], 'อนุมัติ ' + u + ' เป็น ' + ROLE_LABEL[role] + ' แล้ว');
+    }
+    if (b.dataset.act === 'reject') {
+      if (!await askConfirm({ title: 'ยืนยันไม่อนุมัติ ' + u + '?', text: who + ' จะเข้าสู่ระบบไม่ได้ และเห็นข้อความว่าไม่ได้รับการอนุมัติ (อนุมัติภายหลังได้จากตารางผู้ใช้)', ok: 'ไม่อนุมัติ', danger: true })) return;
+      b.disabled = true;
+      return userAction('reviewUser', [u, 'reject'], 'ไม่อนุมัติ ' + u + ' แล้ว');
+    }
     if (b.dataset.act === 'toggle') {
       var next = b.dataset.status === 'active' ? 'disabled' : 'active';
-      await userAction('updateUser', [u, { status: next }], (next === 'active' ? 'เปิดใช้งาน ' : 'ระงับ ') + u + ' แล้ว');
+      if (!await askConfirm({ title: (next === 'active' ? 'เปิดใช้งาน ' : 'ระงับ ') + u + '?', text: next === 'active' ? who + ' จะเข้าสู่ระบบได้อีกครั้ง' : who + ' จะเข้าสู่ระบบไม่ได้จนกว่าจะเปิดใช้งาน', ok: next === 'active' ? 'เปิดใช้งาน' : 'ระงับ', danger: next !== 'active' })) return;
+      b.disabled = true;
+      return userAction('updateUser', [u, { status: next }], (next === 'active' ? 'เปิดใช้งาน ' : 'ระงับ ') + u + ' แล้ว');
     }
     if (b.dataset.act === 'reset') {
-      if (!confirm('รีเซ็ตรหัสผ่านของ ' + u + ' ?')) { b.disabled = false; return; }
+      if (!await askConfirm({ title: 'รีเซ็ตรหัสผ่านของ ' + u + '?', text: 'ระบบจะสร้างรหัสผ่านชั่วคราวให้ แจ้งผู้ใช้ให้เปลี่ยนหลังเข้าสู่ระบบ', ok: 'รีเซ็ต' })) return;
+      b.disabled = true;
       var temp = await userAction('resetPassword', [u]);
       if (temp) {
         var box = $('#temp-pass-box');

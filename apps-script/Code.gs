@@ -26,10 +26,11 @@ const TABLES = {
   bem: { label: 'รถคุ้มครอง BEM', required: ['ลำดับ', 'วันที่', 'รถคุ้มครอง', 'การชำระเงิน'] },
 };
 
-const USER_HEADERS = ['username', 'passwordHash', 'salt', 'fullName', 'email', 'role', 'status', 'createdAt', 'lastLogin'];
+const USER_HEADERS = ['username', 'passwordHash', 'salt', 'fullName', 'email', 'role', 'status', 'createdAt', 'lastLogin', 'requestedRole', 'reviewedBy', 'reviewedAt'];
 const AUDIT_HEADERS = ['timestamp', 'username', 'action', 'sheet', 'row', 'detail'];
 const ROLES = ['user', 'admin'];
-const STATUSES = ['pending', 'active', 'disabled'];
+const STATUSES = ['pending', 'active', 'disabled', 'rejected'];
+const ROLE_TEXT = { admin: 'ผู้ดูแลระบบ (admin)', user: 'ผู้ใช้งาน (user)' };
 const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const PROJECTS = ['Flyover 2.0 EXAT', 'Flyover 2.0 BEM', 'Gateway EXAT', 'Gateway BEM'];
 const EXPRESSWAYS = ['เฉลิมมหานคร', 'ศรีรัช', 'ฉลองรัช', 'บูรพาวิถี', 'กาญจนาภิเษก', 'อุดรรัถยา'];
@@ -55,7 +56,7 @@ function doGet() {
 const API_FUNCTIONS = {
   register, login, logout, changePassword, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
   getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings,
-  addLocation, listUsers, updateUser, resetPassword,
+  addLocation, listUsers, updateUser, reviewUser, resetPassword,
 };
 
 function doPost(e) {
@@ -82,6 +83,7 @@ function register(form) {
   const password = String(form.password || '');
   const fullName = String(form.fullName || '').trim();
   const email = String(form.email || '').trim();
+  const requested = form.role === 'admin' ? 'admin' : 'user'; // ประเภทที่ขอ — ผู้ดูแลระบบเป็นผู้ยืนยัน
 
   if (!/^[a-z0-9._-]{3,30}$/.test(username)) {
     throw new Error('ชื่อผู้ใช้ต้องเป็น a-z, 0-9, . _ - ยาว 3–30 ตัวอักษร');
@@ -95,19 +97,21 @@ function register(form) {
     const users = readUsers_(sh);
     if (users.some(u => u.username === username)) throw new Error('ชื่อผู้ใช้นี้ถูกใช้แล้ว');
 
-    // ผู้สมัครคนแรกเป็นผู้ดูแลระบบ คนถัดไปต้องรออนุมัติ
+    // ผู้สมัครคนแรกเป็นผู้ดูแลระบบทันที (ต้องมีคนอนุมัติคนถัดไป) — คนถัดไปรอผู้ดูแลระบบยืนยัน
+    // สิทธิ์จริงยังเป็น user จนกว่าผู้ดูแลระบบจะกดอนุมัติ (และเลือกประเภทได้ตอนอนุมัติ)
     const isFirst = users.length === 0;
     const salt = Utilities.getUuid();
     const role = isFirst ? 'admin' : 'user';
     const status = isFirst ? 'active' : 'pending';
-    sh.appendRow([username, hash_(password, salt), salt, text_(fullName), text_(email), role, status, new Date(), '']);
-    audit_(username, 'register', CONFIG.USERS_SHEET, sh.getLastRow(), { role, status });
+    const want = isFirst ? 'admin' : requested;
+    sh.appendRow([username, hash_(password, salt), salt, text_(fullName), text_(email), role, status, new Date(), '', want, isFirst ? '(ผู้สมัครคนแรก)' : '', isFirst ? new Date() : '']);
+    audit_(username, 'register', CONFIG.USERS_SHEET, sh.getLastRow(), { role, status, requestedRole: want });
 
     return {
       status,
       message: isFirst
         ? 'สมัครสำเร็จ — คุณเป็นผู้ดูแลระบบคนแรก เข้าสู่ระบบได้เลย'
-        : 'สมัครสำเร็จ — รอผู้ดูแลระบบอนุมัติก่อนเข้าใช้งาน',
+        : 'สมัครสำเร็จ (ขอเป็น ' + ROLE_TEXT[want] + ') — รอผู้ดูแลระบบยืนยันก่อนเข้าใช้งาน',
     };
   });
 }
@@ -128,7 +132,8 @@ function login(form) {
     throw new Error('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
   }
   cache.remove(failKey);
-  if (user.status === 'pending') throw new Error('บัญชียังรอผู้ดูแลระบบอนุมัติ');
+  if (user.status === 'pending') throw new Error('บัญชียังรอผู้ดูแลระบบยืนยัน (ขอเป็น ' + (ROLE_TEXT[user.requestedRole] || ROLE_TEXT.user) + ')');
+  if (user.status === 'rejected') throw new Error('ผู้ดูแลระบบไม่อนุมัติบัญชีนี้ — กรุณาติดต่อผู้ดูแลระบบ');
   if (user.status !== 'active') throw new Error('บัญชีถูกระงับ กรุณาติดต่อผู้ดูแลระบบ');
 
   const token = Utilities.getUuid().replace(/-/g, '') + Utilities.getUuid().replace(/-/g, '');
@@ -1721,6 +1726,9 @@ function listUsers(token) {
   return readUsers_(usersSheet_()).map(u => Object.assign(publicUser_(u), {
     email: u.email,
     status: u.status,
+    requestedRole: u.requestedRole === 'admin' ? 'admin' : 'user',
+    reviewedBy: String(u.reviewedBy || ''),
+    reviewedAt: formatDateTime_(u.reviewedAt),
     createdAt: formatDateTime_(u.createdAt),
     lastLogin: formatDateTime_(u.lastLogin),
   }));
@@ -1736,6 +1744,8 @@ function updateUser(token, username, changes) {
     const sh = usersSheet_();
     const user = readUsers_(sh).find(u => u.username === username);
     if (!user) throw new Error('ไม่พบผู้ใช้');
+    if (user.status === 'pending' || user.status === 'rejected') throw new Error('บัญชีนี้ยังไม่ได้รับการยืนยัน — ใช้ปุ่มอนุมัติ / ไม่อนุมัติ');
+    if (changes.status !== undefined && changes.status !== 'active' && changes.status !== 'disabled') throw new Error('สถานะไม่ถูกต้อง');
     if (changes.role !== undefined) {
       if (ROLES.indexOf(changes.role) < 0) throw new Error('สิทธิ์ไม่ถูกต้อง');
       sh.getRange(user.row, USER_HEADERS.indexOf('role') + 1).setValue(changes.role);
@@ -1746,6 +1756,35 @@ function updateUser(token, username, changes) {
     }
     audit_(admin.username, 'update_user', CONFIG.USERS_SHEET, user.row, { username, changes });
     return true;
+  });
+}
+
+/**
+ * ผู้ดูแลระบบยืนยันผู้สมัคร: decision = approve (เลือกประเภท admin / user ได้) หรือ reject
+ * ยืนยันได้เฉพาะบัญชีที่รออนุมัติหรือเคยไม่อนุมัติ — บันทึกผู้ยืนยัน เวลา และประเภทลง AuditLog
+ */
+function reviewUser(token, username, decision, role) {
+  const admin = requireUser_(token, true);
+  username = cleanUsername_(username);
+  if (username === admin.username) throw new Error('ไม่สามารถยืนยันบัญชีของตัวเองได้');
+  if (decision !== 'approve' && decision !== 'reject') throw new Error('ผลการพิจารณาไม่ถูกต้อง');
+  return withLock_(() => {
+    const sh = usersSheet_();
+    const user = readUsers_(sh).find(u => u.username === username);
+    if (!user) throw new Error('ไม่พบผู้ใช้');
+    if (user.status !== 'pending' && user.status !== 'rejected') throw new Error('บัญชีนี้ได้รับการยืนยันไปแล้ว');
+    const requested = user.requestedRole === 'admin' ? 'admin' : 'user';
+    const finalRole = decision === 'approve' ? (ROLES.indexOf(role) >= 0 ? role : requested) : user.role || 'user';
+    const col = h => USER_HEADERS.indexOf(h) + 1;
+    if (sh.getLastColumn() < USER_HEADERS.length) sh.getRange(1, 1, 1, USER_HEADERS.length).setValues([USER_HEADERS]);
+    sh.getRange(user.row, col('role')).setValue(finalRole);
+    sh.getRange(user.row, col('status')).setValue(decision === 'approve' ? 'active' : 'rejected');
+    sh.getRange(user.row, col('requestedRole')).setValue(requested);
+    sh.getRange(user.row, col('reviewedBy')).setValue(text_(admin.fullName || admin.username));
+    sh.getRange(user.row, col('reviewedAt')).setValue(new Date());
+    audit_(admin.username, decision === 'approve' ? 'approve_user' : 'reject_user', CONFIG.USERS_SHEET, user.row,
+      { username, requestedRole: requested, role: decision === 'approve' ? finalRole : '' });
+    return { username, status: decision === 'approve' ? 'active' : 'rejected', role: finalRole };
   });
 }
 
@@ -1785,6 +1824,8 @@ function usersSheet_() {
     sh.getRange(1, 1, 1, USER_HEADERS.length).setValues([USER_HEADERS]);
     sh.getRange('A:E').setNumberFormat('@');
     sh.setFrozenRows(1);
+  } else if (sh.getLastColumn() < USER_HEADERS.length) {
+    sh.getRange(1, 1, 1, USER_HEADERS.length).setValues([USER_HEADERS]); // เพิ่มคอลัมน์ใหม่ต่อท้าย
   }
   return sh;
 }
