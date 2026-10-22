@@ -3177,17 +3177,36 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   var PICKS = {
     time: ['22.00 น.', '23.00 น.', '23.30 น.', '00.00 น.', '00.30 น.', '01.00 น.'],
     meetingPoint: ['ด่านฯอโศก1', 'ด่านฯประชาชื่นขาออก', 'ด่านฯประชาชื่นขาเข้า', 'ด่านฯศรีนครินทร์', 'ด่านฯพระราม9(KPN)', 'ด่านฯประชาอุทิศ', 'ด่านฯดินแดง'],
-    worker: ['คุณไข่', 'คุณนั่ม', 'คุณเท่ง'],
+    worker: [], // ตามประเภทงาน — ดู workersFor()
   };
   // เลือกผู้เข้างานแล้วเติมเบอร์ให้ — เบอร์เปลี่ยนก็แก้ในช่องเบอร์ได้
-  var WORKER_PHONES = { 'คุณไข่': '085-600-9224', 'คุณนั่ม': '086-863-8989', 'คุณเท่ง': '061-895-3563' };
+  var WORKER_PHONES = {
+    'คุณไข่': '085-600-9224', 'คุณนั่ม': '086-863-8989', 'คุณเท่ง': '061-895-3563', 'คุณเก่ง': '095-317-4882',
+    'คุณปลาย': '065-395-0708', 'คุณโจ': '097-017-1437', 'คุณตุลย์': '084-225-2912',
+  };
+  var INSTALL_WORKERS = ['คุณไข่', 'คุณนั่ม', 'คุณเท่ง', 'คุณเก่ง'];
+  var CHECK_WORKERS = ['คุณปลาย', 'คุณโจ', 'คุณตุลย์', 'คุณไข่', 'คุณนั่ม', 'คุณเท่ง', 'คุณเก่ง'];
+  /** งานติดตั้งสินค้า: ทีมติดตั้ง · ตรวจสอบโครงสร้าง / ระบบไฟฟ้า (และยังไม่เลือก / อื่น ๆ): ทุกคน */
+  function workersFor(cat) { return cat === JOB_CATEGORIES[0] ? INSTALL_WORKERS : CHECK_WORKERS; }
   var PICK_LABEL = { time: 'เลือกเวลา', meetingPoint: 'เลือกจุดนัดพบ', worker: 'เลือกผู้เข้างาน' };
   var PICK_OWN = '__own';
+  function fillPick(sel) {
+    var name = sel.dataset.pick;
+    sel.innerHTML = '<option value="">— ' + PICK_LABEL[name] + ' —</option>' +
+      PICKS[name].map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + (name === 'worker' ? ' · ' + esc(WORKER_PHONES[v]) : '') + '</option>'; }).join('') +
+      '<option value="' + PICK_OWN + '">อื่น ๆ (กรอกเอง)</option>';
+  }
+  /** เปลี่ยนประเภทงาน → เปลี่ยนรายชื่อผู้เข้างาน (ชื่อที่เลือกไว้แต่ไม่อยู่ในรายการใหม่ ยังเก็บไว้ในช่องกรอกเอง) */
+  function refreshWorkers(form) {
+    PICKS.worker = workersFor(form.jobCategory.value);
+    fillPick(form.querySelector('[data-pick="worker"]'));
+    syncPick(form, 'worker');
+  }
+  $('#bk-form').jobCategory.addEventListener('change', function () { refreshWorkers($('#bk-form')); });
   $$('#bk-form [data-pick]').forEach(function (sel) {
     var form = $('#bk-form'), name = sel.dataset.pick, input = form[name];
-    sel.innerHTML = '<option value="">— ' + PICK_LABEL[name] + ' —</option>' +
-      PICKS[name].map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('') +
-      '<option value="' + PICK_OWN + '">อื่น ๆ (กรอกเอง)</option>';
+    if (name === 'worker') PICKS.worker = workersFor('');
+    fillPick(sel);
     sel.addEventListener('change', function () {
       var own = sel.value === PICK_OWN;
       input.hidden = !own;
@@ -3224,7 +3243,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     setSeg(form, 'provider');
     syncPick(form, 'time');
     syncPick(form, 'meetingPoint');
-    syncPick(form, 'worker');
+    refreshWorkers(form);
     $('#bk-modal-title').textContent = b ? 'แก้ไขการจอง' : 'จองรถคุ้มครอง';
     $('#bk-modal-status').innerHTML = b ? '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status]) + '</span>' : '';
     $('#bk-view').hidden = true;
