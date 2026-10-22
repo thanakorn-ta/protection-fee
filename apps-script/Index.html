@@ -1151,8 +1151,11 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       <section class="fsec">
         <h3><span class="fnum">3</span>ผู้เข้างาน</h3>
         <div class="grid2">
-          <label class="field"><span>ชื่อผู้เข้างาน <span class="req">*</span></span><input name="worker" list="dl-workers" required autocomplete="name" placeholder="เช่น คุณเท่ง"></label>
-          <label class="field"><span>เบอร์ติดต่อ <span class="req">*</span></span><input name="phone" type="tel" inputmode="tel" required autocomplete="tel" placeholder="เช่น 061-895-3563"></label>
+          <div class="field"><span>ชื่อผู้เข้างาน <span class="req">*</span></span>
+            <select data-pick="worker" aria-label="เลือกผู้เข้างาน"></select>
+            <input name="worker" autocomplete="name" placeholder="พิมพ์ชื่อผู้เข้างาน" aria-label="ชื่อผู้เข้างาน (กรอกเอง)" hidden>
+          </div>
+          <label class="field"><span>เบอร์ติดต่อ <span class="req">*</span> <span class="opt">(เลือกชื่อแล้วเติมให้ · แก้ได้)</span></span><input name="phone" type="tel" inputmode="tel" required autocomplete="tel" placeholder="เช่น 061-895-3563"></label>
         </div>
         <label class="field"><span>หมายเหตุ <span class="opt">(ไม่บังคับ)</span></span><textarea name="note" rows="2" placeholder="เช่น ต้องการรถ 2 คัน"></textarea></label>
       </section>
@@ -3174,17 +3177,26 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   var PICKS = {
     time: ['22.00 น.', '23.00 น.', '23.30 น.', '00.00 น.', '00.30 น.', '01.00 น.'],
     meetingPoint: ['ด่านฯอโศก1', 'ด่านฯประชาชื่นขาออก', 'ด่านฯประชาชื่นขาเข้า', 'ด่านฯศรีนครินทร์', 'ด่านฯพระราม9(KPN)', 'ด่านฯประชาอุทิศ', 'ด่านฯดินแดง'],
+    worker: ['คุณไข่', 'คุณนั่ม', 'คุณเท่ง'],
   };
+  // เลือกผู้เข้างานแล้วเติมเบอร์ให้ — เบอร์เปลี่ยนก็แก้ในช่องเบอร์ได้
+  var WORKER_PHONES = { 'คุณไข่': '085-600-9224', 'คุณนั่ม': '086-863-8989', 'คุณเท่ง': '061-895-3563' };
+  var PICK_LABEL = { time: 'เลือกเวลา', meetingPoint: 'เลือกจุดนัดพบ', worker: 'เลือกผู้เข้างาน' };
   var PICK_OWN = '__own';
   $$('#bk-form [data-pick]').forEach(function (sel) {
-    var name = sel.dataset.pick, input = $('#bk-form')[name];
-    sel.innerHTML = '<option value="">— ' + (name === 'time' ? 'เลือกเวลา' : 'เลือกจุดนัดพบ') + ' —</option>' +
+    var form = $('#bk-form'), name = sel.dataset.pick, input = form[name];
+    sel.innerHTML = '<option value="">— ' + PICK_LABEL[name] + ' —</option>' +
       PICKS[name].map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('') +
       '<option value="' + PICK_OWN + '">อื่น ๆ (กรอกเอง)</option>';
     sel.addEventListener('change', function () {
       var own = sel.value === PICK_OWN;
       input.hidden = !own;
       input.value = own ? '' : sel.value;
+      if (name === 'worker') {
+        var listed = Object.keys(WORKER_PHONES).map(function (k) { return WORKER_PHONES[k]; });
+        if (WORKER_PHONES[sel.value]) form.phone.value = WORKER_PHONES[sel.value];
+        else if (listed.indexOf(form.phone.value.trim()) >= 0) form.phone.value = ''; // เบอร์ของคนในรายการ ไม่ใช่ของคนที่พิมพ์เอง
+      }
       if (own) input.focus();
     });
   });
@@ -3212,6 +3224,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     setSeg(form, 'provider');
     syncPick(form, 'time');
     syncPick(form, 'meetingPoint');
+    syncPick(form, 'worker');
     $('#bk-modal-title').textContent = b ? 'แก้ไขการจอง' : 'จองรถคุ้มครอง';
     $('#bk-modal-status').innerHTML = b ? '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status]) + '</span>' : '';
     $('#bk-view').hidden = true;
@@ -3252,7 +3265,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     data.jobType = composeJob(data.jobCategory, data.jobDetail);
     if (!data.date) return bad(form.date, 'กรุณาเลือกวันที่');
     if (!lines(data.places).length) return bad($('#bk-place-pick'), 'กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด');
-    if (!data.worker.trim()) return bad(form.worker, 'กรุณากรอกชื่อผู้เข้างาน');
+    if (!data.worker.trim()) return bad(form.worker.hidden ? form.querySelector('[data-pick="worker"]') : form.worker, 'กรุณาเลือกหรือกรอกชื่อผู้เข้างาน');
     if (!data.phone.trim()) return bad(form.phone, 'กรุณากรอกเบอร์ติดต่อผู้เข้างาน');
     if (!PHONE_RE.test(data.phone.trim())) return bad(form.phone, 'เบอร์ติดต่อไม่ถูกต้อง เช่น 061-895-3563');
     data.title = data.jobType; // ไม่มีช่องลูกค้า / สินค้าแล้ว
