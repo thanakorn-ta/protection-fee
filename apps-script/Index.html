@@ -864,7 +864,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         <div class="grid2">
           <label class="field">Media Site<select name="mediaSite" id="sel-mediasite"></select></label>
           <label class="field">ผู้ดูแล<select name="operator"><option>EXAT</option><option>BEM</option></select></label>
-          <label class="field">สายทาง<input name="expressway" list="dl-expressways" placeholder="เฉลิมมหานคร"></label>
+          <label class="field">สายทาง<select name="expressway" data-ways></select></label>
           <label class="field">ขนาด<input name="size" placeholder="3 x 14 m."></label>
           <label class="field">ถนน<input name="road"></label>
           <label class="field">เขต กทม.<input name="district"></label>
@@ -1085,7 +1085,6 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 </div>
 
 <datalist id="dl-places"></datalist>
-<datalist id="dl-expressways"></datalist>
 <datalist id="dl-jobtypes"></datalist>
 <datalist id="dl-workers"></datalist>
 <datalist id="dl-bemfees"></datalist>
@@ -1130,7 +1129,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
             <select data-pick="time" aria-label="เลือกเวลา"></select>
             <input name="time" placeholder="พิมพ์เวลา เช่น 21.30 น." aria-label="เวลา (กรอกเอง)" hidden>
           </div>
-          <label class="field">สายทาง<input name="expressway" list="dl-expressways" placeholder="เช่น ศรีรัช"></label>
+          <label class="field">สายทาง<select name="expressway" data-ways></select></label>
           <div class="field"><span>จุดนัดพบ</span>
             <select data-pick="meetingPoint" aria-label="เลือกจุดนัดพบ"></select>
             <input name="meetingPoint" placeholder="พิมพ์จุดนัดพบ" aria-label="จุดนัดพบ (กรอกเอง)" hidden>
@@ -1572,10 +1571,20 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     value = String(value || '').trim();
     if (value && list.indexOf(value) < 0) list.unshift(value);
   }
+  // สายทาง: เลือกได้เฉพาะ 3 สาย (จากเซิร์ฟเวอร์) — ค่าเก่าที่ไม่อยู่ในรายการ = ยังไม่เลือก
+  function validWay(v) { return (S.data.options.expressways || []).indexOf(String(v || '').trim()) >= 0 ? String(v).trim() : ''; }
+  var BEM_WAY = 'ศรีรัช'; // แจ้งใช้รถ BEM เลือกได้สายเดียว
+  function wayOptions(selected, provider) {
+    if (provider === 'BEM') return '<option value="' + BEM_WAY + '" selected>' + BEM_WAY + '</option>';
+    var cur = validWay(selected);
+    return '<option value="">— เลือกสายทาง —</option>' + (S.data.options.expressways || []).map(function (v) {
+      return '<option value="' + esc(v) + '"' + (v === cur ? ' selected' : '') + '>' + esc(v) + '</option>';
+    }).join('');
+  }
   function renderOptions() {
     var o = S.data.options;
     fillList('#dl-places', o.places);
-    fillList('#dl-expressways', o.expressways);
+    $$('select[data-ways]').forEach(function (s) { s.innerHTML = wayOptions(s.value); });
     fillList('#dl-jobtypes', o.jobTypes);
     fillList('#dl-workers', o.workers);
     fillList('#dl-bemfees', o.bemFees);
@@ -1608,6 +1617,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     $('#entry-subtitle').textContent = MODE_TEXT[mode].subtitle;
     $('#recent-note').textContent = MODE_TEXT[mode].note;
     if (!S.data) return;
+    if (mode === 'bem') (S.picks || []).forEach(function (p) { p.expressway = BEM_WAY; });
     renderPicks();
     renderRecent();
   }
@@ -1699,8 +1709,8 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       toast('เลือกจุดนี้ไปแล้ว');
     } else {
       S.picks.push({
-        place: h.place, code: h.code || '', expressway: h.expressway || '', project: h.project || '',
-        editing: !h.known || !h.expressway, fee: '', feeText: '', payment: '', touched: {}
+        place: h.place, code: h.code || '', expressway: S.mode === 'bem' ? BEM_WAY : validWay(h.expressway), project: h.project || '',
+        editing: !h.known || !(S.mode === 'bem' || validWay(h.expressway)), fee: '', feeText: '', payment: '', touched: {}
       });
     }
     placeSearch.value = '';
@@ -1778,7 +1788,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
           '</select></label>';
       var meta = p.editing
         ? '<div class="pick-edit">' +
-            '<label class="mini">สายทาง<input data-k="expressway" list="dl-expressways" value="' + esc(p.expressway) + '" placeholder="เช่น เฉลิมมหานคร"></label>' +
+            '<label class="mini">สายทาง<select data-k="expressway">' + wayOptions(p.expressway, S.mode === 'bem' ? 'BEM' : 'EXAT') + '</select></label>' +
             '<label class="mini">โครงการ<select data-k="project"><option value="">— เลือกโครงการ —</option>' +
               S.data.options.projects.map(function (v) { return '<option' + (v === p.project ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join('') +
             '</select></label>' +
@@ -1930,13 +1940,12 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       S.data.recent[mode] = res.recent;
       S.fresh = res.saved.map(function (s) { return String(s.no); });
       S.dash = null; // แดชบอร์ดต้องสรุปใหม่
-      places.forEach(function (p) { addOption('places', p.place); addOption('expressways', p.expressway); });
+      places.forEach(function (p) { addOption('places', p.place); });
       addOption('jobTypes', common.jobType);
       addOption('workers', common.worker);
       fillList('#dl-places', S.data.options.places);
       fillList('#dl-jobtypes', S.data.options.jobTypes);
       fillList('#dl-workers', S.data.options.workers);
-      fillList('#dl-expressways', S.data.options.expressways);
       LS.set('worker', common.worker);
       resetEntry({ date: common.date, worker: common.worker });
       renderRecent();
@@ -3163,6 +3172,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   function setSeg(form, name) {
     var val = form[name].value;
     $$('[data-seg="' + name + '"] [data-val]', form).forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.val === val)); });
+    if (name === 'provider' && form.expressway) form.expressway.innerHTML = wayOptions(form.expressway.value, val); // BEM = ศรีรัช เท่านั้น
   }
   $$('#bk-form [data-seg] [data-val]').forEach(function (b) {
     b.addEventListener('click', function () {

@@ -33,7 +33,9 @@ const STATUSES = ['pending', 'active', 'disabled', 'rejected'];
 const ROLE_TEXT = { admin: 'ผู้ดูแลระบบ (admin)', user: 'ผู้ใช้งาน (user)' };
 const THAI_MONTHS = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
 const PROJECTS = ['Flyover 2.0 EXAT', 'Flyover 2.0 BEM', 'Gateway EXAT', 'Gateway BEM'];
-const EXPRESSWAYS = ['เฉลิมมหานคร', 'ศรีรัช', 'ฉลองรัช', 'บูรพาวิถี', 'กาญจนาภิเษก', 'อุดรรัถยา'];
+// สายทางที่เลือกได้ — แถวเดิมในชีทที่ใช้ชื่ออื่นไม่ถูกแก้
+const EXPRESSWAYS = ['ศรีรัช', 'ฉลองรัช', 'เฉลิมมหานคร'];
+const BEM_EXPRESSWAY = 'ศรีรัช'; // แจ้งใช้รถ BEM เลือกได้สายเดียว
 const BEM_FEES = ['คิดค่ารถ 1 คืน', 'BEM ไม่ได้คิดค่ารถ'];
 const PAYMENT_STATUSES = ['รอออก PR', 'เรียบร้อย', 'ฟรี'];
 const EN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -172,7 +174,7 @@ function getAppData(token) {
     locations,
     options: {
       projects: PROJECTS,
-      expressways: uniq_(EXPRESSWAYS.concat(locations.map(l => l.expressway))),
+      expressways: EXPRESSWAYS.slice(),
       places: uniq_(locations.map(l => l.area).concat(exat.places, bem.places)),
       jobTypes: uniq_(exat.jobTypes.concat(bem.jobTypes)),
       workers: uniq_(exat.workers.concat(bem.workers)),
@@ -243,6 +245,7 @@ function validateLogForm_(key, form) {
   Object.keys(labels).forEach(k => {
     if (!String(form[k] || '').trim()) throw new Error('กรุณากรอก' + labels[k]);
   });
+  form = Object.assign({}, form, { expressway: key === 'bem' ? bemExpressway_(form.expressway) : expresswayOf_(form.expressway) });
   let fee = 0;
   if (key === 'exat') {
     fee = Number(form.fee);
@@ -853,12 +856,14 @@ function validateBooking_(form) {
     f.jobCategory = jobCategoryOf_(f.jobType);
   }
   if (!f.jobType) throw new Error('กรุณากรอกประเภทงาน');
+  f.expressway = expresswayOf_(f.expressway); // ไม่บังคับ แต่ถ้ากรอกต้องเป็นสายทางที่เลือกได้
   if (!f.title) f.title = f.jobType; // ไม่มีช่องลูกค้า/สินค้าแล้ว — ใช้ประเภทงานเป็นชื่อการจอง
   if (!f.worker) throw new Error('กรุณากรอกชื่อผู้เข้างาน');
   if (!f.phone) throw new Error('กรุณากรอกเบอร์ติดต่อผู้เข้างาน');
   if (!/^[0-9+][0-9\-\s]{7,14}$/.test(f.phone)) throw new Error('เบอร์ติดต่อไม่ถูกต้อง เช่น 061-895-3563');
   parseDate_(f.date);
   if (f.provider !== 'EXAT' && f.provider !== 'BEM') throw new Error('กรุณาเลือกแจ้งใช้รถ EXAT หรือ BEM');
+  if (f.provider === 'BEM') f.expressway = bemExpressway_(f.expressway);
   if (!f.mediaType) throw new Error('กรุณาเลือก Media Type');
   f.places = f.places.split(/\r?\n/).map(s => s.trim()).filter(Boolean).join('\n');
   if (!f.places) throw new Error('กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด');
@@ -977,7 +982,8 @@ function bookingToForms_(b) {
     const f = {
       date: b.date, worker, jobType: b.jobType || b.title, // ไม่ใส่เบอร์โทรลงตาราง EXAT / BEM
       place: loc ? loc.area : p,
-      expressway: (loc && loc.expressway) || b.expressway,
+      // สายทางในฐานข้อมูลป้ายที่ไม่อยู่ในรายการ (ชื่อเก่า) → ใช้ของการจองแทน
+      expressway: key === 'bem' ? BEM_EXPRESSWAY : validExpressway_(loc && loc.expressway) || validExpressway_(b.expressway),
       project: (gateway ? 'Gateway ' : 'Flyover 2.0 ') + owner,
     };
     if (key === 'exat') f.fee = i === 0 ? 400 : 0;
@@ -2290,6 +2296,7 @@ function addLocation(token, form) {
   form = form || {};
   if (!String(form.code || '').trim()) throw new Error('กรุณากรอกรหัสป้าย');
   if (!String(form.area || '').trim()) throw new Error('กรุณากรอกบริเวณ');
+  form = Object.assign({}, form, { expressway: expresswayOf_(form.expressway) });
 
   return withLock_(() => {
     const t = findTable_('locations');
@@ -2649,6 +2656,24 @@ function colIndex_(headers, name, nth) {
     }
   }
   return -1;
+}
+
+/** สายทางมาตรฐาน (ไม่สนช่องว่าง) — ว่างคืน '' · ชื่ออื่นโยนข้อผิดพลาด */
+function expresswayOf_(v) {
+  const s = norm_(v);
+  if (!s) return '';
+  const hit = EXPRESSWAYS.find(e => norm_(e) === s);
+  if (!hit) throw new Error('สายทางต้องเป็น ' + EXPRESSWAYS.join(' / ') + ' เท่านั้น (ได้รับ “' + String(v).trim() + '”)');
+  return hit;
+}
+function validExpressway_(v) {
+  try { return expresswayOf_(v); } catch (err) { return ''; }
+}
+/** แจ้งใช้รถ BEM: สายทางมีแค่ ศรีรัช — ว่างเติมให้ · สายอื่นไม่รับ */
+function bemExpressway_(v) {
+  const w = expresswayOf_(v);
+  if (w && w !== BEM_EXPRESSWAY) throw new Error('แจ้งใช้รถ BEM เลือกสายทางได้เฉพาะ ' + BEM_EXPRESSWAY + ' (ได้รับ “' + w + '”)');
+  return BEM_EXPRESSWAY;
 }
 
 function norm_(s) {
