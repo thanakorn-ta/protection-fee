@@ -57,7 +57,7 @@ const API_FUNCTIONS = {
   register, login, logout, changePassword, requestPasswordReset, resetPasswordWithToken, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
   getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings, getClear, downloadClear, sendClearNow,
   listHolidays, saveHoliday, deleteHoliday,
-  addLocation, listUsers, updateUser, reviewUser, resetPassword,
+  addLocation, listUsers, updateUser, reviewUser, resetPassword, getNotifySettings, saveNotifySettings,
 };
 
 function doPost(e) {
@@ -887,7 +887,8 @@ function saveBooking(token, form) {
   const user = requireUser_(token);
   const f = validateBooking_(form);
   const id = String((form && form.id) || '').trim();
-  return withLock_(() => {
+  let notice = ''; // แจ้งผู้ดูแลระบบหลังบันทึก: จองใหม่ หรือแก้แล้วส่งขออนุมัติใหม่
+  const saved = withLock_(() => {
     const sh = bookingsSheet_();
     const now = nowText_();
     let b;
@@ -899,6 +900,7 @@ function saveBooking(token, form) {
       if (user.role !== 'admin' && b.status === 'rejected') {
         b.status = 'pending'; // แก้แล้วส่งขออนุมัติใหม่
         b.reviewedAt = '';
+        notice = 'resubmit';
       }
       writeBooking_(sh, b.row, b);
       audit_(user.username, 'update_booking', BOOKING_SHEET, b.row, { id: b.id, status: b.status });
@@ -911,9 +913,13 @@ function saveBooking(token, form) {
       b.row = Math.max(sh.getLastRow(), 1) + 1;
       writeBooking_(sh, b.row, b);
       audit_(user.username, 'create_booking', BOOKING_SHEET, b.row, { id: b.id, date: b.date, title: b.title });
+      notice = 'pending';
     }
-    return bookingOut_(b, user);
+    return b;
   });
+  const out = bookingOut_(saved, user);
+  if (notice) out.notify = notifyAdmins_(notice, saved, user.username);
+  return out;
 }
 
 /** ผู้ดูแลระบบอนุมัติ / ไม่อนุมัติ */
@@ -935,8 +941,10 @@ function reviewBooking(token, id, decision, note) {
     return b;
   });
   // อนุมัติแล้ว → บันทึกลงตาราง EXAT / BEM ทันที (ถ้ายังไม่เคยบันทึก)
-  if (decision === 'approved' && !reviewed.loggedRows) return logBookingSafe_(reviewed, user);
-  return bookingOut_(reviewed, user);
+  const out = decision === 'approved' && !reviewed.loggedRows ? logBookingSafe_(reviewed, user) : bookingOut_(reviewed, user);
+  // แจ้งผู้จองทางอีเมล (อนุมัติ / ไม่อนุมัติ) — ส่งไม่สำเร็จไม่กระทบผลการพิจารณา
+  out.notify = notifyBooker_(decision, Object.assign({}, reviewed, { loggedRows: out.loggedRows || reviewed.loggedRows }), user.username);
+  return out;
 }
 
 /** ผู้ดูแลระบบสั่งบันทึกการจองที่อนุมัติแล้วลงตาราง EXAT / BEM (สำหรับการจองที่อนุมัติก่อนมีระบบนี้) */
@@ -1213,7 +1221,7 @@ function cancelBooking(token, id, reason, fileIds) {
     console.error('appendCancelLog_ failed', err);
   }
   audit_(user.username, 'cancel_booking', BOOKING_SHEET, b.row, { id: b.id, prev: b.prevStatus, files: files.length, removed: b.removedRows, skipped: rem.skipped });
-  return Object.assign(bookingOut_(b, user), { removeWarnings: rem.skipped });
+  return Object.assign(bookingOut_(b, user), { removeWarnings: rem.skipped, notify: notifyAdmins_('cancelled', b, user.username) });
 }
 
 /** รายการที่ยกเลิกแล้วทั้งหมด (ล่าสุดก่อน) — แสดงในหน้า "รายการยกเลิก" แยกจากตารางจอง */
@@ -1223,6 +1231,168 @@ function listCancelled(token) {
     .filter(b => b.status === 'cancelled')
     .sort((a, b) => String(b.cancelledAt || b.updatedAt).localeCompare(String(a.cancelledAt || a.updatedAt)))
     .map(b => bookingOut_(b, user));
+}
+
+/* ------------------------------------------------------------------ */
+/* แจ้งเตือนการจองทางอีเมล                                               */
+/* ------------------------------------------------------------------ */
+// จองใหม่ / แก้ไขส่งใหม่ / ยกเลิก → ผู้ดูแลระบบ · อนุมัติ / ไม่อนุมัติ → ผู้จอง
+// ส่งไม่สำเร็จไม่กระทบการจอง — ผลทุกฉบับบันทึกใน AuditLog (action "notify_<ชนิด>")
+
+const NOTIFY_PROP = 'BOOKING_NOTIFY';
+const NOTIFY_DEFAULTS = { adminTo: '', onBooking: true, onCancel: true, userOnApprove: true, userOnReject: true };
+const NOTIFY_FLAGS = ['onBooking', 'onCancel', 'userOnApprove', 'userOnReject'];
+const NOTIFY_EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+const TH_MONTHS_SHORT = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+
+function notifySettings_() {
+  let saved = {};
+  try { saved = JSON.parse(PropertiesService.getScriptProperties().getProperty(NOTIFY_PROP) || '{}') || {}; } catch (e) { saved = {}; }
+  return Object.assign({}, NOTIFY_DEFAULTS, saved);
+}
+
+/** ผู้รับฝั่งผู้ดูแลระบบ: อีเมลที่ตั้งไว้ — ถ้าว่าง ใช้อีเมลของผู้ดูแลระบบที่ใช้งานอยู่ทุกคน */
+function adminNotifyEmails_(s) {
+  const set = emailList_((s || notifySettings_()).adminTo);
+  if (set.length) return set;
+  return uniq_(readUsers_(usersSheet_())
+    .filter(u => u.role === 'admin' && u.status === 'active')
+    .map(u => String(u.email || '').trim().toLowerCase())
+    .filter(e => NOTIFY_EMAIL_RE.test(e)));
+}
+
+function userEmail_(username) {
+  const u = readUsers_(usersSheet_()).find(x => x.username === username);
+  return u ? String(u.email || '').trim().toLowerCase() : '';
+}
+
+/** "23 ต.ค. 69" */
+function bookingDateShort_(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+  return m ? Number(m[3]) + ' ' + TH_MONTHS_SHORT[Number(m[2]) - 1] + ' ' + String((Number(m[1]) + 543) % 100).padStart(2, '0') : String(iso || '');
+}
+
+/** ลิงก์เปิดการจองในระบบ — การจองที่ยกเลิกแล้วเปิดหน้า "รายการยกเลิก" (ดูเหตุผล รูป และวิดีโอได้) */
+function bookingLink_(b) {
+  return appUrl_() + (b.status === 'cancelled'
+    ? '?cancelled=' + encodeURIComponent(b.id)
+    : '?booking=' + encodeURIComponent(b.id) + '&d=' + encodeURIComponent(b.date));
+}
+
+const NOTIFY_TEXT = {
+  pending: { tag: 'รอการอนุมัติ', intro: 'มีการจองรถคุ้มครองใหม่ รอผู้ดูแลระบบอนุมัติ', button: 'เปิดการจองเพื่ออนุมัติ' },
+  resubmit: { tag: 'รอการอนุมัติ', intro: 'ผู้จองแก้ไขการจองที่ไม่อนุมัติ แล้วส่งขออนุมัติใหม่', button: 'เปิดการจองเพื่ออนุมัติ' },
+  cancelled: { tag: 'ยกเลิก', intro: 'การจองรถคุ้มครองถูกยกเลิก', button: 'ดูเหตุผล รูป และวิดีโอในระบบ' },
+  approved: { tag: 'อนุมัติแล้ว', intro: 'การจองรถคุ้มครองของคุณได้รับการอนุมัติแล้ว', button: 'ดูการจองในระบบ' },
+  rejected: { tag: 'ไม่อนุมัติ', intro: 'การจองรถคุ้มครองของคุณไม่ได้รับการอนุมัติ — แก้ไขแล้วส่งขออนุมัติใหม่ได้ในระบบ', button: 'ดูและแก้ไขการจองในระบบ' },
+};
+
+function bookingMail_(kind, b) {
+  const t = NOTIFY_TEXT[kind];
+  const job = b.jobType || b.title;
+  const subject = '[' + t.tag + '] จองรถคุ้มครอง ' + b.provider + ' ' + bookingDateShort_(b.date) + ' · ' + job;
+  const places = String(b.places || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+  const rows = [
+    ['ประเภทงาน', job],
+    ['วันที่ใช้รถ', bookingDateShort_(b.date) + (b.time ? ' เวลา ' + b.time + ' น.' : '')],
+    ['แจ้งใช้รถ', b.provider + (b.mediaType ? ' · ' + b.mediaType : '')],
+    ['สายทาง', b.expressway],
+    ['จุดนัดพบ', b.meetingPoint],
+    ['จุดที่ไป', places.join('\n')],
+    ['ผู้เข้างาน', [b.worker, b.phone].filter(Boolean).join(' · ')],
+    ['ผู้จอง', b.requestedByName || b.requestedBy],
+    ['หมายเหตุ', b.note],
+  ];
+  if (kind === 'approved' || kind === 'rejected') {
+    rows.push(['ผู้พิจารณา', b.reviewedByName], ['หมายเหตุผู้พิจารณา', b.reviewNote]);
+    if (kind === 'approved' && b.loggedRows) rows.push(['บันทึกลงตาราง', b.loggedRows]);
+  }
+  if (kind === 'cancelled') {
+    const files = cancelFilesOut_(b.cancelFiles);
+    rows.push(
+      ['สถานะก่อนยกเลิก', { pending: 'รออนุมัติ', approved: 'อนุมัติแล้ว', rejected: 'ไม่อนุมัติ' }[b.prevStatus] || b.prevStatus],
+      ['ยกเลิกโดย', b.cancelledByName || b.cancelledBy],
+      ['เหตุผล', b.cancelReason],
+      ['รูป / วิดีโอ', files.length ? files.length + ' ไฟล์ — ' + files.map(f => f.name).join(', ') : ''],
+      ['ลบแถวในตาราง', b.removedRows]);
+  }
+  const shown = rows.filter(r => String(r[1] || '').trim());
+  const link = bookingLink_(b);
+  const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const plain = t.intro + '\n\n' + shown.map(r => r[0] + ': ' + String(r[1]).replace(/\n/g, ', ')).join('\n') +
+    '\n\n' + t.button + ': ' + link + '\n\n— ระบบ Protection Fee (อีเมลอัตโนมัติ)';
+  const html = '<div style="font-family:Tahoma,sans-serif;font-size:14px;line-height:1.7;color:#14211B">' +
+    '<p style="margin:0 0 14px">' + esc(t.intro) + '</p>' +
+    '<table style="border-collapse:collapse">' + shown.map(r =>
+      '<tr><td style="padding:4px 24px 4px 0;vertical-align:top;color:#4A5A52;white-space:nowrap">' + esc(r[0]) + '</td>' +
+      '<td style="padding:4px 0">' + esc(r[1]).replace(/\n/g, '<br>') + '</td></tr>').join('') + '</table>' +
+    '<p style="margin:20px 0"><a href="' + esc(link) + '" style="display:inline-block;background:#0D5C3B;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:8px">' + esc(t.button) + '</a></p>' +
+    '<p style="margin:0;color:#6B7A72;font-size:12px">ระบบ Protection Fee — อีเมลอัตโนมัติ ไม่ต้องตอบกลับ</p></div>';
+  return { subject, plain, html };
+}
+
+/** ส่ง 1 ฉบับ — ไม่โยนข้อผิดพลาดออกไป (การจองต้องบันทึกได้เสมอ) และบันทึกผลใน AuditLog */
+function sendBookingNotice_(kind, b, to, by) {
+  const list = uniq_((to || []).map(e => String(e || '').trim().toLowerCase()).filter(e => NOTIFY_EMAIL_RE.test(e)));
+  const detail = { kind, id: b.id, to: list.join(', '), result: '' };
+  try {
+    if (!list.length) {
+      detail.result = kind === 'approved' || kind === 'rejected' ? 'skipped: ผู้จองไม่มีอีเมลในระบบ' : 'skipped: ไม่มีอีเมลผู้ดูแลระบบ';
+    } else {
+      const quota = MailApp.getRemainingDailyQuota();
+      if (quota < list.length) {
+        detail.result = 'failed: โควตาอีเมลวันนี้เหลือ ' + quota + ' ฉบับ';
+      } else {
+        const mail = bookingMail_(kind, b);
+        MailApp.sendEmail({ to: list.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, name: 'Protection Fee' });
+        detail.result = 'ok';
+      }
+    }
+  } catch (err) {
+    detail.result = 'failed: ' + String((err && err.message) || err).slice(0, 300);
+  }
+  try {
+    audit_(by || 'system', 'notify_' + kind, BOOKING_SHEET, b.row || '', detail);
+  } catch (err) {
+    console.error('notify audit failed', err);
+  }
+  return { to: list, result: detail.result };
+}
+
+function notifyAdmins_(kind, b, by) {
+  const s = notifySettings_();
+  if (!(kind === 'cancelled' ? s.onCancel : s.onBooking)) return null;
+  let to = [];
+  try { to = adminNotifyEmails_(s); } catch (err) { console.error('adminNotifyEmails_ failed', err); }
+  return sendBookingNotice_(kind, b, to, by);
+}
+
+function notifyBooker_(kind, b, by) {
+  const s = notifySettings_();
+  if (!(kind === 'approved' ? s.userOnApprove : s.userOnReject)) return null;
+  let to = '';
+  try { to = userEmail_(b.requestedBy); } catch (err) { console.error('userEmail_ failed', err); }
+  return sendBookingNotice_(kind, b, to ? [to] : [], by);
+}
+
+/** ผู้ดูแลระบบ: ดูการตั้งค่าแจ้งเตือน ผู้รับจริง และโควตาอีเมลที่เหลือวันนี้ */
+function getNotifySettings(token) {
+  requireUser_(token, true);
+  const s = notifySettings_();
+  let quota = null;
+  try { quota = MailApp.getRemainingDailyQuota(); } catch (err) { quota = null; }
+  return { settings: s, recipients: adminNotifyEmails_(s), usingAdmins: !emailList_(s.adminTo).length, quota };
+}
+
+function saveNotifySettings(token, form) {
+  const user = requireUser_(token, true);
+  form = form || {};
+  const s = notifySettings_();
+  if (form.adminTo !== undefined) s.adminTo = checkEmails_(emailList_(String(form.adminTo || '').toLowerCase().slice(0, 2000)), 'อีเมลแจ้งเตือน').join(', ');
+  NOTIFY_FLAGS.forEach(k => { if (form[k] !== undefined) s[k] = !!form[k]; });
+  PropertiesService.getScriptProperties().setProperty(NOTIFY_PROP, JSON.stringify(s));
+  audit_(user.username, 'notify_settings', '', '', s);
+  return getNotifySettings(token);
 }
 
 /* ------------------------------------------------------------------ */

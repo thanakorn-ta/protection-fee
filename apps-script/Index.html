@@ -903,6 +903,20 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         </table>
       </div>
     </section>
+
+    <form class="card pad side-form" id="form-notify" novalidate style="max-width:720px">
+      <h2>อีเมลแจ้งเตือนการจอง</h2>
+      <p class="sub" id="nt-summary">กำลังโหลด…</p>
+      <label class="field"><span>ส่งแจ้งผู้ดูแลระบบถึง <span class="opt">(ว่าง = อีเมลของผู้ดูแลระบบทุกคน)</span></span>
+        <textarea name="adminTo" rows="2" spellcheck="false" placeholder="เช่น somchai.j@planbmedia.co.th, somying.r@planbmedia.co.th"></textarea>
+      </label>
+      <label class="check"><input type="checkbox" name="onBooking"> แจ้งผู้ดูแลระบบเมื่อมีการจองใหม่ / แก้ไขส่งขออนุมัติใหม่</label>
+      <label class="check"><input type="checkbox" name="onCancel"> แจ้งผู้ดูแลระบบเมื่อมีการยกเลิกการจอง</label>
+      <label class="check"><input type="checkbox" name="userOnApprove"> แจ้งผู้จองเมื่ออนุมัติแล้ว</label>
+      <label class="check"><input type="checkbox" name="userOnReject"> แจ้งผู้จองเมื่อไม่อนุมัติ</label>
+      <div class="error" data-error hidden></div>
+      <button type="submit" class="btn primary">บันทึกการตั้งค่า</button>
+    </form>
   </main>
 
   <!-- บัญชีของฉัน -->
@@ -1333,6 +1347,36 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   function clearResetUrl() {
     try { history.replaceState(null, '', window.location.pathname + window.location.hash); } catch (e) { /* ไม่เป็นไร */ }
   }
+  // ลิงก์จากอีเมลแจ้งเตือน: ?booking=<id>&d=<วันที่> เปิดการจองนั้น · ?cancelled=<id> เปิดรายการยกเลิก
+  // เก็บไว้จนเข้าสู่ระบบเสร็จ แล้วค่อยเปิด
+  function deepLinkFromUrl() {
+    try {
+      var q = new URLSearchParams(window.location.search);
+      var c = q.get('cancelled'), b = q.get('booking'), d = q.get('d') || '';
+      if (c) return { cancelled: c };
+      if (b) return { booking: b, date: /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '' };
+    } catch (e) { /* ไม่เป็นไร */ }
+    return null;
+  }
+  function openDeepLink() {
+    var d = S.deep;
+    if (!d) return false;
+    S.deep = null;
+    clearResetUrl();
+    if (d.cancelled) {
+      $('#cx-search').value = d.cancelled;
+      showPage('cancelled');
+      return true;
+    }
+    if (d.date) {
+      var p = d.date.split('-');
+      S.cal.y = Number(p[0]);
+      S.cal.m = Number(p[1]) - 1;
+    }
+    S.cal.open = d.booking;
+    showPage('schedule');
+    return true;
+  }
   function showResetForm(token) {
     S.resetToken = token;
     $('#auth').hidden = false;
@@ -1478,7 +1522,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       setMode(S.mode);
       renderLocations();
       resetEntry();
-      showPage('schedule');
+      if (!openDeepLink()) showPage('schedule');
     } finally {
       $('#loading').hidden = true;
     }
@@ -2263,6 +2307,12 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       addHolidays(res.holidays);
       setBookingBadge(res.pending.length);
       renderSchedule();
+      if (S.cal.open) { // เปิดจากลิงก์ในอีเมลแจ้งเตือน
+        var openId = S.cal.open;
+        S.cal.open = null;
+        if (findBooking(openId)) openBooking(openId);
+        else toast('ไม่พบการจองนี้ในตาราง — อาจถูกยกเลิกแล้ว ดูที่หน้า “รายการยกเลิก”', true);
+      }
     } catch (err) {
       toast(errText(err), true);
     } finally {
@@ -2353,6 +2403,14 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       '<span class="bmain"><span class="t">' + esc(evLabel(b)) + '</span><span class="s">' + esc(sub) + '</span></span>' +
       '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status] || b.status) + '</span>' +
     '</button>';
+  }
+
+  // ผลการส่งอีเมลแจ้งเตือนจากเซิร์ฟเวอร์ → ข้อความต่อท้าย toast (ส่งไม่สำเร็จไม่กระทบการจอง)
+  function notifyText(n, who) {
+    if (!n || !n.result) return '';
+    if (n.result === 'ok') return ' · ส่งอีเมลแจ้ง' + who + 'แล้ว';
+    if (/^skipped/.test(n.result)) return ' · ไม่ได้ส่งอีเมล (' + n.result.replace(/^skipped:\s*/, '') + ')';
+    return ' · ส่งอีเมลแจ้ง' + who + 'ไม่สำเร็จ';
   }
 
   function findBooking(id) {
@@ -2509,7 +2567,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       var msg = action === 'log' ? (res.logError ? 'บันทึกลงตารางไม่สำเร็จ: ' + res.logError : logResultText(res))
         : action === 'approved' ? 'อนุมัติการจอง ' + res.title + ' แล้ว — ' + logResultText(res)
         : 'ไม่อนุมัติการจอง ' + res.title;
-      toast(msg, !!res.logError);
+      toast(msg + notifyText(res.notify, 'ผู้จอง'), !!res.logError);
     } catch (err) {
       toast(errText(err), true);
       $$('#bk-view button').forEach(function (x) { x.disabled = false; });
@@ -2641,7 +2699,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       closeModal();
       renderSchedule();
       var warn = res.removeWarnings && res.removeWarnings.length ? ' · ไม่ได้ลบ ' + res.removeWarnings.join(', ') + ' — ตรวจในชีท' : '';
-      toast('ยกเลิกการจองแล้ว — ย้ายไปหน้า “รายการยกเลิก”' + (res.removedRows ? ' · นำ ' + res.removedRows + ' ออกจากตารางแล้ว' : '') + warn, !!warn);
+      toast('ยกเลิกการจองแล้ว — ย้ายไปหน้า “รายการยกเลิก”' + (res.removedRows ? ' · นำ ' + res.removedRows + ' ออกจากตารางแล้ว' : '') + warn + notifyText(res.notify, 'ผู้ดูแลระบบ'), !!warn);
     } catch (err) {
       cx.busy = false;
       prog.hidden = true;
@@ -2684,7 +2742,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     $$('[data-cx-filter]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.cxFilter === S.cxFilter)); });
     var list = (S.cancelled || []).filter(function (b) {
       if (S.cxFilter !== 'all' && b.provider !== S.cxFilter) return false;
-      return !q || norm([b.jobType, b.title, b.places, b.worker, b.phone, b.cancelReason, b.cancelledByName].join(' ')).indexOf(q) >= 0;
+      return !q || norm([b.id, b.jobType, b.title, b.places, b.worker, b.phone, b.cancelReason, b.cancelledByName].join(' ')).indexOf(q) >= 0;
     });
     $('#cx-list').innerHTML = list.length
       ? list.map(cancelCard).join('')
@@ -3176,7 +3234,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       closeModal(); // บันทึกสำเร็จ = ตกลง ปิดหน้าจอง
       if (!editing || !S.cal.range || res.date < S.cal.range[0] || res.date > S.cal.range[1]) await loadSchedule();
       else renderSchedule();
-      toast(editing ? 'บันทึกการแก้ไขแล้ว' : 'ส่งคำขอจองแล้ว — รอผู้ดูแลระบบอนุมัติ');
+      toast((editing ? 'บันทึกการแก้ไขแล้ว' : 'ส่งคำขอจองแล้ว — รอผู้ดูแลระบบอนุมัติ') + notifyText(res.notify, 'ผู้ดูแลระบบ'));
     });
   });
 
@@ -3230,6 +3288,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   // ---------- ผู้ใช้ ----------
 
   async function loadUsers() {
+    loadNotify();
     try {
       S.users = await api('listUsers', S.token);
       renderUsers();
@@ -3237,6 +3296,34 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       toast(errText(err), true);
     }
   }
+
+  // ---------- อีเมลแจ้งเตือนการจอง (ผู้ดูแลระบบ) ----------
+  async function loadNotify() {
+    try {
+      renderNotify(await api('getNotifySettings', S.token));
+    } catch (err) {
+      $('#nt-summary').textContent = errText(err);
+    }
+  }
+  function renderNotify(n) {
+    var f = $('#form-notify'), s = n.settings;
+    f.adminTo.value = s.adminTo || '';
+    ['onBooking', 'onCancel', 'userOnApprove', 'userOnReject'].forEach(function (k) { f[k].checked = !!s[k]; });
+    $('#nt-summary').innerHTML = 'ตอนนี้ส่งถึง: <b>' + esc(n.recipients.join(', ') || 'ยังไม่มี — ผู้ดูแลระบบยังไม่มีอีเมลในระบบ') + '</b>' +
+      (n.usingAdmins ? ' (อีเมลของผู้ดูแลระบบทุกคน)' : '') +
+      (n.quota !== null && n.quota !== undefined ? ' · โควตาอีเมลวันนี้เหลือ ' + fmt(n.quota) + ' ฉบับ' : '');
+  }
+  $('#form-notify').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var form = e.target;
+    submitWith(form, async function () {
+      renderNotify(await api('saveNotifySettings', S.token, {
+        adminTo: form.adminTo.value, onBooking: form.onBooking.checked, onCancel: form.onCancel.checked,
+        userOnApprove: form.userOnApprove.checked, userOnReject: form.userOnReject.checked,
+      }));
+      toast('บันทึกการตั้งค่าอีเมลแจ้งเตือนแล้ว');
+    });
+  });
 
   var STATUS_LABEL = { active: 'ใช้งาน', pending: 'รออนุมัติ', disabled: 'ระงับ', rejected: 'ไม่อนุมัติ' };
   var ROLE_LABEL = { admin: 'ผู้ดูแลระบบ (admin)', user: 'ผู้ใช้งาน (user)' };
@@ -3372,6 +3459,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
   // ---------- เริ่มต้น ----------
   S.token = loadToken();
+  S.deep = deepLinkFromUrl();
   var resetToken = resetTokenFromUrl();
   if (resetToken) {
     endSession();
