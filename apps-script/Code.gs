@@ -166,11 +166,34 @@ function changePassword(token, oldPassword, newPassword) {
 
 function getAppData(token) {
   const user = requireUser_(token);
+  const shared = sharedAppData_();
+  return {
+    user: publicUser_(user),
+    locations: shared.locations,
+    options: shared.options,
+    recent: { exat: recentFor_(shared.recent.exat, user), bem: recentFor_(shared.recent.bem, user) },
+    rates: shared.rates,
+    bookingPending: user.role === 'admin' ? readBookings_(bookingsSheet_(false)).filter(b => b.status === 'pending').length : 0,
+  };
+}
+
+// ส่วนของ getAppData ที่เหมือนกันทุกคน (ฐานข้อมูลป้าย ตาราง EXAT / BEM อัตราค่ารถ) — อ่าน 4 แท็บทุกครั้งช้า
+// จึงเก็บไว้ใน CacheService 5 นาที และล้างทันทีเมื่อระบบเขียนตาราง / เพิ่มสถานที่ (แก้ในชีทเองเห็นผลภายใน 5 นาที)
+const APPDATA_CACHE_KEY = 'appdata_v1';
+const APPDATA_CACHE_SECONDS = 300;
+
+function sharedAppData_() {
+  const cache = CacheService.getScriptCache();
+  try {
+    const hit = cache.get(APPDATA_CACHE_KEY);
+    if (hit) return JSON.parse(hit.charAt(0) === '{' ? hit : Utilities.ungzip(Utilities.newBlob(Utilities.base64Decode(hit), 'application/x-gzip')).getDataAsString());
+  } catch (err) {
+    console.error('appdata cache read failed', err);
+  }
   const locations = readLocations_();
   const exat = readLog_('exat');
   const bem = readLog_('bem');
-  return {
-    user: publicUser_(user),
+  const data = {
     locations,
     options: {
       projects: PROJECTS,
@@ -182,10 +205,21 @@ function getAppData(token) {
       payments: uniq_(PAYMENT_STATUSES.concat(bem.payments)),
       mediaSites: uniq_(PROJECTS.concat(locations.map(l => l.mediaSite))),
     },
-    recent: { exat: recentFor_(exat.recent, user), bem: recentFor_(bem.recent, user) },
+    recent: { exat: exat.recent, bem: bem.recent },
     rates: readRates_().map(r => ({ provider: r.provider, expressways: r.expressways, rate: r.rate, every: r.every, food: r.food, from: r.from })),
-    bookingPending: user.role === 'admin' ? readBookings_(bookingsSheet_(false)).filter(b => b.status === 'pending').length : 0,
   };
+  try {
+    let text = JSON.stringify(data);
+    if (text.length > 95000) text = Utilities.base64Encode(Utilities.gzip(Utilities.newBlob(text, 'application/json')).getBytes()); // เกินขีด 100 KB ของ CacheService
+    if (text.length <= 95000) cache.put(APPDATA_CACHE_KEY, text, APPDATA_CACHE_SECONDS);
+  } catch (err) {
+    console.error('appdata cache write failed', err);
+  }
+  return data;
+}
+
+function clearAppDataCache_() {
+  try { CacheService.getScriptCache().remove(APPDATA_CACHE_KEY); } catch (err) { console.error(err); }
 }
 
 /* ------------------------------------------------------------------ */
@@ -530,6 +564,7 @@ function recalcCosts_(onlyDates) {
     });
     result.months = writeMonthlySummary_(ctx);
     CacheService.getScriptCache().remove(DASH_CACHE_KEY);
+    clearAppDataCache_();
     SpreadsheetApp.flush();
     return result;
   });
@@ -589,6 +624,7 @@ function writeMonthlySummary_(ctx) {
 /** หลังบันทึกการใช้รถ — คิดค่าใช้จ่ายใหม่ ถ้าล้มเหลวไม่ให้กระทบการบันทึก */
 function afterLogSaved_(key, dates) {
   CacheService.getScriptCache().remove(DASH_CACHE_KEY);
+  clearAppDataCache_(); // ตาราง EXAT / BEM เปลี่ยน → รายการล่าสุด ตัวเลือก
   try {
     const only = { exat: [], bem: [] };
     only[key] = dates;
@@ -2321,6 +2357,7 @@ function addLocation(token, form) {
     });
 
     audit_(user.username, 'add_location', sh.getName(), target, { code: form.code, area: form.area });
+    clearAppDataCache_();
     SpreadsheetApp.flush();
     return { row: target, locations: readLocations_() };
   });

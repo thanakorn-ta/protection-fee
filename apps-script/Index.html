@@ -166,6 +166,11 @@ td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); bord
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 12px; background: var(--ink); color: #fff; font-size: 15px; box-shadow: 0 8px 24px rgba(0,0,0,.2); z-index: 10; }
 #toast.err { background: var(--danger); }
 #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(245,246,242,.7); z-index: 5; font-weight: 600; color: var(--green); }
+/* แถบบาง ๆ ด้านบน: กำลังอัปเดตข้อมูลจากเซิร์ฟเวอร์ (หน้ายังใช้งานได้ระหว่างนี้) */
+#sync-bar { position: fixed; top: 0; left: 0; right: 0; height: 3px; z-index: 60; pointer-events: none; opacity: 0; transition: opacity .2s; background: linear-gradient(90deg, transparent 0, var(--amber) 50%, transparent 100%) 0 0 / 40% 100% no-repeat; }
+html.syncing #sync-bar { opacity: 1; animation: sync-run 1.1s linear infinite; }
+@keyframes sync-run { from { background-position: -40% 0; } to { background-position: 140% 0; } }
+@media (prefers-reduced-motion: reduce) { html.syncing #sync-bar { animation: none; background: var(--amber); opacity: .6; } }
 
 /* ---------- ฟอร์มบันทึกแบบเป็นขั้น ---------- */
 .step { display: flex; flex-direction: column; gap: 12px; }
@@ -1200,6 +1205,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
 <div id="toast" role="status" aria-live="polite" hidden></div>
 <div id="loading" hidden>กำลังโหลด…</div>
+<div id="sync-bar" aria-hidden="true"></div>
 
 <script>
 (function () {
@@ -1246,21 +1252,69 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   function loadToken() { try { return sessionStorage.getItem('pf_token'); } catch (e) { return null; } }
 
   // ---------- เรียกฝั่ง Apps Script ----------
-  function api(fn) {
-    var args = Array.prototype.slice.call(arguments, 1);
+  function api(fn) { return callApi(fn, Array.prototype.slice.call(arguments, 1), false); }
+  /** เรียกเบื้องหลัง (โหลดหน้าอื่นไว้ล่วงหน้า) — ไม่แสดงแถบกำลังอัปเดต */
+  function apiBg(fn) { return callApi(fn, Array.prototype.slice.call(arguments, 1), true); }
+  var inflight = 0;
+  function syncBar(d) {
+    inflight = Math.max(0, inflight + d);
+    document.documentElement.classList.toggle('syncing', inflight > 0);
+  }
+  function callApi(fn, args, quiet) {
+    if (!quiet) syncBar(1);
     return new Promise(function (resolve, reject) {
       var runner = google.script.run
         .withSuccessHandler(resolve)
         .withFailureHandler(function (err) {
-          if (String(err && err.message).indexOf('SESSION_EXPIRED') >= 0) {
+          if (String(err && err.message).indexOf('SESSION_EXPIRED') >= 0 && S.token) { // หลายคำสั่งหมดเวลาพร้อมกัน → แจ้งครั้งเดียว
             endSession();
             toast(errText(err), true);
           }
           reject(err);
         });
       runner[fn].apply(runner, args);
-    });
+    }).finally(function () { if (!quiet) syncBar(-1); });
   }
+
+  // ---------- ข้อมูลล่าสุดในเครื่อง ----------
+  // Apps Script ตอบแต่ละคำสั่งราว 2 วินาที — เปิดหน้าแล้วแสดงข้อมูลชุดล่าสุดทันที แล้วค่อยอัปเดตจากเซิร์ฟเวอร์
+  // เก็บแยกตามผู้ใช้ · ออกจากระบบ หรือมีคนอื่นเข้าสู่ระบบในเครื่องเดียวกัน = ล้างทิ้งทั้งหมด
+  var CACHE_PREFIX = 'pf_c_';
+  function cacheUser() { try { return localStorage.getItem('pf_cacheUser') || ''; } catch (e) { return ''; } }
+  function cacheGet(k) {
+    if (!cacheUser()) return null;
+    try {
+      var v = JSON.parse(localStorage.getItem(CACHE_PREFIX + cacheUser() + ':' + k) || 'null');
+      return v && v.v !== undefined ? v : null;
+    } catch (e) { return null; }
+  }
+  function cacheSet(k, v) {
+    if (!cacheUser()) return;
+    var text = JSON.stringify({ at: Date.now(), v: v });
+    try { localStorage.setItem(CACHE_PREFIX + cacheUser() + ':' + k, text); } catch (e) {
+      cachePrune(); // เต็ม — ล้างตารางจองเดือนอื่นแล้วลองอีกครั้ง
+      try { localStorage.setItem(CACHE_PREFIX + cacheUser() + ':' + k, text); } catch (e2) { /* ไม่เป็นไร */ }
+    }
+  }
+  function cacheKeys() { try { return Object.keys(localStorage).filter(function (k) { return k.indexOf(CACHE_PREFIX) === 0; }); } catch (e) { return []; } }
+  function cachePrune() { cacheKeys().filter(function (k) { return k.indexOf(':cal:') > 0; }).forEach(function (k) { try { localStorage.removeItem(k); } catch (e) { /* ไม่เป็นไร */ } }); }
+  function cacheClear() {
+    cacheKeys().forEach(function (k) { try { localStorage.removeItem(k); } catch (e) { /* ไม่เป็นไร */ } });
+    try { localStorage.removeItem('pf_cacheUser'); } catch (e) { /* ไม่เป็นไร */ }
+  }
+  function cacheOwner(username) {
+    if (username && username !== cacheUser()) cacheClear();
+    try { localStorage.setItem('pf_cacheUser', username || ''); } catch (e) { /* ไม่เป็นไร */ }
+  }
+  // ฟอร์มตั้งค่าที่กำลังแก้อยู่ — ข้อมูลที่อัปเดตตามหลังจะไม่เขียนทับสิ่งที่พิมพ์ไว้
+  ['#form-accrue', '#form-clear', '#form-notify'].forEach(function (sel) {
+    var f = $(sel);
+    var mark = function () { f.dataset.dirty = '1'; };
+    f.addEventListener('input', mark);
+    f.addEventListener('change', mark);
+    f.addEventListener('submit', function () { f.dataset.dirty = ''; });
+  });
+  function editingForm(f) { return f.dataset.dirty === '1'; }
 
   var toastTimer;
   function toast(msg, isErr) {
@@ -1325,6 +1379,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       }
       S.token = res.token;
       saveToken(res.token);
+      cacheOwner(res.user && res.user.username); // คนอื่นเข้าสู่ระบบในเครื่องนี้ → ล้างข้อมูลของคนก่อน
       form.reset();
       $('#reset-offer').hidden = true;
       await startApp();
@@ -1494,8 +1549,14 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     S.token = null;
     S.user = null;
     S.dash = null;
-    if (S.cal) { S.cal.bookings = []; S.cal.pending = []; }
+    if (S.cal) { S.cal.bookings = []; S.cal.pending = []; S.cal.key = ''; S.cal.fetched = {}; }
     S.cancelled = null;
+    S.prefetched = false;
+    S.usersLoaded = false;
+    S.users = [];
+    if (S.ac) S.ac.data = null;
+    if (S.cl) S.cl.data = null;
+    ['#form-accrue', '#form-clear', '#form-notify'].forEach(function (sel) { $(sel).dataset.dirty = ''; });
     S.files = {};
     $('#bk-ask').hidden = true;
     $('#bk-modal').hidden = true;
@@ -1509,31 +1570,76 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   $('#btn-logout').addEventListener('click', function () {
     var t = S.token;
     endSession();
+    cacheClear(); // ออกจากระบบ = ไม่เหลือข้อมูลในเครื่อง
     if (t) google.script.run.logout(t);
   });
 
   // ================= App =================
-  async function startApp() {
-    $('#loading').hidden = false;
-    try {
-      S.data = await api('getAppData', S.token);
-      S.user = S.data.user;
-      $('#auth').hidden = true;
-      $('#app').hidden = false;
-      var isAdmin = S.user.role === 'admin';
-      $$('[data-admin]').forEach(function (el) { el.hidden = !isAdmin; });
-      $('#me-name').textContent = S.user.fullName || S.user.username;
-      $('#me-role').textContent = isAdmin ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน';
-      $('#account-info').textContent = S.user.username + ' · ' + (isAdmin ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน');
-      renderOptions();
-      setBookingBadge(S.data.bookingPending || 0);
-      setMode(S.mode);
-      renderLocations();
+  /** ตั้งหน้าจอจากข้อมูลผู้ใช้ — first: เปิดหน้าแรก · ไม่ใช่: อัปเดตเงียบ ๆ ไม่เปลี่ยนหน้าที่เปิดอยู่ */
+  function applyAppData(data, first) {
+    S.data = data;
+    S.user = data.user;
+    $('#auth').hidden = true;
+    $('#app').hidden = false;
+    var isAdmin = S.user.role === 'admin';
+    $$('[data-admin]').forEach(function (el) { el.hidden = !isAdmin; });
+    $('#me-name').textContent = S.user.fullName || S.user.username;
+    $('#me-role').textContent = isAdmin ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน';
+    $('#account-info').textContent = S.user.username + ' · ' + (isAdmin ? 'ผู้ดูแลระบบ' : 'ผู้ใช้งาน');
+    renderOptions();
+    setBookingBadge(S.data.bookingPending || 0);
+    setMode(S.mode);
+    renderLocations();
+    if (first) {
       resetEntry();
       if (!openDeepLink()) showPage('schedule');
+    } else if (ADMIN_PAGES.indexOf(S.page) >= 0 && !isAdmin) {
+      showPage('schedule'); // สิทธิ์ถูกเปลี่ยน
+    }
+  }
+  async function startApp() {
+    // มีข้อมูลชุดล่าสุดในเครื่อง → เปิดแอปทันที (ตารางจองโหลดพร้อมกัน) แล้วอัปเดตจากเซิร์ฟเวอร์ตามหลัง
+    var cached = cacheGet('app');
+    if (cached) applyAppData(cached.v, true);
+    else $('#loading').hidden = false;
+    try {
+      var fresh = await api('getAppData', S.token);
+      cacheOwner(fresh.user.username);
+      cacheSet('app', fresh);
+      applyAppData(fresh, !cached);
+      setTimeout(prefetchPages, 1500);
+    } catch (err) {
+      if (!cached || !S.token) throw err; // ไม่มีข้อมูลในเครื่อง หรือหมดเวลาเข้าสู่ระบบ
+      toast('เชื่อมต่อเซิร์ฟเวอร์ไม่ได้ — แสดงข้อมูลล่าสุดในเครื่อง', true);
     } finally {
       $('#loading').hidden = true;
     }
+  }
+
+  // หลังเข้าสู่ระบบ: โหลดหน้าอื่นไว้ล่วงหน้าทีละหน้า (เบื้องหลัง) — กดเปลี่ยนหน้าแล้วขึ้นทันที
+  function prefetchPages() {
+    if (!S.token || S.prefetched) return;
+    S.prefetched = true;
+    var t = new Date(), y = t.getFullYear(), m = t.getMonth() + 1;
+    var jobs = [function () { return apiBg('listCancelled', S.token).then(function (v) { cacheSet('cancelled', v); if (!S.cancelled) S.cancelled = v; }); }];
+    if (S.user.role === 'admin') {
+      jobs.push(
+        function () {
+          return apiBg('getDashboard', S.token, false).then(function (v) {
+            cacheSet('dash', v);
+            if (!S.dash) { S.dash = v; if (!S.dashYear || v.years.indexOf(S.dashYear) < 0) S.dashYear = v.years[0]; }
+          });
+        },
+        function () { return apiBg('listUsers', S.token).then(function (v) { cacheSet('users', v); }); },
+        function () { return apiBg('getNotifySettings', S.token).then(function (v) { cacheSet('notify', v); }); },
+        function () { return apiBg('getAccrue', S.token, y, m).then(function (v) { cacheSet('ac:' + y + '-' + m, v); }); },
+        function () { return apiBg('getClear', S.token, 0, 0).then(function (v) { cacheSet('cl:0-0', v); }); }
+      );
+    }
+    (function next() {
+      if (!S.token || !jobs.length) return;
+      jobs.shift()().catch(function () { /* โหลดตอนเปิดหน้าแทน */ }).then(function () { setTimeout(next, 200); });
+    })();
   }
 
   // หน้าที่ผู้ใช้งาน (user) เปิดไม่ได้ — เซิร์ฟเวอร์ก็ปฏิเสธคำสั่งของหน้าเหล่านี้เช่นกัน
@@ -1999,12 +2105,20 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
   async function loadDash(fresh) {
     if (S.dash && !fresh) return renderDash();
-    $('#dash-loading').hidden = false;
-    $('#dash-body').hidden = true;
-    $('#dash-empty').hidden = true;
+    var c = !S.dash && cacheGet('dash'); // ชุดล่าสุดในเครื่อง → แสดงก่อน แล้วอัปเดต
+    if (c) {
+      S.dash = c.v;
+      if (!S.dashYear || S.dash.years.indexOf(S.dashYear) < 0) S.dashYear = S.dash.years[0];
+      renderDash();
+    } else if (!S.dash) {
+      $('#dash-loading').hidden = false;
+      $('#dash-body').hidden = true;
+      $('#dash-empty').hidden = true;
+    }
     $('#dash-refresh').disabled = true;
     try {
       S.dash = await api('getDashboard', S.token, !!fresh);
+      cacheSet('dash', S.dash);
       if (!S.dashYear || S.dash.years.indexOf(S.dashYear) < 0) S.dashYear = S.dash.years[0];
       renderDash();
     } catch (err) {
@@ -2311,31 +2425,71 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     }
   });
 
-  async function loadSchedule() {
-    var first = new Date(S.cal.y, S.cal.m, 1);
-    var start = new Date(S.cal.y, S.cal.m, 1 - first.getDay());
+  function calRange(y, m) {
+    var first = new Date(y, m, 1);
+    var start = new Date(y, m, 1 - first.getDay());
     var end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 41);
-    S.cal.range = [isoOf(start), isoOf(end)];
-    renderSchedule(); // แสดงกรอบเดือนก่อน แล้วเติมรายการเมื่อโหลดเสร็จ
-    $('#cal-loading').hidden = false;
+    return [isoOf(start), isoOf(end)];
+  }
+  function calKey(range) { return 'cal:' + range[0] + '_' + range[1]; }
+  function applyCal(res) {
+    S.cal.bookings = res.bookings || [];
+    S.cal.pending = res.pending || [];
+    S.cal.holidays = res.holidays || [];
+    addHolidays(S.cal.holidays);
+    setBookingBadge(S.cal.pending.length);
+  }
+  /** เก็บตารางจองที่แสดงอยู่ลงเครื่อง — หลังจอง / อนุมัติ / ยกเลิก */
+  function saveCal() {
+    if (S.cal.range) cacheSet(calKey(S.cal.range), { bookings: S.cal.bookings, pending: S.cal.pending, holidays: S.cal.holidays || [] });
+  }
+  function openFromLink(final) { // เปิดจากลิงก์ในอีเมลแจ้งเตือน
+    if (!S.cal.open) return;
+    var id = S.cal.open;
+    if (findBooking(id)) { S.cal.open = null; openBooking(id); }
+    else if (final) { S.cal.open = null; toast('ไม่พบการจองนี้ในตาราง — อาจถูกยกเลิกแล้ว ดูที่หน้า “รายการยกเลิก”', true); }
+  }
+  /** แสดงเดือนนั้นทันทีจากข้อมูลในเครื่อง แล้วอัปเดตจากเซิร์ฟเวอร์ (โหลดซ้ำภายใน 20 วินาทีข้ามได้ ยกเว้น force) */
+  async function loadSchedule(force) {
+    S.cal.fetched = S.cal.fetched || {};
+    S.cal.range = calRange(S.cal.y, S.cal.m);
+    var key = calKey(S.cal.range);
+    var shown = S.cal.key === key;
+    if (!shown) {
+      var c = cacheGet(key);
+      if (c) applyCal(c.v);
+      else S.cal.bookings = []; // ไม่ให้รายการของเดือนก่อนค้างอยู่
+      shown = !!c;
+      S.cal.key = key;
+    }
+    renderSchedule();
+    openFromLink(false);
+    if (!force && Date.now() - (S.cal.fetched[key] || 0) < 20000) return;
+    $('#cal-loading').hidden = shown;
     try {
       var res = await api('listBookings', S.token, S.cal.range[0], S.cal.range[1]);
-      S.cal.bookings = res.bookings;
-      S.cal.pending = res.pending;
-      addHolidays(res.holidays);
-      setBookingBadge(res.pending.length);
+      if (S.cal.key !== key) return; // เปลี่ยนไปเดือนอื่นแล้ว
+      applyCal(res);
+      S.cal.fetched[key] = Date.now();
+      cacheSet(key, res);
       renderSchedule();
-      if (S.cal.open) { // เปิดจากลิงก์ในอีเมลแจ้งเตือน
-        var openId = S.cal.open;
-        S.cal.open = null;
-        if (findBooking(openId)) openBooking(openId);
-        else toast('ไม่พบการจองนี้ในตาราง — อาจถูกยกเลิกแล้ว ดูที่หน้า “รายการยกเลิก”', true);
-      }
+      openFromLink(true);
+      prefetchMonths();
     } catch (err) {
       toast(errText(err), true);
     } finally {
-      $('#cal-loading').hidden = true;
+      if (S.cal.key === key) $('#cal-loading').hidden = true;
     }
+  }
+  // เดือนก่อน / เดือนถัดไป โหลดไว้ล่วงหน้า — กด ‹ › แล้วขึ้นทันที
+  function prefetchMonths() {
+    var todo = [-1, 1].map(function (d) { var t = new Date(S.cal.y, S.cal.m + d, 1); return calRange(t.getFullYear(), t.getMonth()); })
+      .filter(function (r) { var c = cacheGet(calKey(r)); return !c || Date.now() - c.at > 120000; });
+    (function next() {
+      var r = todo.shift();
+      if (!r || !S.token) return;
+      apiBg('listBookings', S.token, r[0], r[1]).then(function (res) { cacheSet(calKey(r), res); }).catch(function () { /* ไม่เป็นไร */ }).then(next);
+    })();
   }
 
   function bookingCategory(b) { return b.jobCategory || jobCategoryOf(b.jobType || b.title); }
@@ -2441,6 +2595,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     S.cal.pending = (S.cal.pending || []).filter(function (x) { return x.id !== b.id; });
     if (b.status === 'pending' && S.user.role === 'admin') S.cal.pending.push(b);
     setBookingBadge(S.user.role === 'admin' ? S.cal.pending.length : 0);
+    saveCal();
   }
 
   // ปุ่มบนหน้าตาราง
@@ -2712,6 +2867,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       S.cal.bookings = S.cal.bookings.filter(function (x) { return x.id !== b.id; });
       S.cal.pending = (S.cal.pending || []).filter(function (x) { return x.id !== b.id; });
       setBookingBadge(S.user.role === 'admin' ? S.cal.pending.length : 0);
+      saveCal();
       S.cancelled = null;
       if (res.removedRows) S.dash = null;
       closeModal();
@@ -2745,9 +2901,12 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   S.files = {};
   async function loadCancelled(force) {
     if (S.cancelled && !force) return renderCancelled();
-    $('#cx-loading').hidden = false;
+    var c = !S.cancelled && cacheGet('cancelled');
+    if (c) { S.cancelled = c.v; renderCancelled(); }
+    $('#cx-loading').hidden = !!S.cancelled;
     try {
       S.cancelled = await api('listCancelled', S.token);
+      cacheSet('cancelled', S.cancelled);
       renderCancelled();
     } catch (err) {
       toast(errText(err), true);
@@ -2841,9 +3000,14 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     var t = new Date();
     S.ac.y = y || S.ac.y || t.getFullYear();
     S.ac.m = m || S.ac.m || t.getMonth() + 1;
-    $('#ac-loading').hidden = false;
+    var key = 'ac:' + S.ac.y + '-' + S.ac.m, c = cacheGet(key);
+    if (c) { S.ac.data = c.v; renderAccrue(); } // แสดงชุดล่าสุดก่อน — ตัวเลขจริงอัปเดตตามหลัง
+    $('#ac-loading').hidden = !!c;
     try {
-      S.ac.data = await api('getAccrue', S.token, S.ac.y, S.ac.m);
+      var d = await api('getAccrue', S.token, S.ac.y, S.ac.m);
+      cacheSet(key, d);
+      if (S.ac.y + '-' + S.ac.m !== key.slice(3)) return; // เปลี่ยนเดือนไปแล้ว
+      S.ac.data = d;
       renderAccrue();
     } catch (err) {
       toast(errText(err), true);
@@ -2922,9 +3086,11 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       : 'ปิดการส่งอัตโนมัติอยู่ — ส่งเองด้วยปุ่ม “ส่งอีเมลตอนนี้”';
 
     var f = $('#form-accrue');
-    ['to', 'cc', 'greeting', 'ccLabel', 'signOff', 'checker', 'timeIn', 'timeOut', 'sendDays', 'sendHour'].forEach(function (k) { f[k].value = st[k] === undefined ? '' : st[k]; });
-    f.cc.value = String(st.cc || '').split(/\s*,\s*/).filter(Boolean).join('\n');
-    f.autoSend.checked = !!st.autoSend;
+    if (!editingForm(f)) {
+      ['to', 'cc', 'greeting', 'ccLabel', 'signOff', 'checker', 'timeIn', 'timeOut', 'sendDays', 'sendHour'].forEach(function (k) { f[k].value = st[k] === undefined ? '' : st[k]; });
+      f.cc.value = String(st.cc || '').split(/\s*,\s*/).filter(Boolean).join('\n');
+      f.autoSend.checked = !!st.autoSend;
+    }
 
     $('#ac-log').innerHTML =
       '<thead><tr><th>วันที่ส่ง</th><th>เดือน</th><th>ส่งโดย</th><th>ถึง / สำเนา</th><th class="num">EXAT</th><th class="num">BEM</th><th>สถานะ</th></tr></thead><tbody>' +
@@ -3006,9 +3172,15 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   S.cl = { y: 0, m: 0, data: null };
   async function loadClear(y, m) {
     if (!S.user || S.user.role !== 'admin') return;
-    $('#cl-loading').hidden = false;
+    var yy = y || S.cl.y || 0, mm = m || S.cl.m || 0, key = 'cl:' + yy + '-' + mm, c = cacheGet(key);
+    if (c) { S.cl.data = c.v; S.cl.y = c.v.y; S.cl.m = c.v.m; renderClear(); } // แสดงชุดล่าสุดก่อน
+    $('#cl-loading').hidden = !!c;
+    S.cl.want = key;
     try {
-      S.cl.data = await api('getClear', S.token, y || S.cl.y || 0, m || S.cl.m || 0);
+      var d = await api('getClear', S.token, yy, mm);
+      cacheSet(key, d);
+      if (S.cl.want !== key) return; // เปลี่ยนเดือนไปแล้ว
+      S.cl.data = d;
       S.cl.y = S.cl.data.y;
       S.cl.m = S.cl.data.m;
       renderClear();
@@ -3079,8 +3251,10 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       '<div class="att">' + (d.items.length ? '<span>📎 ' + esc(d.name) + '</span>' : '<span>ไม่มีไฟล์แนบ — เดือนนี้ไม่มีรายการ EXAT</span>') + '</div>';
 
     var f = $('#form-clear');
-    f.clearAuto.checked = !!st.clearAuto;
-    f.clearDay.value = st.clearDay || 25;
+    if (!editingForm(f)) {
+      f.clearAuto.checked = !!st.clearAuto;
+      f.clearDay.value = st.clearDay || 25;
+    }
 
     $('#cl-log').innerHTML =
       '<thead><tr><th>วันที่ส่ง</th><th>เดือน</th><th>ส่งโดย</th><th>ถึง / สำเนา</th><th class="num">ยอดสั่งจ่าย</th><th>สถานะ</th></tr></thead><tbody>' +
@@ -3308,7 +3482,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       if (!editing) { S.cal.y = d.getFullYear(); S.cal.m = d.getMonth(); }
       storeBooking(res);
       closeModal(); // บันทึกสำเร็จ = ตกลง ปิดหน้าจอง
-      if (!editing || !S.cal.range || res.date < S.cal.range[0] || res.date > S.cal.range[1]) await loadSchedule();
+      if (!editing || !S.cal.range || res.date < S.cal.range[0] || res.date > S.cal.range[1]) await loadSchedule(true);
       else renderSchedule();
       toast((editing ? 'บันทึกการแก้ไขแล้ว' : 'ส่งคำขอจองแล้ว — รอผู้ดูแลระบบอนุมัติ') + notifyText(res.notify, 'ผู้ดูแลระบบ'));
     });
@@ -3365,8 +3539,12 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
   async function loadUsers() {
     loadNotify();
+    var c = !S.usersLoaded && cacheGet('users');
+    if (c) { S.users = c.v; renderUsers(); }
     try {
       S.users = await api('listUsers', S.token);
+      S.usersLoaded = true;
+      cacheSet('users', S.users);
       renderUsers();
     } catch (err) {
       toast(errText(err), true);
@@ -3375,16 +3553,22 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
   // ---------- อีเมลแจ้งเตือนการจอง (ผู้ดูแลระบบ) ----------
   async function loadNotify() {
+    var c = cacheGet('notify');
+    if (c) renderNotify(c.v);
     try {
-      renderNotify(await api('getNotifySettings', S.token));
+      var n = await api('getNotifySettings', S.token);
+      cacheSet('notify', n);
+      renderNotify(n);
     } catch (err) {
       $('#nt-summary').textContent = errText(err);
     }
   }
   function renderNotify(n) {
     var f = $('#form-notify'), s = n.settings;
-    f.adminTo.value = s.adminTo || '';
-    ['onBooking', 'onCancel', 'userOnApprove', 'userOnReject'].forEach(function (k) { f[k].checked = !!s[k]; });
+    if (!editingForm(f)) {
+      f.adminTo.value = s.adminTo || '';
+      ['onBooking', 'onCancel', 'userOnApprove', 'userOnReject'].forEach(function (k) { f[k].checked = !!s[k]; });
+    }
     $('#nt-summary').innerHTML = 'ตอนนี้ส่งถึง: <b>' + esc(n.recipients.join(', ') || 'ยังไม่มี — ผู้ดูแลระบบยังไม่มีอีเมลในระบบ') + '</b>' +
       (n.usingAdmins ? ' (อีเมลของผู้ดูแลระบบทุกคน)' : '') +
       (n.quota !== null && n.quota !== undefined ? ' · โควตาอีเมลวันนี้เหลือ ' + fmt(n.quota) + ' ฉบับ' : '');
