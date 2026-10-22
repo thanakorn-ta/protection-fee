@@ -1126,9 +1126,15 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         <h3><span class="fnum">1</span>วัน เวลา และจุดนัดพบ</h3>
         <div class="grid2">
           <label class="field"><span>วันที่ใช้รถคุ้มครอง <span class="req">*</span></span><input type="date" name="date" required><small class="hol-note" id="bk-date-note" hidden></small></label>
-          <label class="field">เวลา<input name="time" placeholder="เช่น 22.00 น."></label>
+          <div class="field"><span>เวลา</span>
+            <select data-pick="time" aria-label="เลือกเวลา"></select>
+            <input name="time" placeholder="พิมพ์เวลา เช่น 21.30 น." aria-label="เวลา (กรอกเอง)" hidden>
+          </div>
           <label class="field">สายทาง<input name="expressway" list="dl-expressways" placeholder="เช่น ศรีรัช"></label>
-          <label class="field">จุดนัดพบ<input name="meetingPoint" placeholder="เช่น ด่านศรีนครินทร์"></label>
+          <div class="field"><span>จุดนัดพบ</span>
+            <select data-pick="meetingPoint" aria-label="เลือกจุดนัดพบ"></select>
+            <input name="meetingPoint" placeholder="พิมพ์จุดนัดพบ" aria-label="จุดนัดพบ (กรอกเอง)" hidden>
+          </div>
         </div>
       </section>
 
@@ -3164,6 +3170,32 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     });
   });
 
+  // เวลา / จุดนัดพบ: เลือกจากรายการ หรือ “อื่น ๆ (กรอกเอง)” แล้วพิมพ์ — ค่าที่บันทึกอยู่ในช่อง input เดิม
+  var PICKS = {
+    time: ['22.00 น.', '23.00 น.', '23.30 น.', '00.00 น.', '00.30 น.', '01.00 น.'],
+    meetingPoint: ['ด่านฯอโศก1', 'ด่านฯประชาชื่นขาออก', 'ด่านฯประชาชื่นขาเข้า', 'ด่านฯศรีนครินทร์', 'ด่านฯพระราม9(KPN)', 'ด่านฯประชาอุทิศ', 'ด่านฯดินแดง'],
+  };
+  var PICK_OWN = '__own';
+  $$('#bk-form [data-pick]').forEach(function (sel) {
+    var name = sel.dataset.pick, input = $('#bk-form')[name];
+    sel.innerHTML = '<option value="">— ' + (name === 'time' ? 'เลือกเวลา' : 'เลือกจุดนัดพบ') + ' —</option>' +
+      PICKS[name].map(function (v) { return '<option value="' + esc(v) + '">' + esc(v) + '</option>'; }).join('') +
+      '<option value="' + PICK_OWN + '">อื่น ๆ (กรอกเอง)</option>';
+    sel.addEventListener('change', function () {
+      var own = sel.value === PICK_OWN;
+      input.hidden = !own;
+      input.value = own ? '' : sel.value;
+      if (own) input.focus();
+    });
+  });
+  /** ให้รายการตรงกับค่าในช่อง: ค่าที่อยู่ในรายการ → เลือกไว้ · ค่าอื่น → “กรอกเอง” พร้อมแสดงช่อง */
+  function syncPick(form, name) {
+    var sel = form.querySelector('[data-pick="' + name + '"]'), input = form[name];
+    var v = input.value.trim(), known = PICKS[name].indexOf(v) >= 0;
+    sel.value = !v ? '' : known ? v : PICK_OWN;
+    input.hidden = !v || known;
+  }
+
   function openBookingForm(b, dateIso) {
     var form = $('#bk-form');
     form.reset();
@@ -3178,6 +3210,8 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     setJob(form, v.jobType || '', b && b.jobCategory);
     if (!form.provider.value) form.provider.value = 'EXAT';
     setSeg(form, 'provider');
+    syncPick(form, 'time');
+    syncPick(form, 'meetingPoint');
     $('#bk-modal-title').textContent = b ? 'แก้ไขการจอง' : 'จองรถคุ้มครอง';
     $('#bk-modal-status').innerHTML = b ? '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status]) + '</span>' : '';
     $('#bk-view').hidden = true;
@@ -3197,7 +3231,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     if (loc) {
       v = loc.area;
       if (!form.expressway.value && loc.expressway) form.expressway.value = loc.expressway;
-      if (!form.meetingPoint.value && loc.meetingPoint) form.meetingPoint.value = loc.meetingPoint;
+      if (!form.meetingPoint.value && loc.meetingPoint) { form.meetingPoint.value = loc.meetingPoint; syncPick(form, 'meetingPoint'); }
     }
     var cur = lines(form.places.value);
     if (cur.indexOf(v) < 0) cur.push(v);
