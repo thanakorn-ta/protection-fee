@@ -14,3 +14,10 @@
   [headers.values]
     Content-Type = "application/manifest+json"
     Cache-Control = "public, max-age=3600"
+
+# service worker ต้องไม่ค้างในแคช — แก้ sw.js แล้วเบราว์เซอร์ต้องเห็นทันที
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Content-Type = "text/javascript; charset=utf-8"
+    Cache-Control = "no-cache, no-store, must-revalidate"

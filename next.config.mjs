@@ -7,6 +7,10 @@ const nextConfig = {
   typescript: { ignoreBuildErrors: true },
   async headers() {
     return [{
+      // service worker ต้องไม่ค้างในแคช — แก้ sw.js แล้วเบราว์เซอร์ต้องเห็นทันที
+      source: '/sw.js',
+      headers: [{ key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' }],
+    }, {
       source: '/:path*',
       headers: [
         { key: 'X-Frame-Options', value: 'DENY' },

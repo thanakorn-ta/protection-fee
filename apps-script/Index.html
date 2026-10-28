@@ -409,6 +409,14 @@ input.upper::placeholder { text-transform: none; }
 .ask-card p { color: var(--muted); margin: 0 0 8px; }
 .ask-card .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .ask-card .actions .btn { flex: 1; }
+/* ติดตั้งเป็นแอป (เฉพาะเว็บบน Vercel / Netlify — หน้า Apps Script ติดตั้งไม่ได้) */
+#install-dlg { z-index: 11; }
+.install-steps { margin: 0 0 10px; padding-left: 22px; line-height: 1.7; color: var(--ink-2); }
+.install-steps li + li { margin-top: 4px; }
+.install-steps b { color: var(--ink); font-weight: 600; }
+.install-auth { margin-top: 4px; }
+.install-card { max-width: 440px; display: flex; flex-direction: column; gap: 10px; }
+.install-card p { color: var(--muted); margin: 0; }
 .kv { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px 14px; margin: 0; font-size: 15px; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -593,6 +601,10 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#8A6200" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex:none;margin-top:1px"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16.5v.01"/></svg>
         <div>บัญชีใหม่ (ทั้งผู้ใช้งานและผู้ดูแลระบบ) ต้องรอผู้ดูแลระบบยืนยันก่อนเข้าใช้งาน ลืมรหัสผ่านให้ติดต่อผู้ดูแลระบบเพื่อรีเซ็ต</div>
       </div>
+      <button type="button" class="btn block install-auth" data-install hidden>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
+        ติดตั้งแอปบนเครื่องนี้
+      </button>
     </div>
   </div>
 </div>
@@ -617,6 +629,9 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       </nav>
       <div class="me">
         <div class="me-name"><span id="me-name"></span><span id="me-role"></span></div>
+        <button type="button" class="icon-btn" data-install data-install-quick hidden aria-label="ติดตั้งแอป" title="ติดตั้งแอป">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
+        </button>
         <button type="button" class="icon-btn" id="btn-logout" aria-label="ออกจากระบบ" title="ออกจากระบบ">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3"/><path d="M10 17l-5-5 5-5"/><path d="M5 12h11"/></svg>
         </button>
@@ -1086,6 +1101,11 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       <div class="error" data-error hidden></div>
       <button type="submit" class="btn primary block">เปลี่ยนรหัสผ่าน</button>
     </form>
+    <div class="card install-card" id="install-card" hidden>
+      <h2>ติดตั้งเป็นแอป</h2>
+      <p id="install-card-text"></p>
+      <button type="button" class="btn primary block" data-install>ติดตั้งแอปบนเครื่องนี้</button>
+    </div>
   </main>
 </div>
 
@@ -1193,6 +1213,18 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     <div class="actions">
       <button type="button" class="btn" id="confirm-no">ยกเลิก</button>
       <button type="button" class="btn primary" id="confirm-yes">ยืนยัน</button>
+    </div>
+  </div>
+</div>
+
+<!-- วิธีติดตั้งเป็นแอป (iPhone / iPad / Android / คอมพิวเตอร์) -->
+<div class="modal-ask" id="install-dlg" role="dialog" aria-modal="true" aria-labelledby="install-title" hidden>
+  <div class="ask-card">
+    <h3 id="install-title">ติดตั้งแอป Protection Fee</h3>
+    <p id="install-intro"></p>
+    <ol class="install-steps" id="install-steps"></ol>
+    <div class="actions">
+      <button type="button" class="btn primary" id="install-close">เข้าใจแล้ว</button>
     </div>
   </div>
 </div>
@@ -1573,6 +1605,79 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     cacheClear(); // ออกจากระบบ = ไม่เหลือข้อมูลในเครื่อง
     if (t) google.script.run.logout(t);
   });
+
+  // ================= ติดตั้งเป็นแอป (PWA) =================
+  // window.__pwa มีเฉพาะเว็บบน Vercel / Netlify (ใส่ใน app/legacy/route.ts) — หน้า Apps Script ไม่แสดงปุ่มติดตั้ง
+  // Android / Chrome / Edge: เปิดหน้าต่างติดตั้งของเบราว์เซอร์ · iPhone / iPad / Safari บน Mac: บอกขั้นตอนเพิ่มลงหน้าจอ
+  var PWA = window.__pwa || null;
+  var INSTALL_STEPS = {
+    ios: ['เปิดเว็บนี้ด้วย <b>Safari</b>', 'กดปุ่ม <b>แชร์</b> (สี่เหลี่ยมมีลูกศรชี้ขึ้น) ที่แถบล่างหรือแถบบน', 'เลื่อนลงแล้วเลือก <b>“เพิ่มไปยังหน้าจอโฮม”</b> (Add to Home Screen)', 'กด <b>“เพิ่ม”</b> — ไอคอน Protection Fee จะอยู่บนหน้าจอโฮม'],
+    'ios-other': ['กดปุ่ม <b>แชร์</b> ของเบราว์เซอร์ (Chrome / Edge: ที่แถบที่อยู่เว็บ หรือเมนู ⋯)', 'เลือก <b>“เพิ่มไปยังหน้าจอโฮม”</b> (Add to Home Screen) แล้วกด <b>“เพิ่ม”</b>', 'ถ้าไม่มีเมนูนี้ ให้เปิดเว็บนี้ด้วย <b>Safari</b> แล้วทำตามขั้นตอนเดียวกัน'],
+    android: ['กดเมนู <b>⋮</b> มุมขวาบนของ Chrome', 'เลือก <b>“ติดตั้งแอป”</b> หรือ <b>“เพิ่มลงในหน้าจอหลัก”</b>', 'กด <b>“ติดตั้ง”</b> — ไอคอน Protection Fee จะอยู่บนหน้าจอหลักและในลิ้นชักแอป'],
+    samsung: ['กดเมนู <b>≡</b> ที่แถบล่างของ Samsung Internet', 'เลือก <b>“เพิ่มหน้าลงใน”</b> → <b>“หน้าจอหลัก”</b>', 'กด <b>“เพิ่ม”</b>'],
+    'android-firefox': ['กดเมนู <b>⋮</b> ของ Firefox', 'เลือก <b>“ติดตั้ง”</b> หรือ <b>“เพิ่มไปยังหน้าจอหลัก”</b>', 'ถ้าไม่มีเมนูนี้ ให้เปิดเว็บนี้ด้วย <b>Chrome</b>'],
+    'mac-safari': ['ที่เมนูด้านบน เลือก <b>ไฟล์ (File)</b> → <b>“เพิ่มไปยัง Dock”</b> (Add to Dock) — หรือกดปุ่ม <b>แชร์</b> → “เพิ่มไปยัง Dock”', 'กด <b>“เพิ่ม”</b> — เปิดแอปได้จาก Dock หรือ Launchpad', 'ต้องใช้ macOS Sonoma (14) ขึ้นไป ถ้าไม่มีเมนูนี้ ให้เปิดเว็บด้วย <b>Chrome</b> หรือ <b>Edge</b>'],
+    'desktop-firefox': ['Firefox บนคอมพิวเตอร์ยังติดตั้งเว็บเป็นแอปไม่ได้', 'เปิดเว็บนี้ด้วย <b>Chrome</b> หรือ <b>Edge</b> (Windows / Mac)', 'กดไอคอน <b>ติดตั้ง</b> ท้ายแถบที่อยู่เว็บ แล้วกด <b>“ติดตั้ง”</b>'],
+    desktop: ['กดไอคอน <b>ติดตั้ง</b> (จอมีลูกศรชี้ลง) ท้ายแถบที่อยู่เว็บ', 'หรือ Chrome: เมนู <b>⋮</b> → <b>“แคสต์ บันทึก และแชร์”</b> → <b>“ติดตั้งหน้าเว็บเป็นแอป”</b> · Edge: เมนู <b>⋯</b> → <b>“แอป”</b> → <b>“ติดตั้งไซต์นี้เป็นแอป”</b>', 'กด <b>“ติดตั้ง”</b> — เปิดแอปได้จากเมนู Start (Windows) หรือ Launchpad / Dock (Mac)'],
+  };
+  function isStandalone() {
+    return (window.matchMedia && (matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: window-controls-overlay)').matches)) || navigator.standalone === true;
+  }
+  function installPlatform() {
+    var ua = navigator.userAgent;
+    var ios = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+    if (ios) return /CriOS|FxiOS|EdgiOS|OPiOS/.test(ua) ? 'ios-other' : 'ios';
+    if (/Android/.test(ua)) return /SamsungBrowser/.test(ua) ? 'samsung' : /Firefox/.test(ua) ? 'android-firefox' : 'android';
+    if (/Firefox/.test(ua)) return 'desktop-firefox';
+    if (/Macintosh/.test(ua) && /Safari/.test(ua) && !/Chrome|Chromium|Edg|OPR/.test(ua)) return 'mac-safari';
+    return 'desktop';
+  }
+  /** ปุ่มในแถบบนและหน้าเข้าสู่ระบบ: แสดงเมื่อเบราว์เซอร์พร้อมติดตั้ง หรือเป็นเครื่องที่ต้องเพิ่มเอง (iPhone / iPad / Safari บน Mac) */
+  function refreshInstall() {
+    var can = !!PWA && !isStandalone() && !PWA.installed;
+    var p = installPlatform();
+    var quick = can && (!!PWA.prompt || p === 'ios' || p === 'ios-other' || p === 'mac-safari');
+    $$('[data-install]').forEach(function (b) {
+      b.hidden = !(b.hasAttribute('data-install-quick') || b.classList.contains('install-auth') ? quick : can);
+    });
+    var card = $('#install-card');
+    card.hidden = !PWA;
+    if (PWA) {
+      $('#install-card-text').textContent = isStandalone() || PWA.installed
+        ? 'เปิดเป็นแอปอยู่แล้ว — ครั้งต่อไปเปิดจากไอคอน Protection Fee บนหน้าจอได้เลย'
+        : 'เพิ่มไอคอน Protection Fee บนหน้าจอมือถือ (iPhone / Android) หรือคอมพิวเตอร์ (Windows / Mac) เปิดได้เหมือนแอปทั่วไป ไม่ต้องพิมพ์ที่อยู่เว็บ';
+    }
+  }
+  function showInstallSteps() {
+    var p = installPlatform();
+    $('#install-intro').textContent = PWA && PWA.prompt === null && (p === 'android' || p === 'desktop')
+      ? 'ถ้าติดตั้งไว้แล้ว เปิดจากไอคอน Protection Fee บนหน้าจอได้เลย ถ้ายังไม่ได้ติดตั้ง:'
+      : 'ทำตามขั้นตอนนี้บนเครื่องที่ใช้อยู่:';
+    $('#install-steps').innerHTML = INSTALL_STEPS[p].map(function (s) { return '<li>' + s + '</li>'; }).join('');
+    $('#install-dlg').hidden = false;
+    $('#install-close').focus();
+  }
+  async function installApp() {
+    if (PWA && PWA.prompt) {
+      var ev = PWA.prompt;
+      PWA.prompt = null; // ใช้ได้ครั้งเดียว
+      try {
+        ev.prompt();
+        var choice = await ev.userChoice;
+        if (choice && choice.outcome === 'accepted') toast('กำลังติดตั้งแอป Protection Fee');
+      } catch (err) { showInstallSteps(); }
+      refreshInstall();
+      return;
+    }
+    showInstallSteps();
+  }
+  $$('[data-install]').forEach(function (b) { b.addEventListener('click', installApp); });
+  $('#install-close').addEventListener('click', function () { $('#install-dlg').hidden = true; });
+  $('#install-dlg').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('#install-dlg').hidden) { e.preventDefault(); $('#install-dlg').hidden = true; } });
+  window.addEventListener('pwa-installable', refreshInstall);
+  window.addEventListener('pwa-installed', function () { refreshInstall(); toast('ติดตั้งแอปแล้ว — เปิดจากไอคอน Protection Fee บนหน้าจอได้เลย'); });
+  refreshInstall();
 
   // ================= App =================
   /** ตั้งหน้าจอจากข้อมูลผู้ใช้ — first: เปิดหน้าแรก · ไม่ใช่: อัปเดตเงียบ ๆ ไม่เปลี่ยนหน้าที่เปิดอยู่ */

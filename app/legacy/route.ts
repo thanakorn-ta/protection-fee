@@ -52,9 +52,20 @@ const SHIM = `<script>
 </script>`;
 
 /**
- * ติดตั้งเป็นแอปได้ (PWA) — "เพิ่มไปยังหน้าจอโฮม" บน iOS / Android และติดตั้งบน Chrome / Edge
- * ไม่มี service worker: ข้อมูลมาจากเซิร์ฟเวอร์ทุกครั้ง ไม่เสี่ยงแสดงข้อมูลเก่า
+ * ติดตั้งเป็นแอปได้ (PWA) — "เพิ่มไปยังหน้าจอโฮม" บน iOS / Android และติดตั้งบน Chrome / Edge (Windows / Mac)
+ * public/sw.js โหลดหน้าเว็บจากเซิร์ฟเวอร์ก่อนเสมอ เก็บสำเนาไว้เปิดตอนไม่มีเน็ตเท่านั้น (ข้อมูลจาก Apps Script ไม่ผ่าน sw)
+ * window.__pwa เก็บหน้าต่างติดตั้งของเบราว์เซอร์ไว้ให้ปุ่ม "ติดตั้งแอป" ใน Index.html — ต้องดักตั้งแต่ใน <head>
+ * เพราะ beforeinstallprompt อาจมาก่อนสคริปต์ท้ายหน้า
  */
+const PWA_SCRIPT = `<script>
+(function () {
+  var pwa = window.__pwa = { prompt: null, installed: false };
+  addEventListener('beforeinstallprompt', function (e) { e.preventDefault(); pwa.prompt = e; dispatchEvent(new Event('pwa-installable')); });
+  addEventListener('appinstalled', function () { pwa.prompt = null; pwa.installed = true; dispatchEvent(new Event('pwa-installed')); });
+  if ('serviceWorker' in navigator) addEventListener('load', function () { navigator.serviceWorker.register('/sw.js').catch(function () {}); });
+})();
+</script>`;
+
 const APP_HEAD = [
   '<link rel="manifest" href="/manifest.webmanifest">',
   '<link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32.png">',
@@ -67,7 +78,7 @@ const APP_HEAD = [
   '<meta name="application-name" content="Protection Fee">',
 ].join('\n');
 
-const HEAD = APP_HEAD + '\n' + SHIM;
+const HEAD = APP_HEAD + '\n' + PWA_SCRIPT + '\n' + SHIM;
 const PAGE = LEGACY_HTML.includes('<head>') ? LEGACY_HTML.replace('<head>', '<head>\n' + HEAD) : HEAD + LEGACY_HTML;
 
 export function GET() {
