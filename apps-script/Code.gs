@@ -60,6 +60,7 @@ const API_FUNCTIONS = {
   getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings, getClear, downloadClear, sendClearNow,
   listHolidays, saveHoliday, deleteHoliday,
   addLocation, listUsers, updateUser, reviewUser, resetPassword, getNotifySettings, saveNotifySettings,
+  getPushConfig, savePushSub, removePushSub, pushInbox,
 };
 
 function doPost(e) {
@@ -167,13 +168,15 @@ function changePassword(token, oldPassword, newPassword) {
 function getAppData(token) {
   const user = requireUser_(token);
   const shared = sharedAppData_();
+  const counts = pendingBadges_();
   return {
     user: publicUser_(user),
     locations: shared.locations,
     options: shared.options,
     recent: { exat: recentFor_(shared.recent.exat, user), bem: recentFor_(shared.recent.bem, user) },
     rates: shared.rates,
-    bookingPending: user.role === 'admin' ? readBookings_(bookingsSheet_(false)).filter(b => b.status === 'pending').length : 0,
+    bookingPending: user.role === 'admin' ? counts.all : 0,
+    appBadge: badgeFor_(user, counts), // ตัวเลขบนไอคอนแอป
   };
 }
 
@@ -959,7 +962,10 @@ function saveBooking(token, form) {
     return b;
   });
   const out = bookingOut_(saved, user);
-  if (notice) out.notify = notifyAdmins_(notice, saved, user.username);
+  if (notice) {
+    out.notify = notifyAdmins_(notice, saved, user.username);
+    out.push = pushAdmins_(notice, saved, user.username);
+  }
   return out;
 }
 
@@ -985,6 +991,7 @@ function reviewBooking(token, id, decision, note) {
   const out = decision === 'approved' && !reviewed.loggedRows ? logBookingSafe_(reviewed, user) : bookingOut_(reviewed, user);
   // แจ้งผู้จองทางอีเมล (อนุมัติ / ไม่อนุมัติ) — ส่งไม่สำเร็จไม่กระทบผลการพิจารณา
   out.notify = notifyBooker_(decision, Object.assign({}, reviewed, { loggedRows: out.loggedRows || reviewed.loggedRows }), user.username);
+  out.push = pushBooker_(decision, reviewed, user.username);
   return out;
 }
 
@@ -1263,7 +1270,8 @@ function cancelBooking(token, id, reason, fileIds) {
     console.error('appendCancelLog_ failed', err);
   }
   audit_(user.username, 'cancel_booking', BOOKING_SHEET, b.row, { id: b.id, prev: b.prevStatus, files: files.length, removed: b.removedRows, skipped: rem.skipped });
-  return Object.assign(bookingOut_(b, user), { removeWarnings: rem.skipped, notify: notifyAdmins_('cancelled', b, user.username) });
+  return Object.assign(bookingOut_(b, user), { removeWarnings: rem.skipped, notify: notifyAdmins_('cancelled', b, user.username),
+    push: pushAdmins_('cancelled', b, user.username) });
 }
 
 /** รายการที่ยกเลิกแล้วทั้งหมด (ล่าสุดก่อน) — แสดงในหน้า "รายการยกเลิก" แยกจากตารางจอง */
@@ -1435,6 +1443,339 @@ function saveNotifySettings(token, form) {
   PropertiesService.getScriptProperties().setProperty(NOTIFY_PROP, JSON.stringify(s));
   audit_(user.username, 'notify_settings', '', '', s);
   return getNotifySettings(token);
+}
+
+/* ------------------------------------------------------------------ */
+/* แจ้งเตือนบนมือถือ / คอมพิวเตอร์ (Web Push) + ตัวเลขบนไอคอนแอป                     */
+/* ------------------------------------------------------------------ */
+// เครื่องที่ติดตั้งแอปแล้วกด "เปิดการแจ้งเตือน" จะได้แจ้งเตือนพร้อมตัวเลขบนไอคอน:
+//   ผู้ดูแลระบบ = การจองที่รออนุมัติทั้งหมด · ผู้ใช้งาน = การจองของตัวเองที่ยังรออนุมัติ
+// ส่งตรงจาก Apps Script ไปบริการ push ของเบราว์เซอร์ (Apple / Google / Mozilla / Microsoft) แบบไม่มีเนื้อหา
+// — service worker (public/sw.js) ดึงข้อความจาก pushInbox แล้วแสดงเอง จึงไม่ต้องเข้ารหัสเนื้อหา
+// ลายเซ็น VAPID (ES256 / P-256) คำนวณในสคริปต์นี้ กุญแจลับเก็บใน Script Property PUSH_VAPID ไม่ออกไปที่ไหน
+// ส่งไม่สำเร็จไม่กระทบการจอง — ผลบันทึกใน AuditLog (action "push_<ชนิด>")
+
+const PUSH_SHEET = 'PushSubscriptions';
+const PUSH_HEADERS = ['username', 'endpoint', 'device', 'createdAt', 'lastSeen'];
+const PUSH_PROP = 'PUSH_VAPID';
+const PUSH_MSG_SECONDS = 6 * 60 * 60;
+// รับเฉพาะที่อยู่ของบริการ push จริง — กันไม่ให้ใช้ระบบยิงคำขอไปที่อื่น
+const PUSH_ENDPOINT_RE = /^https:\/\/([a-z0-9-]+\.)*(fcm\.googleapis\.com|android\.googleapis\.com|push\.apple\.com|push\.services\.mozilla\.com|notify\.windows\.com)\/[^\s]{8,}$/;
+
+// เส้นโค้ง P-256 (secp256r1)
+const P256 = {
+  p: BigInt('0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff'),
+  n: BigInt('0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551'),
+  gx: BigInt('0x6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296'),
+  gy: BigInt('0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5'),
+};
+
+function modP_(a, m) { const r = a % m; return r < 0n ? r + m : r; }
+
+function invMod_(a, m) {
+  let [r0, r1] = [modP_(a, m), m];
+  let [s0, s1] = [1n, 0n];
+  while (r1) {
+    const q = r0 / r1;
+    [r0, r1] = [r1, r0 - q * r1];
+    [s0, s1] = [s1, s0 - q * s1];
+  }
+  return modP_(s0, m);
+}
+
+/** จุดบนเส้นโค้งแบบ Jacobian [X, Y, Z] — Z = 0 คือจุดอนันต์ */
+function ecDouble_(P) {
+  const p = P256.p;
+  const [X, Y, Z] = P;
+  if (!Y || !Z) return [0n, 1n, 0n];
+  const delta = Z * Z % p, gamma = Y * Y % p, beta = X * gamma % p;
+  const alpha = 3n * modP_(X - delta, p) * (X + delta) % p;
+  const X3 = modP_(alpha * alpha - 8n * beta, p);
+  const Z3 = modP_((Y + Z) * (Y + Z) - gamma - delta, p);
+  const Y3 = modP_(alpha * (4n * beta - X3) - 8n * gamma * gamma, p);
+  return [X3, Y3, Z3];
+}
+
+function ecAdd_(P, Q) {
+  const p = P256.p;
+  if (!P[2]) return Q;
+  if (!Q[2]) return P;
+  const Z1Z1 = P[2] * P[2] % p, Z2Z2 = Q[2] * Q[2] % p;
+  const U1 = P[0] * Z2Z2 % p, U2 = Q[0] * Z1Z1 % p;
+  const S1 = P[1] * Q[2] % p * Z2Z2 % p, S2 = Q[1] * P[2] % p * Z1Z1 % p;
+  if (U1 === U2) return S1 === S2 ? ecDouble_(P) : [0n, 1n, 0n];
+  const H = modP_(U2 - U1, p), R = modP_(S2 - S1, p);
+  const HH = H * H % p, HHH = HH * H % p;
+  const X3 = modP_(R * R - HHH - 2n * U1 * HH, p);
+  const Y3 = modP_(R * (U1 * HH - X3) - S1 * HHH, p);
+  return [X3, Y3, H * P[2] % p * Q[2] % p];
+}
+
+/** k·G → จุดแบบ affine { x, y } */
+function ecMulG_(k) {
+  let R = [0n, 1n, 0n];
+  const G = [P256.gx, P256.gy, 1n];
+  for (let i = BigInt(k.toString(2).length) - 1n; i >= 0n; i--) {
+    R = ecDouble_(R);
+    if ((k >> i) & 1n) R = ecAdd_(R, G);
+  }
+  const zi = invMod_(R[2], P256.p);
+  const zi2 = zi * zi % P256.p;
+  return { x: R[0] * zi2 % P256.p, y: R[1] * zi2 % P256.p * zi % P256.p };
+}
+
+function bytesToBig_(bytes) {
+  let x = 0n;
+  for (let i = 0; i < bytes.length; i++) x = (x << 8n) | BigInt(bytes[i] & 255);
+  return x;
+}
+
+/** BigInt → byte[] (ค่า -128..127 ตามแบบ Apps Script) ยาว len ไบต์ */
+function bigToBytes_(x, len) {
+  const out = new Array(len);
+  for (let i = len - 1; i >= 0; i--) { const v = Number(x & 255n); out[i] = v > 127 ? v - 256 : v; x >>= 8n; }
+  return out;
+}
+
+function b64url_(bytes) { return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/, ''); }
+function b64urlText_(s) { return b64url_(Utilities.newBlob(s).getBytes()); }
+
+/** ตัวเลขสุ่ม 1..n-1 จาก UUID หลายชุด (ใช้สร้างกุญแจครั้งเดียว) */
+function randomScalar_() {
+  const seed = [0, 1, 2, 3].map(() => Utilities.getUuid()).join('|') + '|' + Date.now() + '|' + Math.random();
+  return bytesToBig_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_512, seed)) % (P256.n - 1n) + 1n;
+}
+
+/** กุญแจ VAPID ของระบบ — สร้างครั้งแรกที่มีคนเปิดการแจ้งเตือน แล้วใช้ตลอด */
+function pushKeys_() {
+  const props = PropertiesService.getScriptProperties();
+  let k = null;
+  try { k = JSON.parse(props.getProperty(PUSH_PROP) || 'null'); } catch (err) { k = null; }
+  if (k && k.d && k.pub) return k;
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    try { k = JSON.parse(props.getProperty(PUSH_PROP) || 'null'); } catch (err) { k = null; }
+    if (k && k.d && k.pub) return k;
+    const d = randomScalar_();
+    const Q = ecMulG_(d);
+    k = { d: d.toString(16), pub: b64url_([4].concat(bigToBytes_(Q.x, 32), bigToBytes_(Q.y, 32))) };
+    props.setProperty(PUSH_PROP, JSON.stringify(k));
+    return k;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** ลายเซ็น ES256 (r‖s 64 ไบต์) — k มาจาก HMAC ของกุญแจลับกับข้อความ + UUID จึงไม่ซ้ำกัน */
+function es256Sign_(input, dHex) {
+  const n = P256.n;
+  const d = BigInt('0x' + dHex);
+  const z = bytesToBig_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, input, Utilities.Charset.UTF_8));
+  const dBytes = bigToBytes_(d, 32);
+  for (let i = 0; i < 8; i++) {
+    const kSeed = Utilities.newBlob(input + '|' + Utilities.getUuid() + '|' + i).getBytes();
+    const k = bytesToBig_(Utilities.computeHmacSha256Signature(kSeed, dBytes)) % (n - 1n) + 1n;
+    const r = ecMulG_(k).x % n;
+    if (!r) continue;
+    const s = invMod_(k, n) * ((z + r * d) % n) % n;
+    if (!s) continue;
+    return bigToBytes_(r, 32).concat(bigToBytes_(s, 32));
+  }
+  throw new Error('สร้างลายเซ็นไม่สำเร็จ');
+}
+
+/** หัว Authorization ของ VAPID ต่อบริการ push (เก็บไว้ใช้ซ้ำ 11 ชั่วโมง) */
+function vapidAuth_(endpoint, keys) {
+  const aud = endpoint.replace(/^(https:\/\/[^/]+).*$/, '$1');
+  const cache = CacheService.getScriptCache();
+  const key = 'vapid_' + aud;
+  const hit = cache.get(key);
+  if (hit) return hit;
+  const head = b64urlText_(JSON.stringify({ typ: 'JWT', alg: 'ES256' }));
+  const body = b64urlText_(JSON.stringify({ aud, exp: Math.floor(Date.now() / 1000) + 12 * 3600, sub: appUrl_() }));
+  const jwt = head + '.' + body + '.' + b64url_(es256Sign_(head + '.' + body, keys.d));
+  const auth = 'vapid t=' + jwt + ', k=' + keys.pub;
+  cache.put(key, auth, 11 * 3600);
+  return auth;
+}
+
+function pushSheet_() {
+  const ss = spreadsheet_();
+  let sh = ss.getSheetByName(PUSH_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(PUSH_SHEET);
+    sh.getRange(1, 1, 1, PUSH_HEADERS.length).setValues([PUSH_HEADERS]).setFontWeight('bold');
+    sh.getRange(1, 1, sh.getMaxRows(), PUSH_HEADERS.length).setNumberFormat('@');
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function readPushSubs_(sh) {
+  if (sh.getLastRow() < 2) return [];
+  return sh.getRange(2, 1, sh.getLastRow() - 1, PUSH_HEADERS.length).getValues()
+    .map((r, i) => ({ row: i + 2, username: String(r[0]), endpoint: String(r[1]), device: String(r[2]) }))
+    .filter(s => s.endpoint);
+}
+
+function checkEndpoint_(endpoint) {
+  const e = String(endpoint || '').trim();
+  if (!PUSH_ENDPOINT_RE.test(e) || e.length > 1000) throw new Error('ที่อยู่สำหรับแจ้งเตือนไม่ถูกต้อง');
+  return e;
+}
+
+function pushMsgKey_(endpoint) {
+  return 'pushmsg_' + b64url_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, endpoint)).slice(0, 43);
+}
+
+/** ตัวเลขบนไอคอน: ผู้ดูแลระบบ = รออนุมัติทั้งหมด · ผู้ใช้งาน = ของตัวเองที่รออนุมัติ */
+function pendingBadges_() {
+  const pending = readBookings_(bookingsSheet_(false)).filter(b => b.status === 'pending');
+  const mine = {};
+  pending.forEach(b => { mine[b.requestedBy] = (mine[b.requestedBy] || 0) + 1; });
+  return { all: pending.length, mine };
+}
+
+function badgeFor_(user, counts) {
+  return user && user.role === 'admin' ? counts.all : (counts.mine[user && user.username] || 0);
+}
+
+/** หน้าเว็บ: กุญแจสาธารณะสำหรับสมัครรับแจ้งเตือน */
+function getPushConfig(token) {
+  const user = requireUser_(token);
+  return { publicKey: pushKeys_().pub, badge: badgeFor_(user, pendingBadges_()) };
+}
+
+/** เครื่องนี้รับแจ้งเตือนของผู้ใช้ที่เข้าสู่ระบบอยู่ (เครื่องเดียวรับได้ทีละบัญชี) */
+function savePushSub(token, endpoint, device) {
+  const user = requireUser_(token);
+  const e = checkEndpoint_(endpoint);
+  const dev = text_(device).slice(0, 80);
+  withLock_(() => {
+    const sh = pushSheet_();
+    const hit = readPushSubs_(sh).find(s => s.endpoint === e);
+    const now = nowText_();
+    if (hit) sh.getRange(hit.row, 1, 1, PUSH_HEADERS.length).setValues([[user.username, e, dev, sh.getRange(hit.row, 4).getValue() || now, now]]);
+    else sh.appendRow([user.username, e, dev, now, now]);
+  });
+  return { ok: true, badge: badgeFor_(user, pendingBadges_()) };
+}
+
+/** ออกจากระบบ / ปิดการแจ้งเตือน — เครื่องนี้ไม่รับแจ้งเตือนอีก */
+function removePushSub(token, endpoint) {
+  const e = String(endpoint || '').trim();
+  let user = null;
+  try { user = requireUser_(token); } catch (err) { user = null; } // ออกจากระบบหลังหมดเวลาก็ลบได้ (ต้องรู้ที่อยู่ของเครื่อง)
+  withLock_(() => {
+    const sh = pushSheet_();
+    readPushSubs_(sh).filter(s => s.endpoint === e).reverse().forEach(s => sh.deleteRow(s.row));
+  });
+  if (user) audit_(user.username, 'push_unsubscribe', PUSH_SHEET, '', {});
+  return { ok: true };
+}
+
+/**
+ * service worker ถามข้อความของแจ้งเตือนล่าสุด (ไม่ต้องเข้าสู่ระบบ — ที่อยู่ของเครื่องเดาไม่ได้)
+ * ไม่มีข้อความค้าง → ตอบตัวเลขปัจจุบันของเจ้าของเครื่อง
+ */
+function pushInbox(endpoint) {
+  const e = String(endpoint || '').trim();
+  if (!PUSH_ENDPOINT_RE.test(e)) return null;
+  const cache = CacheService.getScriptCache();
+  const hit = cache.get(pushMsgKey_(e));
+  if (hit) { cache.remove(pushMsgKey_(e)); return JSON.parse(hit); }
+  const sub = readPushSubs_(pushSheet_()).find(s => s.endpoint === e);
+  if (!sub) return null;
+  const user = readUsers_(usersSheet_()).find(u => u.username === sub.username);
+  const badge = badgeFor_(user, pendingBadges_());
+  return { title: 'Protection Fee', body: badge ? 'มีการจองรออนุมัติ ' + badge + ' รายการ' : 'ไม่มีการจองค้างอนุมัติ', badge, url: '/', tag: 'pf-badge' };
+}
+
+const PUSH_TEXT = {
+  pending: b => ({ title: 'จองรถคุ้มครองใหม่ — รออนุมัติ', body: 'โดย ' + (b.requestedByName || b.requestedBy) }),
+  resubmit: b => ({ title: 'ส่งขออนุมัติใหม่', body: 'แก้ไขโดย ' + (b.requestedByName || b.requestedBy) }),
+  cancelled: b => ({ title: 'ยกเลิกการจองรถคุ้มครอง', body: 'โดย ' + (b.cancelledByName || b.cancelledBy || '') + (b.cancelReason ? ' · ' + b.cancelReason : '') }),
+  approved: b => ({ title: 'อนุมัติการจองแล้ว ✓', body: b.reviewNote ? 'หมายเหตุ: ' + b.reviewNote : '' }),
+  rejected: b => ({ title: 'ไม่อนุมัติการจอง', body: b.reviewNote ? 'เหตุผล: ' + b.reviewNote : 'แก้ไขแล้วส่งขออนุมัติใหม่ได้ในระบบ' }),
+};
+
+/** ส่งแจ้งเตือนถึงผู้ใช้ตามรายชื่อ — ไม่โยนข้อผิดพลาดออกไป คืน { sent, failed, removed } */
+function sendPush_(kind, b, usernames, by) {
+  const res = { sent: 0, failed: 0, removed: 0 };
+  try {
+    const want = {};
+    usernames.forEach(u => { want[u] = true; });
+    const sh = pushSheet_();
+    const subs = readPushSubs_(sh).filter(s => want[s.username] && PUSH_ENDPOINT_RE.test(s.endpoint));
+    if (!subs.length) return res;
+    const users = {};
+    readUsers_(usersSheet_()).forEach(u => { users[u.username] = u; });
+    const counts = pendingBadges_();
+    const keys = pushKeys_();
+    const t = PUSH_TEXT[kind](b);
+    const job = b.jobType || b.title || '';
+    const time = String(b.time || '').trim();
+    const what = [job, bookingDateShort_(b.date) + (time ? ' ' + time + (/น\.?$/.test(time) ? '' : ' น.') : ''), b.provider].filter(Boolean).join(' · ');
+    const url = b.status === 'cancelled' ? '/?cancelled=' + encodeURIComponent(b.id) : '/?booking=' + encodeURIComponent(b.id) + '&d=' + encodeURIComponent(b.date);
+    const cache = CacheService.getScriptCache();
+    const reqs = subs.map(s => {
+      const badge = badgeFor_(users[s.username], counts);
+      const body = [what, t.body, badge ? 'รออนุมัติ ' + badge + ' รายการ' : ''].filter(Boolean).join('\n');
+      cache.put(pushMsgKey_(s.endpoint), JSON.stringify({ title: t.title, body, badge, url, tag: 'pf-' + b.id }), PUSH_MSG_SECONDS);
+      return {
+        url: s.endpoint, method: 'post', payload: '', muteHttpExceptions: true,
+        headers: { Authorization: vapidAuth_(s.endpoint, keys), TTL: '86400', Urgency: 'high', Topic: 'pf' + String(b.id).replace(/[^A-Za-z0-9]/g, '').slice(0, 30) },
+      };
+    });
+    const gone = [];
+    UrlFetchApp.fetchAll(reqs).forEach((r, i) => {
+      const code = r.getResponseCode();
+      if (code >= 200 && code < 300) res.sent++;
+      else { res.failed++; if (code === 404 || code === 410 || code === 403) gone.push(subs[i]); }
+    });
+    // เครื่องที่ยกเลิกการแจ้งเตือนไปแล้ว (หรือกุญแจไม่ตรง) → ลบออก
+    if (gone.length) {
+      withLock_(() => {
+        const ends = {};
+        gone.forEach(s => { ends[s.endpoint] = true; });
+        readPushSubs_(sh).filter(s => ends[s.endpoint]).reverse().forEach(s => sh.deleteRow(s.row));
+      });
+      res.removed = gone.length;
+    }
+  } catch (err) {
+    res.error = String((err && err.message) || err).slice(0, 300);
+  }
+  try {
+    if (res.sent || res.failed || res.error) audit_(by || 'system', 'push_' + kind, PUSH_SHEET, '', Object.assign({ id: b.id }, res));
+  } catch (err) {
+    console.error('push audit failed', err);
+  }
+  return res;
+}
+
+/** รันครั้งเดียวจากตัวแก้ไข: สร้างกุญแจ VAPID และทดสอบลายเซ็น (ไม่ส่งแจ้งเตือน) */
+function setupPush() {
+  const t0 = Date.now();
+  const keys = pushKeys_();
+  const auth = vapidAuth_('https://web.push.apple.com/selftest', keys);
+  CacheService.getScriptCache().remove('vapid_https://web.push.apple.com');
+  console.log('กุญแจสาธารณะ ' + keys.pub.length + ' ตัวอักษร · ลายเซ็น ' + auth.length + ' ตัวอักษร · ' + (Date.now() - t0) + ' ms · ' +
+    'เครื่องที่เปิดแจ้งเตือน ' + readPushSubs_(pushSheet_()).length + ' เครื่อง');
+}
+
+function pushAdmins_(kind, b, by) {
+  const s = notifySettings_();
+  if (!(kind === 'cancelled' ? s.onCancel : s.onBooking)) return null;
+  let admins = [];
+  try { admins = readUsers_(usersSheet_()).filter(u => u.role === 'admin' && u.status === 'active').map(u => u.username); } catch (err) { admins = []; }
+  return sendPush_(kind, b, admins.filter(u => u !== by), by);
+}
+
+function pushBooker_(kind, b, by) {
+  const s = notifySettings_();
+  if (!(kind === 'approved' ? s.userOnApprove : s.userOnReject)) return null;
+  return sendPush_(kind, b, [b.requestedBy], by);
 }
 
 /* ------------------------------------------------------------------ */

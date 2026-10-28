@@ -6,7 +6,7 @@ import { body, ok, route } from '@/lib/http';
 export const maxDuration = 60;
 
 /** ฟังก์ชันใน apps-script/Code.gs ที่หน้าเว็บเรียกได้ (ตรงกับ API_FUNCTIONS) */
-const ALLOWED = new Set(['register', 'login', 'logout', 'changePassword', 'requestPasswordReset', 'resetPasswordWithToken', 'getAppData', 'addLogEntry', 'addLogEntries', 'getDashboard', 'recalcCosts', 'listBookings', 'saveBooking', 'reviewBooking', 'cancelBooking', 'uploadCancelFile', 'listCancelled', 'getCancelFile', 'getAccrue', 'downloadAccrue', 'sendAccrueNow', 'saveAccrueSettings', 'getClear', 'downloadClear', 'sendClearNow', 'listHolidays', 'saveHoliday', 'deleteHoliday', 'logBooking', 'addLocation', 'listUsers', 'updateUser', 'reviewUser', 'resetPassword', 'getNotifySettings', 'saveNotifySettings']);
+const ALLOWED = new Set(['register', 'login', 'logout', 'changePassword', 'requestPasswordReset', 'resetPasswordWithToken', 'getAppData', 'addLogEntry', 'addLogEntries', 'getDashboard', 'recalcCosts', 'listBookings', 'saveBooking', 'reviewBooking', 'cancelBooking', 'uploadCancelFile', 'listCancelled', 'getCancelFile', 'getAccrue', 'downloadAccrue', 'sendAccrueNow', 'saveAccrueSettings', 'getClear', 'downloadClear', 'sendClearNow', 'listHolidays', 'saveHoliday', 'deleteHoliday', 'logBooking', 'addLocation', 'listUsers', 'updateUser', 'reviewUser', 'resetPassword', 'getNotifySettings', 'saveNotifySettings', 'getPushConfig', 'savePushSub', 'removePushSub', 'pushInbox']);
 
 /** ส่งต่อคำขอจากหน้า /legacy ไป doPost ของ Apps Script ที่อ่าน/เขียน Google Sheet */
 export const POST = route(async req => {
