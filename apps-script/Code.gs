@@ -1447,9 +1447,13 @@ const ACCRUE_DEFAULTS = {
   greeting: 'น้องหม่อง', ccLabel: 'ผู้เกี่ยวข้อง', signOff: 'ขอบคุณครับ',
   checker: 'นายณัฐวุฒิ อู่ยายโสม', timeIn: '22', timeOut: '4',
   autoSend: true, sendDays: '21, 25, 27, 30, 31', sendHour: 9,
+  lateWatch: true, // วันที่ 22–30: ตรวจทุกชั่วโมง มีอัปเดตส่งฉบับแก้ไขทันที
   clearAuto: true, clearDay: 25, // File Clear ของเดือนก่อนหน้า
 };
 const ACCRUE_JOB = 'accrueMonthlyJob';
+const ACCRUE_LATE_JOB = 'accrueLateJob';
+const ACCRUE_LATE_FROM = 22;
+const ACCRUE_LATE_TO = 30;
 const ACCRUE_LOG_SHEET = 'ประวัติส่ง File Accrue';
 const ACCRUE_LOG_HEADERS = ['วันที่ส่ง', 'เดือน', 'ส่งโดย', 'ถึง', 'สำเนา', 'EXAT (บาท)', 'BEM (บาท)', 'ไฟล์', 'สถานะ'];
 const ACCRUE_FOLDER_NAME = 'Protection Fee – File Accrue';
@@ -1764,6 +1768,7 @@ function isAccrueDay_(s, y, m, d) {
  */
 function accrueMonthlyJob() {
   const s = accrueSettings_();
+  try { ensureAccrueTrigger_(s); } catch (err) { console.error('ensureAccrueTrigger_ failed', err); } // ตัวตรวจรายชั่วโมงหายไป → สร้างใหม่
   if (!s.autoSend && !s.clearAuto) return;
   const now = new Date();
   const y = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy'));
@@ -1802,22 +1807,50 @@ function accrueDailyCheck_(s, y, m, props, dayKey) {
     } else if (bucket.exat.length || bucket.bem.length) {
       sendAccrue_(y, m, 'ส่งอัตโนมัติ', bucket);
     }
-    props.setProperty(dayKey, nowText_());
+    if (dayKey) props.setProperty(dayKey, nowText_());
   } catch (err) {
     logAccrue_([nowText_(), accrueMonthShort_(y, m), 'ส่งอัตโนมัติ', s.to, s.cc, '', '', '', 'ส่งไม่สำเร็จ: ' + String(err && err.message || err)]);
     throw err;
   }
 }
 
-/** เปิด / ปิด ตัวตั้งเวลา (ทำงานทุกวันตามชั่วโมงที่ตั้ง แล้วตรวจเองว่าวันนี้เป็นวันส่งหรือไม่) */
+/**
+ * ตัวตั้งเวลารายชั่วโมง: วันที่ 22–30 ถ้าข้อมูลเดือนนี้เปลี่ยนจากฉบับที่ส่งล่าสุด (จองเพิ่ม แก้ไข ยกเลิก อนุมัติ)
+ * ส่ง File Accrue "แก้ไขเพิ่มเติม" ภายใน 1 ชั่วโมง · ยังไม่เคยส่งเดือนนี้ → ส่งฉบับแรก · ไม่เปลี่ยน → ไม่ส่ง
+ * ใช้ลายนิ้วมือข้อมูลชุดเดียวกับรอบรายวัน จึงไม่ส่งซ้ำกัน
+ */
+function accrueLateJob() {
+  const s = accrueSettings_();
+  if (!s.autoSend || !s.lateWatch) return;
+  const now = new Date();
+  const d = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'd'));
+  if (d < ACCRUE_LATE_FROM || d > ACCRUE_LATE_TO) return;
+  const y = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy'));
+  const m = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'M'));
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5 * 60 * 1000)) return;
+  try {
+    accrueDailyCheck_(s, y, m, PropertiesService.getScriptProperties(), '');
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** เปิด / ปิด ตัวตั้งเวลา: รายวัน (ตามชั่วโมงที่ตั้ง แล้วตรวจเองว่าวันนี้เป็นวันส่งหรือไม่) และรายชั่วโมง (วันที่ 22–30) */
 function ensureAccrueTrigger_(s) {
-  const sig = s.autoSend || s.clearAuto ? 'daily@' + s.sendHour : '';
   const props = PropertiesService.getScriptProperties();
-  const existing = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === ACCRUE_JOB);
-  if (existing.length && props.getProperty('ACCRUE_TRIGGER') === sig) return;
-  existing.forEach(t => ScriptApp.deleteTrigger(t));
-  if (sig) ScriptApp.newTrigger(ACCRUE_JOB).timeBased().everyDays(1).atHour(s.sendHour).inTimezone(CONFIG.TIMEZONE).create();
-  props.setProperty('ACCRUE_TRIGGER', sig);
+  const all = ScriptApp.getProjectTriggers();
+  const sync = (handler, key, sig, create) => {
+    const existing = all.filter(t => t.getHandlerFunction() === handler);
+    if (existing.length && props.getProperty(key) === sig) return;
+    existing.forEach(t => ScriptApp.deleteTrigger(t));
+    if (sig) create();
+    props.setProperty(key, sig);
+  };
+  sync(ACCRUE_JOB, 'ACCRUE_TRIGGER', s.autoSend || s.clearAuto ? 'daily@' + s.sendHour : '',
+    () => ScriptApp.newTrigger(ACCRUE_JOB).timeBased().everyDays(1).atHour(s.sendHour).inTimezone(CONFIG.TIMEZONE).create());
+  sync(ACCRUE_LATE_JOB, 'ACCRUE_LATE_TRIGGER', s.autoSend && s.lateWatch ? 'hourly' : '',
+    () => ScriptApp.newTrigger(ACCRUE_LATE_JOB).timeBased().everyHours(1).create());
 }
 
 /** วันส่งถัดไป (วันนี้นับด้วย ถ้ายังไม่ถึงเวลาส่ง) เป็น ISO */
@@ -1835,8 +1868,8 @@ function nextAccrueDay_(s, now) {
   return '';
 }
 
-function accrueTriggerOn_() {
-  try { return ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === ACCRUE_JOB); } catch (err) { return false; }
+function accrueTriggerOn_(handler) {
+  try { return ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === (handler || ACCRUE_JOB)); } catch (err) { return false; }
 }
 
 /** ประวัติการส่ง — kind = 'accrue' หรือ 'clear' (แถว File Clear ขึ้นต้นด้วย "File Clear") */
@@ -1851,7 +1884,8 @@ function readAccrueLog_(kind) {
 
 function accrueSettingsOut_() {
   const s = accrueSettings_();
-  return Object.assign({}, s, { triggerOn: accrueTriggerOn_() });
+  return Object.assign({}, s, { triggerOn: accrueTriggerOn_(), lateOn: accrueTriggerOn_(ACCRUE_LATE_JOB),
+    lateFrom: ACCRUE_LATE_FROM, lateTo: ACCRUE_LATE_TO });
 }
 
 /** หน้า File Accrue: สรุปทั้งปี + รายการของเดือนที่เลือก + ตัวอย่างอีเมล */
@@ -1915,13 +1949,14 @@ function saveAccrueSettings(token, form) {
     autoSend: form.autoSend === undefined ? s.autoSend : form.autoSend === true || form.autoSend === 'true' || form.autoSend === 'on',
     sendDays: accrueDays_({ sendDays: form.sendDays === undefined ? s.sendDays : form.sendDays }).join(', '),
     sendHour: Math.min(23, Math.max(0, Math.floor(Number(form.sendHour === undefined ? s.sendHour : form.sendHour)))),
+    lateWatch: form.lateWatch === undefined ? s.lateWatch : form.lateWatch === true || form.lateWatch === 'true' || form.lateWatch === 'on',
     clearAuto: form.clearAuto === undefined ? s.clearAuto : form.clearAuto === true || form.clearAuto === 'true' || form.clearAuto === 'on',
     clearDay: Math.min(31, Math.max(1, Math.floor(Number(form.clearDay) || s.clearDay || 25))),
   };
   if (!next.to) throw new Error('กรุณากรอกอีเมลผู้รับ (ถึง)');
   PropertiesService.getScriptProperties().setProperty(ACCRUE_PROP, JSON.stringify(next));
   ensureAccrueTrigger_(next);
-  audit_(user.username, 'accrue_settings', '', '', { to: next.to, cc: next.cc, autoSend: next.autoSend, days: next.sendDays, hour: next.sendHour });
+  audit_(user.username, 'accrue_settings', '', '', { to: next.to, cc: next.cc, autoSend: next.autoSend, days: next.sendDays, hour: next.sendHour, lateWatch: next.lateWatch });
   return accrueSettingsOut_();
 }
 
@@ -1930,7 +1965,8 @@ function setupAccrue() {
   ensureAccrueTrigger_(accrueSettings_());
   accrueFolder_();
   UrlFetchApp.fetch('https://www.googleapis.com/discovery/v1/apis', { muteHttpExceptions: true });
-  console.log('MailApp เหลือโควตาวันนี้: ' + MailApp.getRemainingDailyQuota() + ' ฉบับ · ตัวตั้งเวลา: ' + (accrueTriggerOn_() ? 'เปิด' : 'ปิด'));
+  console.log('MailApp เหลือโควตาวันนี้: ' + MailApp.getRemainingDailyQuota() + ' ฉบับ · ตัวตั้งเวลา: ' + (accrueTriggerOn_() ? 'เปิด' : 'ปิด') +
+    ' · ตรวจรายชั่วโมงวันที่ ' + ACCRUE_LATE_FROM + '–' + ACCRUE_LATE_TO + ': ' + (accrueTriggerOn_(ACCRUE_LATE_JOB) ? 'เปิด' : 'ปิด'));
 }
 
 /* ------------------------------------------------------------------ */

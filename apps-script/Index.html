@@ -1014,6 +1014,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
             <label class="field">เวลา (ชั่วโมง)<input name="sendHour" type="number" min="0" max="23"></label>
           </div>
           <label class="check"><input type="checkbox" name="autoSend"> ส่ง File Accrue อัตโนมัติ (เดือนปัจจุบัน)</label>
+          <label class="check"><input type="checkbox" name="lateWatch"> วันที่ 22–30 มีอัปเดตการจอง ส่งฉบับแก้ไขอัตโนมัติ (ตรวจทุกชั่วโมง)</label>
           <div class="error" data-error hidden></div>
           <button type="submit" class="btn primary block">บันทึกการตั้งค่า</button>
         </form>
@@ -3189,12 +3190,18 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     $('#ac-auto').textContent = st.autoSend
       ? (st.triggerOn ? 'ส่งอัตโนมัติวันที่ ' + st.sendDays + ' ของทุกเดือน เวลา ' + st.sendHour + ':00–' + (Number(st.sendHour) + 1) + ':00 น. จากบัญชีเจ้าของ Apps Script — ครั้งแรกของเดือนส่งเสมอ ครั้งถัดไปส่งเฉพาะเมื่อข้อมูลเปลี่ยน (หัวเรื่อง RE: … แก้ไขเพิ่มเติม) · เดือนที่ไม่มีวันที่ 30/31 ส่งวันสุดท้ายของเดือนแทน' + (d.nextSend ? ' · รอบถัดไป ' + thaiDate(d.nextSend) : '') : 'ตั้งให้ส่งอัตโนมัติแล้ว แต่ตัวตั้งเวลายังไม่ทำงาน — กด “บันทึกการตั้งค่า” อีกครั้ง')
       : 'ปิดการส่งอัตโนมัติอยู่ — ส่งเองด้วยปุ่ม “ส่งอีเมลตอนนี้”';
+    if (st.autoSend && st.lateWatch) {
+      $('#ac-auto').textContent += st.lateOn
+        ? ' · วันที่ ' + st.lateFrom + '–' + st.lateTo + ' ตรวจทุกชั่วโมง ถ้ามีอัปเดตการจองส่งฉบับแก้ไขภายใน 1 ชั่วโมง'
+        : ' · ตัวตรวจรายชั่วโมง (วันที่ ' + st.lateFrom + '–' + st.lateTo + ') ยังไม่ทำงาน — กด “บันทึกการตั้งค่า” อีกครั้ง';
+    }
 
     var f = $('#form-accrue');
     if (!editingForm(f)) {
       ['to', 'cc', 'greeting', 'ccLabel', 'signOff', 'checker', 'timeIn', 'timeOut', 'sendDays', 'sendHour'].forEach(function (k) { f[k].value = st[k] === undefined ? '' : st[k]; });
       f.cc.value = String(st.cc || '').split(/\s*,\s*/).filter(Boolean).join('\n');
       f.autoSend.checked = !!st.autoSend;
+      f.lateWatch.checked = !!st.lateWatch;
     }
 
     $('#ac-log').innerHTML =
@@ -3262,6 +3269,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     var form = e.target;
     var data = formData(form);
     data.autoSend = form.autoSend.checked;
+    data.lateWatch = form.lateWatch.checked;
     data.cc = data.cc.split(/[\s,;]+/).filter(Boolean).join(', ');
     submitWith(form, async function () {
       var s = await api('saveAccrueSettings', S.token, data);
