@@ -1462,6 +1462,9 @@ const PUSH_MSG_SECONDS = 6 * 60 * 60;
 // รับเฉพาะที่อยู่ของบริการ push จริง — กันไม่ให้ใช้ระบบยิงคำขอไปที่อื่น
 const PUSH_ENDPOINT_RE = /^https:\/\/([a-z0-9-]+\.)*(fcm\.googleapis\.com|android\.googleapis\.com|push\.apple\.com|push\.services\.mozilla\.com|notify\.windows\.com)\/[^\s]{8,}$/;
 
+// ค่าคงที่ BigInt — ตัวแก้ไข Apps Script ไม่รับรูปแบบ 0n / 1n จึงสร้างด้วย BigInt()
+const BN0 = BigInt(0), BN1 = BigInt(1), BN2 = BigInt(2), BN3 = BigInt(3), BN4 = BigInt(4), BN8 = BigInt(8), BN255 = BigInt(255);
+
 // เส้นโค้ง P-256 (secp256r1)
 const P256 = {
   p: BigInt('0xffffffff00000001000000000000000000000000ffffffffffffffffffffffff'),
@@ -1470,11 +1473,11 @@ const P256 = {
   gy: BigInt('0x4fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5'),
 };
 
-function modP_(a, m) { const r = a % m; return r < 0n ? r + m : r; }
+function modP_(a, m) { const r = a % m; return r < BN0 ? r + m : r; }
 
 function invMod_(a, m) {
   let [r0, r1] = [modP_(a, m), m];
-  let [s0, s1] = [1n, 0n];
+  let [s0, s1] = [BN1, BN0];
   while (r1) {
     const q = r0 / r1;
     [r0, r1] = [r1, r0 - q * r1];
@@ -1487,12 +1490,12 @@ function invMod_(a, m) {
 function ecDouble_(P) {
   const p = P256.p;
   const [X, Y, Z] = P;
-  if (!Y || !Z) return [0n, 1n, 0n];
+  if (!Y || !Z) return [BN0, BN1, BN0];
   const delta = Z * Z % p, gamma = Y * Y % p, beta = X * gamma % p;
-  const alpha = 3n * modP_(X - delta, p) * (X + delta) % p;
-  const X3 = modP_(alpha * alpha - 8n * beta, p);
+  const alpha = BN3 * modP_(X - delta, p) * (X + delta) % p;
+  const X3 = modP_(alpha * alpha - BN8 * beta, p);
   const Z3 = modP_((Y + Z) * (Y + Z) - gamma - delta, p);
-  const Y3 = modP_(alpha * (4n * beta - X3) - 8n * gamma * gamma, p);
+  const Y3 = modP_(alpha * (BN4 * beta - X3) - BN8 * gamma * gamma, p);
   return [X3, Y3, Z3];
 }
 
@@ -1503,21 +1506,21 @@ function ecAdd_(P, Q) {
   const Z1Z1 = P[2] * P[2] % p, Z2Z2 = Q[2] * Q[2] % p;
   const U1 = P[0] * Z2Z2 % p, U2 = Q[0] * Z1Z1 % p;
   const S1 = P[1] * Q[2] % p * Z2Z2 % p, S2 = Q[1] * P[2] % p * Z1Z1 % p;
-  if (U1 === U2) return S1 === S2 ? ecDouble_(P) : [0n, 1n, 0n];
+  if (U1 === U2) return S1 === S2 ? ecDouble_(P) : [BN0, BN1, BN0];
   const H = modP_(U2 - U1, p), R = modP_(S2 - S1, p);
   const HH = H * H % p, HHH = HH * H % p;
-  const X3 = modP_(R * R - HHH - 2n * U1 * HH, p);
+  const X3 = modP_(R * R - HHH - BN2 * U1 * HH, p);
   const Y3 = modP_(R * (U1 * HH - X3) - S1 * HHH, p);
   return [X3, Y3, H * P[2] % p * Q[2] % p];
 }
 
 /** k·G → จุดแบบ affine { x, y } */
 function ecMulG_(k) {
-  let R = [0n, 1n, 0n];
-  const G = [P256.gx, P256.gy, 1n];
-  for (let i = BigInt(k.toString(2).length) - 1n; i >= 0n; i--) {
+  let R = [BN0, BN1, BN0];
+  const G = [P256.gx, P256.gy, BN1];
+  for (let i = BigInt(k.toString(2).length) - BN1; i >= BN0; i--) {
     R = ecDouble_(R);
-    if ((k >> i) & 1n) R = ecAdd_(R, G);
+    if ((k >> i) & BN1) R = ecAdd_(R, G);
   }
   const zi = invMod_(R[2], P256.p);
   const zi2 = zi * zi % P256.p;
@@ -1525,15 +1528,15 @@ function ecMulG_(k) {
 }
 
 function bytesToBig_(bytes) {
-  let x = 0n;
-  for (let i = 0; i < bytes.length; i++) x = (x << 8n) | BigInt(bytes[i] & 255);
+  let x = BN0;
+  for (let i = 0; i < bytes.length; i++) x = (x << BN8) | BigInt(bytes[i] & 255);
   return x;
 }
 
 /** BigInt → byte[] (ค่า -128..127 ตามแบบ Apps Script) ยาว len ไบต์ */
 function bigToBytes_(x, len) {
   const out = new Array(len);
-  for (let i = len - 1; i >= 0; i--) { const v = Number(x & 255n); out[i] = v > 127 ? v - 256 : v; x >>= 8n; }
+  for (let i = len - 1; i >= 0; i--) { const v = Number(x & BN255); out[i] = v > 127 ? v - 256 : v; x >>= BN8; }
   return out;
 }
 
@@ -1543,7 +1546,7 @@ function b64urlText_(s) { return b64url_(Utilities.newBlob(s).getBytes()); }
 /** ตัวเลขสุ่ม 1..n-1 จาก UUID หลายชุด (ใช้สร้างกุญแจครั้งเดียว) */
 function randomScalar_() {
   const seed = [0, 1, 2, 3].map(() => Utilities.getUuid()).join('|') + '|' + Date.now() + '|' + Math.random();
-  return bytesToBig_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_512, seed)) % (P256.n - 1n) + 1n;
+  return bytesToBig_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_512, seed)) % (P256.n - BN1) + BN1;
 }
 
 /** กุญแจ VAPID ของระบบ — สร้างครั้งแรกที่มีคนเปิดการแจ้งเตือน แล้วใช้ตลอด */
@@ -1575,7 +1578,7 @@ function es256Sign_(input, dHex) {
   const dBytes = bigToBytes_(d, 32);
   for (let i = 0; i < 8; i++) {
     const kSeed = Utilities.newBlob(input + '|' + Utilities.getUuid() + '|' + i).getBytes();
-    const k = bytesToBig_(Utilities.computeHmacSha256Signature(kSeed, dBytes)) % (n - 1n) + 1n;
+    const k = bytesToBig_(Utilities.computeHmacSha256Signature(kSeed, dBytes)) % (n - BN1) + BN1;
     const r = ecMulG_(k).x % n;
     if (!r) continue;
     const s = invMod_(k, n) * ((z + r * d) % n) % n;
