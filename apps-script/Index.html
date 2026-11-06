@@ -420,6 +420,13 @@ input.upper::placeholder { text-transform: none; }
 .install-auth { margin-top: 4px; }
 .install-card { max-width: 440px; display: flex; flex-direction: column; gap: 10px; }
 .install-card p { color: var(--muted); margin: 0; }
+.ai-card { display: flex; flex-direction: column; gap: 8px; }
+.ai-card .ai-summary { margin: 0; }
+.ai-card .ai-note { margin: 0; font-size: 12px; }
+.ai-sev { font-weight: 600; white-space: nowrap; }
+.ai-sev.high { color: var(--danger); }
+.ai-sev.medium { color: var(--amber-ink); }
+.ai-sev.low { color: var(--muted); }
 .push-offer { align-items: center; flex-wrap: wrap; }
 .push-offer-text { flex: 1 1 220px; }
 .push-offer-act { display: flex; gap: 8px; }
@@ -1039,6 +1046,14 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         </form>
       </div>
 
+      <section class="card pad ai-card" id="ac-ai">
+        <div class="ac-head"><h2>ผลตรวจโดย AI (Claude)</h2><button type="button" class="btn sm" data-ai-run="accrue">ให้ AI ตรวจตอนนี้</button></div>
+        <p class="sub" data-ai-status></p>
+        <p class="ai-summary" data-ai-summary></p>
+        <div class="table-wrap"><table class="compact" data-ai-table></table></div>
+        <p class="sub ai-note">AI ช่วยชี้รายการที่ควรตรวจก่อนส่งเท่านั้น — ยอดเงิน ไฟล์ และอีเมลถึงฝ่ายบัญชีคำนวณจากระบบเสมอ</p>
+      </section>
+
       <section class="card table-card">
         <div class="table-head"><h2>ประวัติการส่ง</h2></div>
         <div class="table-wrap"><table class="compact" id="ac-log" style="min-width:760px"></table></div>
@@ -1087,6 +1102,14 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
           <div class="ac-mail" id="cl-mail"></div>
         </section>
       </div>
+
+      <section class="card pad ai-card" id="cl-ai">
+        <div class="ac-head"><h2>ผลตรวจโดย AI (Claude)</h2><button type="button" class="btn sm" data-ai-run="clear">ให้ AI ตรวจตอนนี้</button></div>
+        <p class="sub" data-ai-status></p>
+        <p class="ai-summary" data-ai-summary></p>
+        <div class="table-wrap"><table class="compact" data-ai-table></table></div>
+        <p class="sub ai-note">AI ช่วยชี้รายการที่ควรตรวจก่อนส่งเท่านั้น — ยอดเงิน ไฟล์ และอีเมลถึงฝ่ายบัญชีคำนวณจากระบบเสมอ</p>
+      </section>
 
       <form class="card pad side-form" id="form-clear" novalidate style="max-width:620px">
         <h2>ตั้งค่าการส่ง File Clear</h2>
@@ -3320,9 +3343,58 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       $('#ac-loading').hidden = true;
     }
   }
+  // ---------- ผลตรวจโดย AI (Claude) — File Accrue / File Clear (ดู aiCheck_ ใน Code.gs) ----------
+  var AI_TYPE_TEXT = { duplicate: 'ซ้ำ', food_fee: 'ค่าอาหาร / ค่ารถ', expressway: 'สายทาง', missing_field: 'ข้อมูลไม่ครบ', unusual_count: 'จำนวนผิดปกติ', other: 'อื่น ๆ' };
+  var AI_SEV_TEXT = { high: 'สูง', medium: 'กลาง', low: 'ต่ำ' };
+  function renderAi(box, ai, status) {
+    var st = $('[data-ai-status]', box), sum = $('[data-ai-summary]', box), tb = $('[data-ai-table]', box), btn = $('[data-ai-run]', box);
+    status = status || {};
+    tb.innerHTML = '';
+    btn.disabled = !status.configured || !status.enabled;
+    if (!status.configured) st.textContent = 'ยังไม่ได้ตั้งกุญแจ Claude API (ANTHROPIC_API_KEY ใน Script Properties) — ระบบส่งอีเมลได้ตามปกติ โดยข้ามขั้นตอน AI';
+    else if (!status.enabled) st.textContent = 'ปิดการตรวจด้วย AI อยู่ (AI_CHECK_ENABLED = false) — ระบบส่งอีเมลได้ตามปกติ';
+    else st.textContent = ai ? 'ตรวจล่าสุด ' + stamp(ai.at) + ' · ' + ai.model + ' · ' + ai.rows + ' รายการ' +
+      (ai.usage ? ' · ' + ai.usage.input + ' / ' + ai.usage.output + ' tokens' : '') : 'ระบบตรวจอัตโนมัติก่อนส่งอีเมลทุกครั้ง (' + status.model + ')';
+    if (!ai) { sum.textContent = status.configured ? 'ยังไม่เคยตรวจเดือนนี้ — กด “ให้ AI ตรวจตอนนี้” เพื่อตรวจก่อนส่ง' : ''; return; }
+    if (!ai.ok) { sum.textContent = 'ตรวจไม่สำเร็จ: ' + (ai.error || '') + ' — การส่งอีเมลไม่ได้รับผลกระทบ'; return; }
+    sum.textContent = ai.summary || (ai.anomalies.length ? '' : 'ไม่พบรายการผิดปกติ');
+    if (!ai.anomalies.length) return;
+    tb.innerHTML = '<thead><tr><th>แถว</th><th>วันที่</th><th>สถานที่</th><th>ประเภท</th><th>ระดับ</th><th>รายละเอียด</th></tr></thead><tbody>' +
+      ai.anomalies.map(function (a) {
+        return '<tr><td>' + esc(a.rowId || 'ทั้งเดือน') + '</td><td>' + esc(a.date ? thaiDate(a.date) : '') + '</td><td>' + esc(a.place) + '</td>' +
+          '<td>' + esc(AI_TYPE_TEXT[a.type] || a.type) + '</td><td><span class="ai-sev ' + esc(a.severity) + '">' + esc(AI_SEV_TEXT[a.severity] || '') + '</span></td>' +
+          '<td>' + esc(a.message) + '</td></tr>';
+      }).join('') + '</tbody>';
+  }
+  $$('[data-ai-run]').forEach(function (btn) {
+    btn.addEventListener('click', async function () {
+      var kind = btn.dataset.aiRun, page = kind === 'accrue' ? S.ac : S.cl, box = btn.closest('.ai-card');
+      if (!page.data) return;
+      var label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'AI กำลังตรวจ…';
+      try {
+        var res = await api('aiCheckNow', S.token, kind, page.data.y, page.data.m);
+        page.data.aiStatus = res.status;
+        if (!res.skipped) page.data.ai = res;
+        cacheSet((kind === 'accrue' ? 'ac:' : 'cl:') + page.data.y + '-' + page.data.m, page.data);
+        renderAi(box, page.data.ai, page.data.aiStatus);
+        toast(res.ok ? 'AI ตรวจเสร็จ — ' + (res.anomalies.length ? 'พบ ' + res.anomalies.length + ' รายการที่ควรตรวจ' : 'ไม่พบรายการผิดปกติ')
+          : (res.skipped ? 'ข้ามการตรวจ: ' : 'ตรวจไม่สำเร็จ: ') + res.error, !res.ok);
+      } catch (err) {
+        toast(errText(err), true);
+      } finally {
+        btn.textContent = label;
+        btn.disabled = false;
+        renderAi(box, page.data.ai, page.data.aiStatus);
+      }
+    });
+  });
+
   function renderAccrue() {
     var d = S.ac.data;
     if (!d) return;
+    renderAi($('#ac-ai'), d.ai, d.aiStatus);
     $('#ac-body').hidden = false;
     var thisYear = new Date().getFullYear(), years = [];
     for (var yy = thisYear + 1; yy >= thisYear - 4; yy--) years.push(yy);
@@ -3505,6 +3577,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   function renderClear() {
     var d = S.cl.data;
     if (!d) return;
+    renderAi($('#cl-ai'), d.ai, d.aiStatus);
     var st = d.settings;
     $('#cl-body').hidden = false;
     var thisYear = new Date().getFullYear(), years = [];

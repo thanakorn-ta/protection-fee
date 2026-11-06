@@ -61,6 +61,7 @@ const API_FUNCTIONS = {
   listHolidays, saveHoliday, deleteHoliday,
   addLocation, listUsers, updateUser, reviewUser, resetPassword, getNotifySettings, saveNotifySettings,
   getPushConfig, savePushSub, removePushSub, pushInbox,
+  aiCheckNow,
 };
 
 function doPost(e) {
@@ -2106,14 +2107,16 @@ function sendAccrue_(y, m, by, bucket) {
     logAccrue_([when, label, by, to.join(', '), cc.join(', '), '0', '0', '', 'ไม่ได้ส่ง — ไม่มีการใช้รถคุ้มครองในเดือนนี้']);
     return { sent: false, reason: 'ไม่มีการใช้รถคุ้มครองในเดือน ' + label };
   }
+  const ai = aiCheck_('accrue', y, m, by); // AI ตรวจก่อนส่ง — ไม่ขวาง ไม่เปลี่ยนยอดหรือไฟล์
   const mail = accrueEmail_(y, m, s, revised);
   const msg = { to: to.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, attachments: files.map(f => f.blob) };
   if (cc.length) msg.cc = cc.join(',');
   MailApp.sendEmail(msg);
+  aiNotifyAdmins_(ai, 'ส่ง File Accrue ' + (revised ? 'ฉบับแก้ไขเพิ่มเติม ' : '') + 'ถึง ' + to.join(', ') + ' แล้ว เมื่อ ' + when, by);
   logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n'), revised ? 'ส่งแล้ว (แก้ไขเพิ่มเติม)' : 'ส่งแล้ว']);
   props.setProperty('ACCRUE_SENT_' + y + '_' + m, when);
   props.setProperty('ACCRUE_HASH_' + y + '_' + m, accrueHash_(bucket));
-  return { sent: true, at: when, to, cc, subject: mail.subject, revised, files: files.map(f => ({ name: f.name, total: f.total, count: f.count })) };
+  return { sent: true, at: when, to, cc, subject: mail.subject, revised, files: files.map(f => ({ name: f.name, total: f.total, count: f.count })), ai: aiBrief_(ai) };
 }
 
 /** วันที่ที่ตั้งให้ส่ง เช่น "21, 25, 27, 30, 31" → [21, 25, 27, 30, 31] */
@@ -2283,6 +2286,7 @@ function getAccrue(token, y, m) {
     nextSend: nextAccrueDay_(s, now),
     settings: s,
     log: readAccrueLog_('accrue'),
+    ai: aiLatest_('accrue', y, m), aiStatus: aiStatus_(),
   };
 }
 
@@ -2462,13 +2466,15 @@ function sendClear_(y, m, by) {
   }
   const revised = !!props.getProperty('CLEAR_SENT_' + y + '_' + m);
   const f = buildClearFile_(y, m, bucket);
+  const ai = aiCheck_('clear', y, m, by); // AI ตรวจก่อนส่ง — ไม่ขวาง ไม่เปลี่ยนยอดเช็ค
   const mail = clearEmail_(y, m, s, f.data, revised);
   const msg = { to: to.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, attachments: [f.blob] };
   if (cc.length) msg.cc = cc.join(',');
   MailApp.sendEmail(msg);
+  aiNotifyAdmins_(ai, 'ส่ง File Clear ' + (revised ? 'ฉบับแก้ไขเพิ่มเติม ' : '') + 'ถึง ' + to.join(', ') + ' แล้ว เมื่อ ' + when, by);
   logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(f.data.net), '', f.name + ' ' + f.url, revised ? 'ส่งแล้ว (แก้ไขเพิ่มเติม)' : 'ส่งแล้ว']);
   props.setProperty('CLEAR_SENT_' + y + '_' + m, when);
-  return { sent: true, at: when, to, cc, subject: mail.subject, revised, file: f.name, net: f.data.net };
+  return { sent: true, at: when, to, cc, subject: mail.subject, revised, file: f.name, net: f.data.net, ai: aiBrief_(ai) };
 }
 
 /**
@@ -2527,6 +2533,7 @@ function getClear(token, y, m) {
     }),
     settings: s,
     log: readAccrueLog_('clear'),
+    ai: aiLatest_('clear', y, m), aiStatus: aiStatus_(),
   };
 }
 
@@ -2549,6 +2556,293 @@ function sendClearNow(token, y, m) {
   return res;
 }
 
+
+/* ------------------------------------------------------------------ */
+/* AI ตรวจรายการก่อนส่ง (Claude API) — File Accrue / File Clear            */
+/* ------------------------------------------------------------------ */
+// ลำดับงาน: ตารางใช้รถ (ชีท) → Apps Script → Claude Messages API (ai_check) → ตรวจผลด้วยโค้ด
+//          → AuditLog + อีเมลผลตรวจถึงผู้ดูแลระบบ + หน้า File Accrue / File Clear
+// AI ทำหน้าที่ชี้รายการที่น่าสงสัยเท่านั้น — ยอดเงิน ไฟล์ .xlsx และอีเมลถึงฝ่ายบัญชีคำนวณจากโค้ดเสมอ ไม่ใช้ตัวเลขจาก AI
+// ไม่มีกุญแจ / ปิดใช้งาน / เรียกไม่สำเร็จ → ส่งตามปกติ (ไม่มีส่วนผล AI) และบันทึก ai_skipped / ai_check (failed)
+// ส่งเฉพาะข้อมูลที่จำเป็น: รหัสแถว วันที่ EXAT/BEM สายทาง สถานที่ ประเภทงาน ค่าอาหาร/ค่ารถ — ไม่ส่งชื่อ เบอร์โทร หรืออีเมล
+// Script Properties: ANTHROPIC_API_KEY (สร้างที่ console.anthropic.com), AI_MODEL (ค่าเริ่มต้น claude-opus-5-5),
+//                    AI_CHECK_ENABLED (false = ปิด), AI_EFFORT (low / medium / high — ค่าเริ่มต้น low)
+// Apps Script ไม่มี Anthropic SDK จึงเรียก REST ตรงด้วย UrlFetchApp
+
+const AI_DEFAULT_MODEL = 'claude-opus-5-5';
+const AI_API_URL = 'https://api.anthropic.com/v1/messages';
+const AI_API_VERSION = '2026-10-21';
+const AI_FALLBACK_BETA = 'server-side-fallback-2026-07-01'; // ถ้าโมเดลหลักปฏิเสธ ให้ API ส่งต่อโมเดลสำรองที่แนะนำเอง
+const AI_FALLBACK_MODELS = ['claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-sonnet-5-5'];
+const AI_TYPES = ['duplicate', 'food_fee', 'expressway', 'missing_field', 'unusual_count', 'other'];
+const AI_SEVERITY = ['high', 'medium', 'low'];
+const AI_TYPE_TEXT = { duplicate: 'ซ้ำ', food_fee: 'ค่าอาหาร / ค่ารถ', expressway: 'สายทาง', missing_field: 'ข้อมูลไม่ครบ', unusual_count: 'จำนวนผิดปกติ', other: 'อื่น ๆ' };
+const AI_KIND_TEXT = { accrue: 'File Accrue', clear: 'File Clear' };
+const AI_MAX_ANOMALIES = 40;
+
+const AI_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['anomalies', 'summary_th'],
+  properties: {
+    anomalies: {
+      type: 'array',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['rowId', 'type', 'severity', 'message_th'],
+        properties: {
+          rowId: { type: 'string' },
+          type: { type: 'string', enum: AI_TYPES },
+          severity: { type: 'string', enum: AI_SEVERITY },
+          message_th: { type: 'string' },
+        },
+      },
+    },
+    summary_th: { type: 'string' },
+  },
+};
+
+const AI_SYSTEM = [
+  'You review the monthly protection-vehicle (รถคุ้มครอง) usage log of Plan B Media before it is emailed to accounting.',
+  'Each row is one stop on an expressway job. Rows are given in sheet order ("order"). A "night" is all rows of the same provider on the same date.',
+  'Flag only clear, checkable problems in the rows given. Do not guess, do not compute money, and do not flag anything the rules below allow.',
+  '',
+  'Rules:',
+  '1. duplicate: two or more rows with the same provider, the same date and the same place (ignore spacing and letter case). Flag every row of the group except the first.',
+  '2. food_fee (EXAT only): in each night, the row with the lowest "order" must have fee 400 and every other row fee 0. Flag a night with no 400, more than one 400, 400 on a row that is not first, or any fee other than 0 or 400.',
+  '   BEM: the first row of each night is the one that bills the night (feeText usually "คิดค่ารถ 1 คืน"); later rows are blank or 0. Flag only a night that bills more than once. Never flag payment status values.',
+  '3. expressway: must be exactly ศรีรัช, ฉลองรัช or เฉลิมมหานคร. BEM rows must be ศรีรัช.',
+  '4. missing_field: date, place, expressway or jobType is empty.',
+  '5. unusual_count: compare this month\'s row count per provider with the previous months given. Flag only when the previous average is at least 5 and this month is more than double or less than half of it. Use rowId "" for this type.',
+  '6. other: only for something plainly wrong that the rules above do not cover (for example a date outside the month). Use sparingly.',
+  '',
+  'Write message_th as one short Thai sentence that names the problem and what to check. Write summary_th as 1-3 short Thai sentences;',
+  'if nothing is wrong, say that every row passed the checks. Use the exact rowId strings from the input.',
+].join('\n');
+
+function aiConfig_() {
+  const p = PropertiesService.getScriptProperties();
+  const effort = String(p.getProperty('AI_EFFORT') || '').trim().toLowerCase();
+  return {
+    key: String(p.getProperty('ANTHROPIC_API_KEY') || '').trim(),
+    enabled: String(p.getProperty('AI_CHECK_ENABLED') || 'true').trim().toLowerCase() !== 'false',
+    model: String(p.getProperty('AI_MODEL') || '').trim() || AI_DEFAULT_MODEL,
+    effort: ['low', 'medium', 'high', 'xhigh', 'max'].indexOf(effort) >= 0 ? effort : 'low', // กฎชัดเจน + UrlFetch จำกัด ~60 วินาที
+  };
+}
+
+/** สถานะสำหรับหน้าเว็บ (ไม่ส่งกุญแจออกไป) */
+function aiStatus_() {
+  const c = aiConfig_();
+  return { configured: !!c.key, enabled: c.enabled, model: c.model };
+}
+
+/** แถวของเดือน y/m ที่ส่งให้ AI (เฉพาะฟิลด์ที่จำเป็น) + จำนวนแถว 3 เดือนก่อนหน้า */
+function aiRows_(kind, y, m) {
+  const keys = kind === 'clear' ? ['exat'] : ['exat', 'bem'];
+  const prev = [1, 2, 3].map(k => { const t = new Date(y, m - 1 - k, 1); return t.getFullYear() + '-' + (t.getMonth() + 1); });
+  const rows = [];
+  const history = {};
+  keys.forEach(key => {
+    const P = key.toUpperCase();
+    history[P] = {};
+    prev.forEach(k => { history[P][k] = 0; });
+    const seen = {};
+    logRows_(key).rows.forEach((r, i) => {
+      if (!r.has || !r.ym) return;
+      const ymk = r.ym.y + '-' + r.ym.m;
+      if (ymk in history[P]) history[P][ymk]++;
+      if (r.ym.y !== y || r.ym.m !== m) return;
+      let id = P + '-' + (r.no || 'แถว' + (i + 1));
+      seen[id] = (seen[id] || 0) + 1;
+      if (seen[id] > 1) id += '#' + seen[id];
+      const row = { rowId: id, order: i + 1, provider: P, date: r.iso, expressway: r.expressway, place: r.place, jobType: r.jobType, project: r.project };
+      if (key === 'exat') row.fee = r.fee;
+      else { row.feeText = r.feeText; row.payment = r.payment; }
+      rows.push(row);
+    });
+  });
+  return { rows, history };
+}
+
+/** เรียก Claude — คืน { parsed, usage, model } หรือโยนข้อผิดพลาด */
+function aiCall_(cfg, prompt) {
+  const body = {
+    model: cfg.model,
+    max_tokens: 16000,
+    system: AI_SYSTEM,
+    output_config: { effort: cfg.effort, format: { type: 'json_schema', schema: AI_SCHEMA } },
+    messages: [{ role: 'user', content: prompt }],
+  };
+  const headers = { 'x-api-key': cfg.key, 'anthropic-version': AI_API_VERSION };
+  if (AI_FALLBACK_MODELS.indexOf(cfg.model) >= 0) {
+    body.fallbacks = 'default';
+    headers['anthropic-beta'] = AI_FALLBACK_BETA;
+  }
+  const res = UrlFetchApp.fetch(AI_API_URL, {
+    method: 'post', contentType: 'application/json', headers, payload: JSON.stringify(body), muteHttpExceptions: true,
+  });
+  const code = res.getResponseCode();
+  let json = null;
+  try { json = JSON.parse(res.getContentText()); } catch (err) { json = null; }
+  if (code !== 200 || !json) {
+    const msg = json && json.error ? json.error.type + ': ' + json.error.message : 'HTTP ' + code;
+    throw new Error('Claude API ' + msg);
+  }
+  const usage = { input: (json.usage && json.usage.input_tokens) || 0, output: (json.usage && json.usage.output_tokens) || 0 };
+  if (json.stop_reason === 'refusal') throw Object.assign(new Error('Claude ปฏิเสธคำขอ (' + ((json.stop_details && json.stop_details.category) || 'refusal') + ')'), { usage, model: json.model });
+  if (json.stop_reason === 'max_tokens') throw Object.assign(new Error('คำตอบยาวเกิน max_tokens'), { usage, model: json.model });
+  const text = (json.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  let parsed;
+  try { parsed = JSON.parse(text); } catch (err) { throw Object.assign(new Error('อ่านผล JSON ไม่ได้'), { usage, model: json.model }); }
+  return { parsed, usage, model: json.model || cfg.model };
+}
+
+/** ตรวจผลจาก AI ด้วยโค้ด: ทิ้งรายการที่อ้างแถวที่ไม่มีจริง / ชนิดไม่รู้จัก / ซ้ำ แล้วเติมวันที่และสถานที่จากชีท */
+function aiValidate_(parsed, rows) {
+  const byId = {};
+  rows.forEach(r => { byId[r.rowId] = r; });
+  const out = [];
+  const seen = {};
+  let dropped = 0;
+  (Array.isArray(parsed && parsed.anomalies) ? parsed.anomalies : []).forEach(a => {
+    const id = String((a && a.rowId) || '').trim();
+    const type = AI_TYPES.indexOf(a && a.type) >= 0 ? a.type : '';
+    const row = byId[id];
+    const monthLevel = !id && type === 'unusual_count';
+    if (!type || (!row && !monthLevel) || seen[id + '|' + type]) { dropped++; return; }
+    seen[id + '|' + type] = 1;
+    out.push({
+      rowId: id, type, severity: AI_SEVERITY.indexOf(a.severity) >= 0 ? a.severity : 'medium',
+      message: String(a.message_th || '').trim().slice(0, 240),
+      date: row ? row.date : '', place: row ? row.place : '', provider: row ? row.provider : '',
+    });
+  });
+  if (out.length > AI_MAX_ANOMALIES) { dropped += out.length - AI_MAX_ANOMALIES; out.length = AI_MAX_ANOMALIES; }
+  return { anomalies: out, dropped, summary: String((parsed && parsed.summary_th) || '').trim().slice(0, 600) };
+}
+
+function aiKey_(kind, y, m) { return 'AI_CHECK_' + kind.toUpperCase() + '_' + y + '_' + m; }
+
+/** ผลตรวจล่าสุดของเดือนนั้น (เก็บใน Script Properties) */
+function aiLatest_(kind, y, m) {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(aiKey_(kind, y, m)) || 'null'); } catch (err) { return null; }
+}
+
+/**
+ * ให้ AI ตรวจรายการเดือน y/m — ไม่โยนข้อผิดพลาดออกไปเสมอ (ไม่ขวางการส่งอีเมล)
+ * คืน { ok, skipped, error, model, at, summary, anomalies, dropped, rows, usage, ms }
+ */
+function aiCheck_(kind, y, m, by) {
+  const t0 = Date.now();
+  const res = { kind, y, m, ok: false, skipped: false, at: nowText_(), anomalies: [], summary: '', dropped: 0, rows: 0 };
+  const cfg = aiConfig_();
+  res.model = cfg.model;
+  try {
+    if (!cfg.enabled || !cfg.key) {
+      res.skipped = true;
+      res.error = !cfg.key ? 'ยังไม่ได้ตั้ง ANTHROPIC_API_KEY' : 'ปิดใช้งาน (AI_CHECK_ENABLED=false)';
+    } else {
+      const data = aiRows_(kind, y, m);
+      res.rows = data.rows.length;
+      if (!data.rows.length) {
+        res.skipped = true;
+        res.error = 'ไม่มีรายการในเดือนนี้';
+      } else {
+        const prompt = 'ตรวจ ' + AI_KIND_TEXT[kind] + ' เดือน ' + accrueMonthShort_(y, m) + ' (' + y + '-' + String(m).padStart(2, '0') + ')\n' +
+          'Row counts in previous months (provider → { "year-month": rows }): ' + JSON.stringify(data.history) + '\n' +
+          'Rows (' + data.rows.length + '):\n' + JSON.stringify(data.rows);
+        const r = aiCall_(cfg, prompt);
+        const v = aiValidate_(r.parsed, data.rows);
+        Object.assign(res, { ok: true, model: r.model, usage: r.usage, anomalies: v.anomalies, dropped: v.dropped, summary: v.summary });
+      }
+    }
+  } catch (err) {
+    res.error = String((err && err.message) || err).slice(0, 300);
+    if (err && err.usage) res.usage = err.usage;
+    if (err && err.model) res.model = err.model;
+  }
+  res.ms = Date.now() - t0;
+  try {
+    audit_(by || 'system', res.skipped ? 'ai_skipped' : 'ai_check', '', '', {
+      kind, y, m, model: res.model, ok: res.ok, rows: res.rows, anomalies: res.anomalies.length, dropped: res.dropped,
+      input_tokens: (res.usage && res.usage.input) || 0, output_tokens: (res.usage && res.usage.output) || 0, ms: res.ms,
+      error: res.error || '',
+    });
+  } catch (err) {
+    console.error('ai audit failed', err);
+  }
+  if (!res.skipped) {
+    try {
+      const keep = Object.assign({}, res);
+      let text = JSON.stringify(keep);
+      while (text.length > 8500 && keep.anomalies.length) { keep.anomalies = keep.anomalies.slice(0, -1); text = JSON.stringify(keep); }
+      PropertiesService.getScriptProperties().setProperty(aiKey_(kind, y, m), text);
+    } catch (err) {
+      console.error('ai save failed', err);
+    }
+  }
+  return res;
+}
+
+/** อีเมลผลตรวจถึงผู้ดูแลระบบ (แยกจากอีเมลถึงฝ่ายบัญชี) — ส่งเมื่อ AI ตรวจสำเร็จ ไม่โยนข้อผิดพลาด */
+function aiNotifyAdmins_(ai, sentText, by) {
+  if (!ai || !ai.ok) return null;
+  try {
+    const to = adminNotifyEmails_();
+    if (!to.length || MailApp.getRemainingDailyQuota() < to.length) return null;
+    const label = AI_KIND_TEXT[ai.kind] + ' เดือน ' + accrueMonthShort_(ai.y, ai.m);
+    const n = ai.anomalies.length;
+    const subject = '[ผลตรวจโดย AI] ' + label + (n ? ' — พบ ' + n + ' รายการที่ควรตรวจ' : ' — ไม่พบรายการผิดปกติ');
+    const lines = ai.anomalies.map(a => '- ' + (a.rowId || 'ทั้งเดือน') + (a.date ? ' · ' + a.date : '') + (a.place ? ' · ' + a.place : '') +
+      ' [' + AI_TYPE_TEXT[a.type] + '] ' + a.message);
+    const note = 'ยอดเงินและไฟล์ที่ส่งฝ่ายบัญชีคำนวณจากระบบ ไม่ได้มาจาก AI — ผลนี้ใช้ช่วยตรวจทานเท่านั้น';
+    const link = appUrl_();
+    const plain = 'ผลตรวจโดย AI (Claude) — ' + label + '\n' + sentText + '\n\n' + (ai.summary || '') + '\n\n' +
+      (lines.length ? lines.join('\n') + '\n\n' : '') + note + '\nโมเดล ' + ai.model + ' · ' + ai.at + '\n\nเปิดระบบ: ' + link;
+    const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const html = '<div style="font-family:Tahoma,sans-serif;font-size:14px;line-height:1.7;color:#14211B">' +
+      '<p style="margin:0 0 6px"><b>ผลตรวจโดย AI (Claude)</b> — ' + esc(label) + '</p>' +
+      '<p style="margin:0 0 12px;color:#56655D">' + esc(sentText) + '</p>' +
+      '<p style="margin:0 0 12px">' + esc(ai.summary || '') + '</p>' +
+      (lines.length ? '<table style="border-collapse:collapse;font-size:13px">' + ai.anomalies.map(a =>
+        '<tr><td style="padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top">' + esc(a.rowId || 'ทั้งเดือน') + '</td>' +
+        '<td style="padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top">' + esc(a.date) + '</td>' +
+        '<td style="padding:3px 12px 3px 0;vertical-align:top">' + esc(a.place) + '</td>' +
+        '<td style="padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top">' + esc(AI_TYPE_TEXT[a.type]) + '</td>' +
+        '<td style="padding:3px 0;vertical-align:top">' + esc(a.message) + '</td></tr>').join('') + '</table>' : '') +
+      '<p style="margin:16px 0 0;color:#6B7A72;font-size:12px">' + esc(note) + '<br>โมเดล ' + esc(ai.model) + ' · ' + esc(ai.at) +
+      ' · <a href="' + esc(link) + '">เปิดระบบ</a></p></div>';
+    MailApp.sendEmail({ to: to.join(','), subject, body: plain, htmlBody: html, name: 'Protection Fee' });
+    audit_(by || 'system', 'notify_ai', '', '', { kind: ai.kind, y: ai.y, m: ai.m, to: to.join(', '), anomalies: n });
+    return { to };
+  } catch (err) {
+    console.error('aiNotifyAdmins_ failed', err);
+    return null;
+  }
+}
+
+/** ผลย่อสำหรับตอบหน้าเว็บหลังส่งอีเมล */
+function aiBrief_(ai) {
+  return ai ? { ok: ai.ok, skipped: ai.skipped, count: ai.anomalies.length, error: ai.error || '' } : null;
+}
+
+/** ผู้ดูแลระบบกด "ให้ AI ตรวจตอนนี้" ที่หน้า File Accrue / File Clear */
+function aiCheckNow(token, kind, y, m) {
+  const user = requireUser_(token, true);
+  if (!AI_KIND_TEXT[kind]) throw new Error('ชนิดไม่ถูกต้อง');
+  y = Number(y); m = Number(m);
+  if (!(m >= 1 && m <= 12) || !(y > 2000)) throw new Error('เดือนไม่ถูกต้อง');
+  return Object.assign(aiCheck_(kind, y, m, user.username), { status: aiStatus_() });
+}
+
+/** รันจากตัวแก้ไข: ทดสอบ AI กับข้อมูลจริงหนึ่งเดือน (ค่าเริ่มต้น ส.ค. 2569) — ไม่ส่งอีเมล */
+function testAiCheck() {
+  const res = aiCheck_('accrue', 2026, 8, 'test');
+  console.log(JSON.stringify({ ok: res.ok, skipped: res.skipped, error: res.error, model: res.model, rows: res.rows, usage: res.usage, ms: res.ms,
+    dropped: res.dropped, summary: res.summary, anomalies: res.anomalies }, null, 1));
+}
 
 /* ------------------------------------------------------------------ */
 /* วันหยุดนักขัตฤกษ์ — เก็บในแท็บ "วันหยุดนักขัตฤกษ์" (แก้ไข/เพิ่มได้จากหน้า ตารางจอง โดยผู้ดูแลระบบ) */
