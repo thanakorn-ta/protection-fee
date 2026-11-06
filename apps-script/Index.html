@@ -1136,6 +1136,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 </div>
 
 <datalist id="dl-places"></datalist>
+<datalist id="dl-bk-places"></datalist>
 <datalist id="dl-jobtypes"></datalist>
 <datalist id="dl-workers"></datalist>
 <datalist id="dl-bemfees"></datalist>
@@ -1192,7 +1193,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         <h3><span class="fnum">2</span>จุดที่ไป <span class="req">*</span></h3>
         <p class="fhint">บรรทัดละ 1 จุด — ค้นหาจากฐานข้อมูลป้ายแล้วกด “เพิ่ม” หรือพิมพ์เองก็ได้</p>
         <div class="place-add">
-          <input id="bk-place-pick" list="dl-places" placeholder="ค้นหาป้าย เช่น 6.2" aria-label="เลือกจุดที่ไปจากฐานข้อมูลป้าย">
+          <input id="bk-place-pick" list="dl-bk-places" placeholder="ค้นหาป้าย เช่น 6.2" aria-label="เลือกจุดที่ไปจากฐานข้อมูลป้าย">
           <button type="button" class="btn sm" id="bk-place-add">+ เพิ่ม</button>
         </div>
         <textarea name="places" rows="3" placeholder="ถนนเอกมัยมุ่งพระรามเก้า" aria-label="จุดที่ไป"></textarea>
@@ -3658,6 +3659,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     var val = form[name].value;
     $$('[data-seg="' + name + '"] [data-val]', form).forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.val === val)); });
     if (name === 'provider' && form.expressway) form.expressway.innerHTML = wayOptions(form.expressway.value, val); // BEM = ศรีรัช เท่านั้น
+    if (name === 'provider' && form.id === 'bk-form') fillList('#dl-bk-places', bookingPlaces(val));
   }
   $$('#bk-form [data-seg] [data-val]').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -3749,6 +3751,22 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     setTimeout(function () { form.jobCategory.focus(); }, 30);
   }
   $('#bk-cancel-edit').addEventListener('click', askClose);
+
+  // จุดที่ไป: แจ้งใช้รถ BEM เลือกได้เฉพาะจุดของ BEM · EXAT เฉพาะจุดของ EXAT (ฐานข้อมูลป้าย + ที่เคยบันทึกในตารางนั้น)
+  // เจ้าของจุดตัดสินแบบเดียวกับ bookingToForms_ ใน Code.gs (เขตพื้นที่ขึ้นต้น BEM หรือ Media Site มี BECL / BEM)
+  function locOwner(l) { return /^BEM/i.test(l.operator || '') || /BECL|BEM/i.test(l.mediaSite || '') ? 'BEM' : 'EXAT'; }
+  function placeLoc(p) { return S.data.locations.find(function (l) { return l.area === p || (l.code && l.code === p); }); }
+  function otherOwnerText(loc, provider) {
+    return '“' + loc.area + '” เป็นจุดของ ' + locOwner(loc) + ' — แจ้งใช้รถ ' + provider + ' เลือกได้เฉพาะจุดของ ' + provider;
+  }
+  function bookingPlaces(provider) {
+    var other = {}, seen = {}, out = [];
+    S.data.locations.forEach(function (l) { if (locOwner(l) !== provider) other[l.area] = 1; });
+    S.data.locations.filter(function (l) { return locOwner(l) === provider; }).map(function (l) { return l.area; })
+      .concat((provider === 'BEM' ? S.data.options.bemPlaces : S.data.options.exatPlaces) || [])
+      .forEach(function (p) { if (p && !other[p] && !seen[p]) { seen[p] = 1; out.push(p); } });
+    return out;
+  }
   $('#bk-place-add').addEventListener('click', function () {
     var pick = $('#bk-place-pick');
     var v = pick.value.trim();
@@ -3756,6 +3774,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     var form = $('#bk-form');
     var loc = S.data.locations.find(function (l) { return l.area === v || l.code === v; });
     if (loc) {
+      if (locOwner(loc) !== form.provider.value) { toast(otherOwnerText(loc, form.provider.value), true); return pick.focus(); }
       v = loc.area;
       if (!form.expressway.value && loc.expressway) form.expressway.value = loc.expressway;
       if (!form.meetingPoint.value && loc.meetingPoint) { form.meetingPoint.value = loc.meetingPoint; syncPick(form, 'meetingPoint'); }
@@ -3779,6 +3798,8 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     data.jobType = composeJob(data.jobCategory, data.jobDetail);
     if (!data.date) return bad(form.date, 'กรุณาเลือกวันที่');
     if (!lines(data.places).length) return bad($('#bk-place-pick'), 'กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด');
+    var wrong = lines(data.places).map(placeLoc).find(function (l) { return l && locOwner(l) !== data.provider; });
+    if (wrong) return bad(form.places, otherOwnerText(wrong, data.provider));
     if (!data.worker.trim()) return bad(form.worker.hidden ? form.querySelector('[data-pick="worker"]') : form.worker, 'กรุณาเลือกหรือกรอกชื่อผู้เข้างาน');
     if (!data.phone.trim()) return bad(form.phone, 'กรุณากรอกเบอร์ติดต่อผู้เข้างาน');
     if (!PHONE_RE.test(data.phone.trim())) return bad(form.phone, 'เบอร์ติดต่อไม่ถูกต้อง เช่น 061-895-3563');

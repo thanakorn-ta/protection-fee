@@ -182,7 +182,7 @@ function getAppData(token) {
 
 // ส่วนของ getAppData ที่เหมือนกันทุกคน (ฐานข้อมูลป้าย ตาราง EXAT / BEM อัตราค่ารถ) — อ่าน 4 แท็บทุกครั้งช้า
 // จึงเก็บไว้ใน CacheService 5 นาที และล้างทันทีเมื่อระบบเขียนตาราง / เพิ่มสถานที่ (แก้ในชีทเองเห็นผลภายใน 5 นาที)
-const APPDATA_CACHE_KEY = 'appdata_v1';
+const APPDATA_CACHE_KEY = 'appdata_v2'; // v2: เพิ่ม exatPlaces / bemPlaces
 const APPDATA_CACHE_SECONDS = 300;
 
 function sharedAppData_() {
@@ -202,6 +202,7 @@ function sharedAppData_() {
       projects: PROJECTS,
       expressways: EXPRESSWAYS.slice(),
       places: uniq_(locations.map(l => l.area).concat(exat.places, bem.places)),
+      exatPlaces: exat.places, bemPlaces: bem.places, // ฟอร์มจอง: แจ้งใช้รถ EXAT / BEM เลือกได้เฉพาะจุดของตัวเอง
       jobTypes: uniq_(exat.jobTypes.concat(bem.jobTypes)),
       workers: uniq_(exat.workers.concat(bem.workers)),
       bemFees: uniq_(BEM_FEES.concat(bem.fees)),
