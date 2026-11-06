@@ -1337,8 +1337,30 @@ const NOTIFY_TEXT = {
   rejected: { tag: 'ไม่อนุมัติ', intro: 'การจองรถคุ้มครองของคุณไม่ได้รับการอนุมัติ — แก้ไขแล้วส่งขออนุมัติใหม่ได้ในระบบ', button: 'ดูและแก้ไขการจองในระบบ' },
 };
 
+/** ชื่อ-นามสกุลที่ลงทะเบียนสมัครสมาชิกไว้ (ชีท Users) แทนชื่อที่เก็บไว้ตอนจอง — ไม่มีในชีท ใช้ชื่อเดิม */
+function withRegisteredNames_(b, users) {
+  const name = (username, fallback) => {
+    const u = users && users[username];
+    return (u && String(u.fullName || '').trim()) || fallback || username || '';
+  };
+  return Object.assign({}, b, {
+    requestedByName: name(b.requestedBy, b.requestedByName),
+    reviewedByName: b.reviewedBy ? name(b.reviewedBy, b.reviewedByName) : b.reviewedByName,
+    cancelledByName: b.cancelledBy ? name(b.cancelledBy, b.cancelledByName) : b.cancelledByName,
+  });
+}
+
+function usersByName_() {
+  const out = {};
+  readUsers_(usersSheet_()).forEach(u => { out[u.username] = u; });
+  return out;
+}
+
 function bookingMail_(kind, b) {
   const t = NOTIFY_TEXT[kind];
+  // ถึงผู้จอง (อนุมัติ / ไม่อนุมัติ): ขึ้นต้นด้วยชื่อ-นามสกุลที่ลงทะเบียนไว้
+  const greet = kind === 'approved' || kind === 'rejected'
+    ? 'เรียน คุณ' + String(b.requestedByName || b.requestedBy || '').replace(/^คุณ\s*/, '') : '';
   const job = b.jobType || b.title;
   const subject = '[' + t.tag + '] จองรถคุ้มครอง ' + b.provider + ' ' + bookingDateShort_(b.date) + ' · ' + job;
   const places = String(b.places || '').split(/\r?\n/).map(s => s.trim()).filter(Boolean);
@@ -1369,9 +1391,10 @@ function bookingMail_(kind, b) {
   const shown = rows.filter(r => String(r[1] || '').trim());
   const link = bookingLink_(b);
   const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const plain = t.intro + '\n\n' + shown.map(r => r[0] + ': ' + String(r[1]).replace(/\n/g, ', ')).join('\n') +
+  const plain = (greet ? greet + '\n\n' : '') + t.intro + '\n\n' + shown.map(r => r[0] + ': ' + String(r[1]).replace(/\n/g, ', ')).join('\n') +
     '\n\n' + t.button + ': ' + link + '\n\n— ระบบ Protection Fee (อีเมลอัตโนมัติ)';
   const html = '<div style="font-family:Tahoma,sans-serif;font-size:14px;line-height:1.7;color:#14211B">' +
+    (greet ? '<p style="margin:0 0 14px">' + esc(greet) + '</p>' : '') +
     '<p style="margin:0 0 14px">' + esc(t.intro) + '</p>' +
     '<table style="border-collapse:collapse">' + shown.map(r =>
       '<tr><td style="padding:4px 24px 4px 0;vertical-align:top;color:#4A5A52;white-space:nowrap">' + esc(r[0]) + '</td>' +
@@ -1393,7 +1416,9 @@ function sendBookingNotice_(kind, b, to, by) {
       if (quota < list.length) {
         detail.result = 'failed: โควตาอีเมลวันนี้เหลือ ' + quota + ' ฉบับ';
       } else {
-        const mail = bookingMail_(kind, b);
+        let named = b;
+        try { named = withRegisteredNames_(b, usersByName_()); } catch (err) { named = b; }
+        const mail = bookingMail_(kind, named);
         MailApp.sendEmail({ to: list.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, name: 'Protection Fee' });
         detail.result = 'ok';
       }
@@ -1714,6 +1739,7 @@ function sendPush_(kind, b, usernames, by) {
     if (!subs.length) return res;
     const users = {};
     readUsers_(usersSheet_()).forEach(u => { users[u.username] = u; });
+    b = withRegisteredNames_(b, users);
     const counts = pendingBadges_();
     const keys = pushKeys_();
     const t = PUSH_TEXT[kind](b);
