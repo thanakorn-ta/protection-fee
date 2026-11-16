@@ -172,6 +172,12 @@ html.syncing #sync-bar { opacity: 1; animation: sync-run 1.1s linear infinite; }
 @keyframes sync-run { from { background-position: -40% 0; } to { background-position: 140% 0; } }
 .refresh-btn { min-height: 44px; min-width: 44px; padding: 0 14px; border-radius: 8px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; color: #fff; border: 1px solid rgba(255,255,255,.55); background: rgba(255,255,255,.1); font: inherit; font-size: 15px; font-weight: 600; white-space: nowrap; }
 .refresh-btn:disabled { opacity: .8; }
+.key-btn { background: var(--amber); border-color: var(--amber); color: #1F1A00; }
+.key-btn .k-ico { font-size: 17px; line-height: 1; }
+@media (max-width: 640px) { .key-btn .key-label { display: none; } }
+.key-row { display: flex; gap: 8px; }
+.key-row input { flex: 1; min-width: 0; }
+.key-row .btn { flex: none; white-space: nowrap; }
 @media (max-width: 640px) { .refresh-btn { padding: 0 10px; font-size: 14px; } }
 .ptr { position: fixed; top: 0; left: 50%; z-index: 20; transform: translate(-50%, -52px); padding: 8px 16px; border-radius: 999px; background: #fff; color: var(--green-ink); box-shadow: 0 6px 20px rgba(0,0,0,.18); font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none; transition: opacity .15s; }
 .ptr.on { opacity: 1; }
@@ -684,6 +690,9 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.6-4.5L4 8"/><path d="M4 3v5h5"/><path d="M4 13a8 8 0 0 0 14.6 4.5L20 16"/><path d="M20 21v-5h-5"/></svg>
           <span class="rf-label">รีเฟรช</span>
         </button>
+        <button type="button" class="refresh-btn key-btn" data-ai-key data-admin hidden aria-label="ใส่กุญแจ AI (API KEY)" title="ใส่กุญแจ AI (API KEY)">
+          <span class="k-ico" aria-hidden="true">🔑</span><span class="key-label">API KEY</span>
+        </button>
         <button type="button" class="icon-btn" data-install data-install-quick hidden aria-label="ติดตั้งแอป" title="ติดตั้งแอป">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
         </button>
@@ -1184,6 +1193,11 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       <div class="error" data-error hidden></div>
       <button type="submit" class="btn primary block">เปลี่ยนรหัสผ่าน</button>
     </form>
+    <div class="card install-card" id="ai-key-card" data-admin hidden>
+      <h2>🔑 กุญแจ AI (API KEY)</h2>
+      <p>ใส่กุญแจ Google Gemini (ฟรี) เพื่อให้ AI ช่วยตรวจ File Accrue / File Clear ก่อนส่งอีเมล — เฉพาะผู้ดูแลระบบ</p>
+      <button type="button" class="btn primary block" data-ai-key>ใส่ / เปลี่ยน API KEY</button>
+    </div>
     <div class="card install-card" id="push-card" hidden>
       <h2>การแจ้งเตือน</h2>
       <p id="push-card-text"></p>
@@ -1324,7 +1338,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     </div>
     <p class="ai-key-status" id="ai-key-status"></p>
     <label class="field"><span>วางกุญแจใหม่ <span class="opt">(เว้นว่าง = ใช้กุญแจเดิม)</span></span>
-      <input type="password" name="key" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="AIza…">
+      <span class="key-row"><input type="password" name="key" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="AIza…"><button type="button" class="btn" id="ai-key-paste">📋 วาง</button></span>
     </label>
     <p class="sub" id="ai-key-help"></p>
     <p class="ai-privacy">ระบบส่งให้ AI เฉพาะข้อมูลที่ไม่ระบุตัวบุคคล (วันที่ EXAT/BEM สายทาง สถานที่ ประเภทงาน ยอดเงิน) — <b>ไม่ส่งชื่อ เบอร์โทร หรืออีเมล</b> · Gemini รุ่นฟรี Google อาจนำข้อมูลที่ส่งไปใช้ปรับปรุงบริการ · กุญแจเก็บไว้ที่เซิร์ฟเวอร์ หน้าเว็บเห็นแบบปิดบังเท่านั้น</p>
@@ -3590,13 +3604,29 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   $('#form-ai-key').addEventListener('submit', function (e) {
     e.preventDefault();
     var f = e.target;
+    var prov = aiKeyProvider(), cur = S.aiKey && S.aiKey.providers[prov];
+    if (!f.key.value.trim() && !(cur && cur.configured)) { showError(f, 'กรุณาวางกุญแจ ' + (cur ? cur.label : '') + ' ในช่อง “วางกุญแจใหม่” ก่อนกดบันทึก'); f.key.focus(); return; }
     submitWith(f, async function () {
-      var s = await api('saveAiSettings', S.token, { provider: aiKeyProvider(), key: f.key.value.trim() });
+      var s = await api('saveAiSettings', S.token, { provider: prov, key: f.key.value.trim() });
       f.key.value = '';
       aiKeyChanged(s);
       $('#ai-key-result').textContent = 'บันทึกแล้ว — ใช้ ' + s.providers[s.provider].label + ' ตรวจก่อนส่ง';
       toast('บันทึกการตั้งค่า AI แล้ว');
     });
+  });
+  $('#ai-key-paste').addEventListener('click', async function () {
+    var f = $('#form-ai-key');
+    $('#ai-key-result').textContent = 'กำลังอ่านคลิปบอร์ด… (ถ้าเบราว์เซอร์ถาม ให้กดอนุญาต)';
+    try {
+      var t = (await Promise.race([navigator.clipboard.readText(), new Promise(function (_, no) { setTimeout(no, 8000); })]) || '').replace(/\s+/g, '');
+      if (!t) throw new Error('empty');
+      f.key.value = t;
+      showError(f, '');
+      $('#ai-key-result').textContent = 'วางกุญแจแล้ว (' + t.length + ' ตัวอักษร) — กด “บันทึก” เพื่อเก็บ';
+    } catch (err) {
+      $('#ai-key-result').textContent = 'วางอัตโนมัติไม่ได้ — แตะค้างที่ช่องกุญแจแล้วเลือก “วาง” แทน';
+      f.key.focus();
+    }
   });
   $('#ai-key-test').addEventListener('click', async function () {
     var b = this, out = $('#ai-key-result');
