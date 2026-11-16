@@ -61,7 +61,7 @@ const API_FUNCTIONS = {
   listHolidays, saveHoliday, deleteHoliday,
   addLocation, listUsers, updateUser, reviewUser, resetPassword, getNotifySettings, saveNotifySettings,
   getPushConfig, savePushSub, removePushSub, pushInbox,
-  aiCheckNow,
+  aiCheckNow, getAiSettings, saveAiSettings, deleteAiKey, testAiKey, aiReviewBooking,
 };
 
 function doPost(e) {
@@ -986,6 +986,14 @@ function listBookings(token, from, to) {
 function saveBooking(token, form) {
   const user = requireUser_(token);
   const f = validateBooking_(form);
+  // จุดที่อยู่ในฐานข้อมูลป้ายต้องเป็นของ EXAT / BEM ตามที่แจ้งใช้รถ (หน้าเว็บตรวจแล้ว — ตรวจซ้ำที่เซิร์ฟเวอร์)
+  const locs = sharedAppData_().locations;
+  placeLines_(f.places).forEach(p => {
+    const np = norm_(p);
+    const loc = locs.find(l => norm_(l.area) === np || (l.code && norm_(l.code) === np));
+    const owner = loc ? (/^BEM/i.test(loc.operator) || /BECL|BEM/i.test(loc.mediaSite) ? 'BEM' : 'EXAT') : '';
+    if (owner && owner !== f.provider) throw new Error('“' + loc.area + '” เป็นจุดของ ' + owner + ' — แจ้งใช้รถ ' + f.provider + ' เลือกได้เฉพาะจุดของ ' + f.provider);
+  });
   const id = String((form && form.id) || '').trim();
   let notice = ''; // แจ้งผู้ดูแลระบบหลังบันทึก: จองใหม่ หรือแก้แล้วส่งขออนุมัติใหม่
   const saved = withLock_(() => {
@@ -2238,12 +2246,19 @@ function sendAccrue_(y, m, by, bucket) {
     logAccrue_([when, label, by, to.join(', '), cc.join(', '), '0', '0', '', 'ไม่ได้ส่ง — ไม่มีการใช้รถคุ้มครองในเดือนนี้']);
     return { sent: false, reason: 'ไม่มีการใช้รถคุ้มครองในเดือน ' + label };
   }
-  const ai = aiCheck_('accrue', y, m, by); // AI ตรวจก่อนส่ง — ไม่ขวาง ไม่เปลี่ยนยอดหรือไฟล์
   const mail = accrueEmail_(y, m, s, revised);
+  // ตรวจก่อนส่ง (โค้ด): อ่านชีทใหม่แล้วเทียบยอด จำนวนรายการ และยอดรวมในไฟล์แนบ — ไม่ตรง = ระงับการส่ง + แจ้งผู้ดูแลระบบ
+  const verify = verifySend_('accrue', y, m, {
+    facts: accrueFacts_(bucket), email: mail.plain,
+    files: files.map(f => ({ label: f.name, url: f.url, row: (f.key === 'exat' ? 4 : 6) + f.count, col: f.key === 'exat' ? 11 : 7, total: f.total })),
+  });
+  if (!verify.ok) verifyBlocked_(verify, by, [when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n')]);
+  // AI ตรวจเป็นความเห็นที่สอง — ไม่ขวาง ไม่เปลี่ยนยอดหรือไฟล์
+  const ai = aiCheck_('accrue', y, m, by, { email: mail.plain + '\nไฟล์แนบ: ' + files.map(f => f.name).join(', '), facts: verify.facts });
   const msg = { to: to.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, attachments: files.map(f => f.blob) };
   if (cc.length) msg.cc = cc.join(',');
   MailApp.sendEmail(msg);
-  aiNotifyAdmins_(ai, 'ส่ง File Accrue ' + (revised ? 'ฉบับแก้ไขเพิ่มเติม ' : '') + 'ถึง ' + to.join(', ') + ' แล้ว เมื่อ ' + when, by);
+  aiNotifyAdmins_(ai, 'ส่ง File Accrue ' + (revised ? 'ฉบับแก้ไขเพิ่มเติม ' : '') + 'ถึง ' + to.join(', ') + ' แล้ว เมื่อ ' + when, by, verify);
   logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n'), revised ? 'ส่งแล้ว (แก้ไขเพิ่มเติม)' : 'ส่งแล้ว']);
   props.setProperty('ACCRUE_SENT_' + y + '_' + m, when);
   props.setProperty('ACCRUE_HASH_' + y + '_' + m, accrueHash_(bucket));
@@ -2417,7 +2432,7 @@ function getAccrue(token, y, m) {
     nextSend: nextAccrueDay_(s, now),
     settings: s,
     log: readAccrueLog_('accrue'),
-    ai: aiLatest_('accrue', y, m), aiStatus: aiStatus_(),
+    ai: aiLatest_('accrue', y, m), aiStatus: aiStatus_(), verify: verifyLatest_('accrue', y, m),
   };
 }
 
@@ -2597,12 +2612,19 @@ function sendClear_(y, m, by) {
   }
   const revised = !!props.getProperty('CLEAR_SENT_' + y + '_' + m);
   const f = buildClearFile_(y, m, bucket);
-  const ai = aiCheck_('clear', y, m, by); // AI ตรวจก่อนส่ง — ไม่ขวาง ไม่เปลี่ยนยอดเช็ค
   const mail = clearEmail_(y, m, s, f.data, revised);
+  // ตรวจก่อนส่ง (โค้ด): ยอดแยกสายทางในอีเมล ยอดรวม และยอดสั่งจ่ายในไฟล์แนบ ต้องตรงกับชีทที่อ่านใหม่ — ไม่ตรง = ระงับการส่ง
+  const verify = verifySend_('clear', y, m, {
+    facts: clearFacts_(f.data), email: mail.plain,
+    files: [{ label: f.name, url: f.url, row: 10 + f.data.items.length + f.data.byWay.length, col: 11, total: f.data.net }],
+  });
+  if (!verify.ok) verifyBlocked_(verify, by, [when, label, by, to.join(', '), cc.join(', '), String(f.data.net), '', f.name + ' ' + f.url]);
+  // AI ตรวจเป็นความเห็นที่สอง — ไม่ขวาง ไม่เปลี่ยนยอดเช็ค
+  const ai = aiCheck_('clear', y, m, by, { email: mail.plain, facts: verify.facts });
   const msg = { to: to.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, attachments: [f.blob] };
   if (cc.length) msg.cc = cc.join(',');
   MailApp.sendEmail(msg);
-  aiNotifyAdmins_(ai, 'ส่ง File Clear ' + (revised ? 'ฉบับแก้ไขเพิ่มเติม ' : '') + 'ถึง ' + to.join(', ') + ' แล้ว เมื่อ ' + when, by);
+  aiNotifyAdmins_(ai, 'ส่ง File Clear ' + (revised ? 'ฉบับแก้ไขเพิ่มเติม ' : '') + 'ถึง ' + to.join(', ') + ' แล้ว เมื่อ ' + when, by, verify);
   logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(f.data.net), '', f.name + ' ' + f.url, revised ? 'ส่งแล้ว (แก้ไขเพิ่มเติม)' : 'ส่งแล้ว']);
   props.setProperty('CLEAR_SENT_' + y + '_' + m, when);
   return { sent: true, at: when, to, cc, subject: mail.subject, revised, file: f.name, net: f.data.net, ai: aiBrief_(ai) };
@@ -2664,7 +2686,7 @@ function getClear(token, y, m) {
     }),
     settings: s,
     log: readAccrueLog_('clear'),
-    ai: aiLatest_('clear', y, m), aiStatus: aiStatus_(),
+    ai: aiLatest_('clear', y, m), aiStatus: aiStatus_(), verify: verifyLatest_('clear', y, m),
   };
 }
 
@@ -2689,25 +2711,39 @@ function sendClearNow(token, y, m) {
 
 
 /* ------------------------------------------------------------------ */
-/* AI ตรวจรายการก่อนส่ง (Claude API) — File Accrue / File Clear            */
+/* AI ตรวจรายการก่อนส่ง — Google Gemini (ฟรี · ค่าเริ่มต้น) หรือ Claude      */
+/* File Accrue / File Clear / การจอง                                       */
 /* ------------------------------------------------------------------ */
-// ลำดับงาน: ตารางใช้รถ (ชีท) → Apps Script → Claude Messages API (ai_check) → ตรวจผลด้วยโค้ด
-//          → AuditLog + อีเมลผลตรวจถึงผู้ดูแลระบบ + หน้า File Accrue / File Clear
-// AI ทำหน้าที่ชี้รายการที่น่าสงสัยเท่านั้น — ยอดเงิน ไฟล์ .xlsx และอีเมลถึงฝ่ายบัญชีคำนวณจากโค้ดเสมอ ไม่ใช้ตัวเลขจาก AI
-// ไม่มีกุญแจ / ปิดใช้งาน / เรียกไม่สำเร็จ → ส่งตามปกติ (ไม่มีส่วนผล AI) และบันทึก ai_skipped / ai_check (failed)
-// ส่งเฉพาะข้อมูลที่จำเป็น: รหัสแถว วันที่ EXAT/BEM สายทาง สถานที่ ประเภทงาน ค่าอาหาร/ค่ารถ — ไม่ส่งชื่อ เบอร์โทร หรืออีเมล
-// Script Properties: ANTHROPIC_API_KEY (สร้างที่ console.anthropic.com), AI_MODEL (ค่าเริ่มต้น claude-opus-5-5),
-//                    AI_CHECK_ENABLED (false = ปิด), AI_EFFORT (low / medium / high — ค่าเริ่มต้น low)
-// Apps Script ไม่มี Anthropic SDK จึงเรียก REST ตรงด้วย UrlFetchApp
+// ลำดับงาน: ตารางใช้รถ (ชีท) → Apps Script → โค้ดตรวจตัวเลขอีเมล / ไฟล์แนบกับชีท (verify) → AI (ai_check)
+//          → โค้ดตรวจผล AI → AuditLog + อีเมลผลตรวจถึงผู้ดูแลระบบ + หน้า File Accrue / File Clear
+// ตัวเลขไม่ตรงชีท → ระงับการส่ง + แจ้งผู้ดูแลระบบ · AI ชี้รายการที่น่าสงสัยเท่านั้น ยอดเงินและไฟล์มาจากโค้ดเสมอ
+// ไม่มีกุญแจ / ปิดใช้งาน / โควตาหมด / เรียกไม่สำเร็จ → ส่งตามปกติ (ไม่มีส่วนผล AI) และบันทึก ai_skipped / ai_check (failed)
+// ส่งเฉพาะข้อมูลที่ไม่ระบุตัวบุคคล: รหัสแถว วันที่ EXAT/BEM สายทาง สถานที่ ประเภทงาน โครงการ ค่าอาหาร/ค่ารถ ยอดเงิน
+//   — ไม่ส่งชื่อ เบอร์โทร หรืออีเมล (Gemini รุ่นฟรี Google อาจนำข้อมูลไปปรับปรุงบริการ)
+// กุญแจตั้งจากหน้าเว็บ (ปุ่ม 🔑 API KEY — ผู้ดูแลระบบ) เก็บใน Script Properties ไม่ส่งกลับไปที่หน้าเว็บ (แสดงแบบปิดบัง)
+// Script Properties: AI_PROVIDER (gemini / claude), GEMINI_API_KEY, ANTHROPIC_API_KEY, AI_MODEL_GEMINI, AI_MODEL (Claude),
+//                    AI_CHECK_ENABLED (false = ปิด), AI_EFFORT (Claude: low / medium / high)
+// Apps Script ไม่มี SDK ของทั้งสองเจ้า จึงเรียก REST ตรงด้วย UrlFetchApp
 
 const AI_DEFAULT_MODEL = 'claude-opus-5-5';
 const AI_API_URL = 'https://api.anthropic.com/v1/messages';
 const AI_API_VERSION = '2026-10-21';
 const AI_FALLBACK_BETA = 'server-side-fallback-2026-07-01'; // ถ้าโมเดลหลักปฏิเสธ ให้ API ส่งต่อโมเดลสำรองที่แนะนำเอง
 const AI_FALLBACK_MODELS = ['claude-opus-5-5', 'claude-opus-5', 'claude-fable-5-1', 'claude-sonnet-5-5'];
-const AI_TYPES = ['duplicate', 'food_fee', 'expressway', 'missing_field', 'unusual_count', 'other'];
+const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
+// gemini-3.5-flash-lite: รุ่น Stable ที่ใช้ฟรีได้ (Free of charge) และ Google แนะนำสำหรับโปรเจกต์ใหม่ — โควตาฟรีดูใน AI Studio
+const GEMINI_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
+const AI_PROVIDERS = {
+  gemini: { label: 'Google Gemini (ฟรี)', keyProp: 'GEMINI_API_KEY', modelProp: 'AI_MODEL_GEMINI', model: GEMINI_DEFAULT_MODEL,
+    keyRe: /^AIza[0-9A-Za-z_-]{30,60}$/, keyHint: 'ขึ้นต้นด้วย AIza' },
+  claude: { label: 'Claude (Anthropic · มีค่าใช้จ่าย)', keyProp: 'ANTHROPIC_API_KEY', modelProp: 'AI_MODEL', model: AI_DEFAULT_MODEL,
+    keyRe: /^sk-ant-[0-9A-Za-z_-]{20,200}$/, keyHint: 'ขึ้นต้นด้วย sk-ant-' },
+};
+const AI_TYPES = ['duplicate', 'food_fee', 'expressway', 'missing_field', 'unusual_count', 'email_mismatch', 'other'];
+const AI_MONTH_TYPES = ['unusual_count', 'email_mismatch']; // ชนิดที่ไม่อ้างแถว (rowId "")
 const AI_SEVERITY = ['high', 'medium', 'low'];
-const AI_TYPE_TEXT = { duplicate: 'ซ้ำ', food_fee: 'ค่าอาหาร / ค่ารถ', expressway: 'สายทาง', missing_field: 'ข้อมูลไม่ครบ', unusual_count: 'จำนวนผิดปกติ', other: 'อื่น ๆ' };
+const AI_TYPE_TEXT = { duplicate: 'ซ้ำ', food_fee: 'ค่าอาหาร / ค่ารถ', expressway: 'สายทาง', missing_field: 'ข้อมูลไม่ครบ',
+  unusual_count: 'จำนวนผิดปกติ', email_mismatch: 'อีเมลไม่ตรงชีท', other: 'อื่น ๆ' };
 const AI_KIND_TEXT = { accrue: 'File Accrue', clear: 'File Clear' };
 const AI_MAX_ANOMALIES = 40;
 
@@ -2737,7 +2773,8 @@ const AI_SCHEMA = {
 const AI_SYSTEM = [
   'You review the monthly protection-vehicle (รถคุ้มครอง) usage log of Plan B Media before it is emailed to accounting.',
   'Each row is one stop on an expressway job. Rows are given in sheet order ("order"). A "night" is all rows of the same provider on the same date.',
-  'Flag only clear, checkable problems in the rows given. Do not guess, do not compute money, and do not flag anything the rules below allow.',
+  '"amount" is the cost the system computed for the row in baht (EXAT amount includes the ค่าอาหาร "fee").',
+  'Flag only clear, checkable problems. Do not guess and do not flag anything the rules below allow.',
   '',
   'Rules:',
   '1. duplicate: two or more rows with the same provider, the same date and the same place (ignore spacing and letter case). Flag every row of the group except the first.',
@@ -2745,34 +2782,46 @@ const AI_SYSTEM = [
   '   BEM: the first row of each night is the one that bills the night (feeText usually "คิดค่ารถ 1 คืน"); later rows are blank or 0. Flag only a night that bills more than once. Never flag payment status values.',
   '3. expressway: must be exactly ศรีรัช, ฉลองรัช or เฉลิมมหานคร. BEM rows must be ศรีรัช.',
   '4. missing_field: date, place, expressway or jobType is empty.',
-  '5. unusual_count: compare this month\'s row count per provider with the previous months given. Flag only when the previous average is at least 5 and this month is more than double or less than half of it. Use rowId "" for this type.',
-  '6. other: only for something plainly wrong that the rules above do not cover (for example a date outside the month). Use sparingly.',
+  '5. unusual_count: compare this month\'s row count per provider with the previous months given. Flag only when the previous average is at least 5 and this month is more than double or less than half of it. Use rowId "".',
+  '6. email_mismatch: when an "email" and "facts" section is given, check that every amount, total and count stated in the email and facts equals what the rows add up to',
+  '   (EXAT per expressway: sum of amount; File Clear net = sum of amount − sum of fee). Flag each difference with rowId "" and say both numbers.',
+  '7. other: only for something plainly wrong that the rules above do not cover (for example a date outside the month). Use sparingly.',
   '',
   'Write message_th as one short Thai sentence that names the problem and what to check. Write summary_th as 1-3 short Thai sentences;',
   'if nothing is wrong, say that every row passed the checks. Use the exact rowId strings from the input.',
 ].join('\n');
 
-function aiConfig_() {
+function aiProvider_() {
+  const v = String(PropertiesService.getScriptProperties().getProperty('AI_PROVIDER') || '').trim();
+  return AI_PROVIDERS[v] ? v : 'gemini';
+}
+
+function aiConfig_(provider) {
   const p = PropertiesService.getScriptProperties();
+  const prov = AI_PROVIDERS[provider] ? provider : aiProvider_();
+  const P = AI_PROVIDERS[prov];
   const effort = String(p.getProperty('AI_EFFORT') || '').trim().toLowerCase();
   return {
-    key: String(p.getProperty('ANTHROPIC_API_KEY') || '').trim(),
+    provider: prov,
+    label: P.label,
+    key: String(p.getProperty(P.keyProp) || '').trim(),
     enabled: String(p.getProperty('AI_CHECK_ENABLED') || 'true').trim().toLowerCase() !== 'false',
-    model: String(p.getProperty('AI_MODEL') || '').trim() || AI_DEFAULT_MODEL,
-    effort: ['low', 'medium', 'high', 'xhigh', 'max'].indexOf(effort) >= 0 ? effort : 'low', // กฎชัดเจน + UrlFetch จำกัด ~60 วินาที
+    model: String(p.getProperty(P.modelProp) || '').trim() || P.model,
+    effort: ['low', 'medium', 'high', 'xhigh', 'max'].indexOf(effort) >= 0 ? effort : 'low', // Claude: กฎชัดเจน + UrlFetch จำกัด ~60 วินาที
   };
 }
 
 /** สถานะสำหรับหน้าเว็บ (ไม่ส่งกุญแจออกไป) */
 function aiStatus_() {
   const c = aiConfig_();
-  return { configured: !!c.key, enabled: c.enabled, model: c.model };
+  return { provider: c.provider, label: c.label, configured: !!c.key, enabled: c.enabled, model: c.model };
 }
 
-/** แถวของเดือน y/m ที่ส่งให้ AI (เฉพาะฟิลด์ที่จำเป็น) + จำนวนแถว 3 เดือนก่อนหน้า */
+/** แถวของเดือน y/m ที่ส่งให้ AI (เฉพาะฟิลด์ที่จำเป็น) + ยอดที่โค้ดคำนวณ + จำนวนแถว 3 เดือนก่อนหน้า */
 function aiRows_(kind, y, m) {
   const keys = kind === 'clear' ? ['exat'] : ['exat', 'bem'];
   const prev = [1, 2, 3].map(k => { const t = new Date(y, m - 1 - k, 1); return t.getFullYear() + '-' + (t.getMonth() + 1); });
+  const rates = readRates_();
   const rows = [];
   const history = {};
   keys.forEach(key => {
@@ -2780,7 +2829,9 @@ function aiRows_(kind, y, m) {
     history[P] = {};
     prev.forEach(k => { history[P][k] = 0; });
     const seen = {};
-    logRows_(key).rows.forEach((r, i) => {
+    const all = logRows_(key).rows;
+    const costs = computeCosts_(rates, P, all);
+    all.forEach((r, i) => {
       if (!r.has || !r.ym) return;
       const ymk = r.ym.y + '-' + r.ym.m;
       if (ymk in history[P]) history[P][ymk]++;
@@ -2788,7 +2839,9 @@ function aiRows_(kind, y, m) {
       let id = P + '-' + (r.no || 'แถว' + (i + 1));
       seen[id] = (seen[id] || 0) + 1;
       if (seen[id] > 1) id += '#' + seen[id];
-      const row = { rowId: id, order: i + 1, provider: P, date: r.iso, expressway: r.expressway, place: r.place, jobType: r.jobType, project: r.project };
+      const c = costs[i] || {};
+      const amount = c.cost === '' || c.cost === undefined ? 0 : (Number(c.cost) || 0) + (key === 'exat' ? Number(c.food) || 0 : 0);
+      const row = { rowId: id, order: i + 1, provider: P, date: r.iso, expressway: r.expressway, place: r.place, jobType: r.jobType, project: r.project, amount };
       if (key === 'exat') row.fee = r.fee;
       else { row.feeText = r.feeText; row.payment = r.payment; }
       rows.push(row);
@@ -2797,13 +2850,23 @@ function aiRows_(kind, y, m) {
   return { rows, history };
 }
 
-/** เรียก Claude — คืน { parsed, usage, model } หรือโยนข้อผิดพลาด */
-function aiCall_(cfg, prompt) {
+/** เรียก AI ตามผู้ให้บริการ — คืน { parsed, usage, model } หรือโยนข้อผิดพลาด */
+function aiCall_(cfg, system, prompt, schema, maxTokens) {
+  return cfg.provider === 'claude' ? aiCallClaude_(cfg, system, prompt, schema, maxTokens) : aiCallGemini_(cfg, system, prompt, schema, maxTokens);
+}
+
+function aiParseJson_(text, usage, model) {
+  const clean = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  try { return JSON.parse(clean); } catch (err) { throw Object.assign(new Error('อ่านผล JSON ไม่ได้'), { usage, model }); }
+}
+
+/** Claude Messages API — ผลเป็น JSON ตาม schema (structured outputs) */
+function aiCallClaude_(cfg, system, prompt, schema, maxTokens) {
   const body = {
     model: cfg.model,
-    max_tokens: 16000,
-    system: AI_SYSTEM,
-    output_config: { effort: cfg.effort, format: { type: 'json_schema', schema: AI_SCHEMA } },
+    max_tokens: maxTokens || 16000,
+    system,
+    output_config: { effort: cfg.effort, format: { type: 'json_schema', schema } },
     messages: [{ role: 'user', content: prompt }],
   };
   const headers = { 'x-api-key': cfg.key, 'anthropic-version': AI_API_VERSION };
@@ -2819,15 +2882,40 @@ function aiCall_(cfg, prompt) {
   try { json = JSON.parse(res.getContentText()); } catch (err) { json = null; }
   if (code !== 200 || !json) {
     const msg = json && json.error ? json.error.type + ': ' + json.error.message : 'HTTP ' + code;
-    throw new Error('Claude API ' + msg);
+    throw new Error((code === 429 ? 'โควตาเต็ม — ' : '') + 'Claude API ' + msg);
   }
   const usage = { input: (json.usage && json.usage.input_tokens) || 0, output: (json.usage && json.usage.output_tokens) || 0 };
   if (json.stop_reason === 'refusal') throw Object.assign(new Error('Claude ปฏิเสธคำขอ (' + ((json.stop_details && json.stop_details.category) || 'refusal') + ')'), { usage, model: json.model });
   if (json.stop_reason === 'max_tokens') throw Object.assign(new Error('คำตอบยาวเกิน max_tokens'), { usage, model: json.model });
   const text = (json.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
-  let parsed;
-  try { parsed = JSON.parse(text); } catch (err) { throw Object.assign(new Error('อ่านผล JSON ไม่ได้'), { usage, model: json.model }); }
-  return { parsed, usage, model: json.model || cfg.model };
+  return { parsed: aiParseJson_(text, usage, json.model), usage, model: json.model || cfg.model };
+}
+
+/** Gemini generateContent — ขอผลเป็น JSON (application/json) และแนบ schema ไว้ในคำสั่ง แล้วโค้ดตรวจผลเองอีกชั้น */
+function aiCallGemini_(cfg, system, prompt, schema, maxTokens) {
+  const body = {
+    systemInstruction: { parts: [{ text: system + '\n\nReply with one JSON object only, matching this JSON Schema:\n' + JSON.stringify(schema) }] },
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { responseMimeType: 'application/json', maxOutputTokens: maxTokens || 8192 },
+  };
+  const res = UrlFetchApp.fetch(GEMINI_API_BASE + encodeURIComponent(cfg.model) + ':generateContent', {
+    method: 'post', contentType: 'application/json', headers: { 'x-goog-api-key': cfg.key }, payload: JSON.stringify(body), muteHttpExceptions: true,
+  });
+  const code = res.getResponseCode();
+  let json = null;
+  try { json = JSON.parse(res.getContentText()); } catch (err) { json = null; }
+  if (code !== 200 || !json) {
+    const msg = json && json.error ? (json.error.status || json.error.code) + ': ' + json.error.message : 'HTTP ' + code;
+    throw new Error((code === 429 ? 'โควตาฟรีเต็ม (ลองใหม่ภายหลัง) — ' : '') + 'Gemini API ' + String(msg).slice(0, 200));
+  }
+  const um = json.usageMetadata || {};
+  const usage = { input: um.promptTokenCount || 0, output: um.candidatesTokenCount || 0 };
+  const model = json.modelVersion || cfg.model;
+  const cand = (json.candidates || [])[0];
+  if (!cand) throw Object.assign(new Error('Gemini ไม่ตอบ' + (json.promptFeedback && json.promptFeedback.blockReason ? ' (' + json.promptFeedback.blockReason + ')' : '')), { usage, model });
+  if (cand.finishReason === 'MAX_TOKENS') throw Object.assign(new Error('คำตอบยาวเกินกำหนด'), { usage, model });
+  const text = ((cand.content && cand.content.parts) || []).map(p => p.text || '').join('');
+  return { parsed: aiParseJson_(text, usage, model), usage, model };
 }
 
 /** ตรวจผลจาก AI ด้วยโค้ด: ทิ้งรายการที่อ้างแถวที่ไม่มีจริง / ชนิดไม่รู้จัก / ซ้ำ แล้วเติมวันที่และสถานที่จากชีท */
@@ -2841,12 +2929,13 @@ function aiValidate_(parsed, rows) {
     const id = String((a && a.rowId) || '').trim();
     const type = AI_TYPES.indexOf(a && a.type) >= 0 ? a.type : '';
     const row = byId[id];
-    const monthLevel = !id && type === 'unusual_count';
-    if (!type || (!row && !monthLevel) || seen[id + '|' + type]) { dropped++; return; }
-    seen[id + '|' + type] = 1;
+    const monthLevel = !id && AI_MONTH_TYPES.indexOf(type) >= 0;
+    const msg = String((a && a.message_th) || '').trim().slice(0, 240);
+    const key = id + '|' + type + (monthLevel ? '|' + msg : '');
+    if (!type || (!row && !monthLevel) || seen[key]) { dropped++; return; }
+    seen[key] = 1;
     out.push({
-      rowId: id, type, severity: AI_SEVERITY.indexOf(a.severity) >= 0 ? a.severity : 'medium',
-      message: String(a.message_th || '').trim().slice(0, 240),
+      rowId: id, type, severity: AI_SEVERITY.indexOf(a.severity) >= 0 ? a.severity : 'medium', message: msg,
       date: row ? row.date : '', place: row ? row.place : '', provider: row ? row.provider : '',
     });
   });
@@ -2861,19 +2950,32 @@ function aiLatest_(kind, y, m) {
   try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(aiKey_(kind, y, m)) || 'null'); } catch (err) { return null; }
 }
 
+function aiSave_(prop, res, listField) {
+  try {
+    const keep = Object.assign({}, res);
+    let text = JSON.stringify(keep);
+    while (text.length > 8500 && keep[listField] && keep[listField].length) { keep[listField] = keep[listField].slice(0, -1); text = JSON.stringify(keep); }
+    PropertiesService.getScriptProperties().setProperty(prop, text);
+  } catch (err) {
+    console.error('save failed ' + prop, err);
+  }
+}
+
 /**
  * ให้ AI ตรวจรายการเดือน y/m — ไม่โยนข้อผิดพลาดออกไปเสมอ (ไม่ขวางการส่งอีเมล)
- * คืน { ok, skipped, error, model, at, summary, anomalies, dropped, rows, usage, ms }
+ * ctx = { email, facts } (ถ้ามี) → AI ตรวจข้อความอีเมล / ยอดที่จะส่งกับแถวในชีทด้วย
+ * คืน { ok, skipped, error, provider, model, at, summary, anomalies, dropped, rows, usage, ms }
  */
-function aiCheck_(kind, y, m, by) {
+function aiCheck_(kind, y, m, by, ctx) {
   const t0 = Date.now();
   const res = { kind, y, m, ok: false, skipped: false, at: nowText_(), anomalies: [], summary: '', dropped: 0, rows: 0 };
   const cfg = aiConfig_();
+  res.provider = cfg.provider;
   res.model = cfg.model;
   try {
     if (!cfg.enabled || !cfg.key) {
       res.skipped = true;
-      res.error = !cfg.key ? 'ยังไม่ได้ตั้ง ANTHROPIC_API_KEY' : 'ปิดใช้งาน (AI_CHECK_ENABLED=false)';
+      res.error = !cfg.key ? 'ยังไม่ได้ใส่กุญแจ ' + cfg.label + ' (ปุ่ม API KEY)' : 'ปิดใช้งาน (AI_CHECK_ENABLED=false)';
     } else {
       const data = aiRows_(kind, y, m);
       res.rows = data.rows.length;
@@ -2881,10 +2983,13 @@ function aiCheck_(kind, y, m, by) {
         res.skipped = true;
         res.error = 'ไม่มีรายการในเดือนนี้';
       } else {
+        ctx = ctx || checkContext_(kind, y, m);
         const prompt = 'ตรวจ ' + AI_KIND_TEXT[kind] + ' เดือน ' + accrueMonthShort_(y, m) + ' (' + y + '-' + String(m).padStart(2, '0') + ')\n' +
           'Row counts in previous months (provider → { "year-month": rows }): ' + JSON.stringify(data.history) + '\n' +
+          (ctx.facts ? 'facts (totals the system will send, computed by code): ' + JSON.stringify(ctx.facts) + '\n' : '') +
+          (ctx.email ? 'email (text that will be sent to accounting):\n"""\n' + ctx.email + '\n"""\n' : '') +
           'Rows (' + data.rows.length + '):\n' + JSON.stringify(data.rows);
-        const r = aiCall_(cfg, prompt);
+        const r = aiCall_(cfg, AI_SYSTEM, prompt, AI_SCHEMA);
         const v = aiValidate_(r.parsed, data.rows);
         Object.assign(res, { ok: true, model: r.model, usage: r.usage, anomalies: v.anomalies, dropped: v.dropped, summary: v.summary });
       }
@@ -2897,45 +3002,150 @@ function aiCheck_(kind, y, m, by) {
   res.ms = Date.now() - t0;
   try {
     audit_(by || 'system', res.skipped ? 'ai_skipped' : 'ai_check', '', '', {
-      kind, y, m, model: res.model, ok: res.ok, rows: res.rows, anomalies: res.anomalies.length, dropped: res.dropped,
+      kind, y, m, provider: res.provider, model: res.model, ok: res.ok, rows: res.rows, anomalies: res.anomalies.length, dropped: res.dropped,
       input_tokens: (res.usage && res.usage.input) || 0, output_tokens: (res.usage && res.usage.output) || 0, ms: res.ms,
       error: res.error || '',
     });
   } catch (err) {
     console.error('ai audit failed', err);
   }
-  if (!res.skipped) {
-    try {
-      const keep = Object.assign({}, res);
-      let text = JSON.stringify(keep);
-      while (text.length > 8500 && keep.anomalies.length) { keep.anomalies = keep.anomalies.slice(0, -1); text = JSON.stringify(keep); }
-      PropertiesService.getScriptProperties().setProperty(aiKey_(kind, y, m), text);
-    } catch (err) {
-      console.error('ai save failed', err);
-    }
-  }
+  if (!res.skipped) aiSave_(aiKey_(kind, y, m), res, 'anomalies');
   return res;
 }
 
+/* ---------- ตรวจตัวเลขอีเมล / ไฟล์แนบกับชีทด้วยโค้ด (ก่อนส่งทุกครั้ง) ---------- */
+
+/** อ่านชีทใหม่แล้วสรุปยอดที่จะส่ง + ข้อความอีเมล (ใช้เทียบกับชุดที่สร้างไฟล์ และส่งให้ AI) */
+function checkContext_(kind, y, m) {
+  const bucket = accrueYear_(y)[m - 1];
+  const s = accrueSettings_();
+  const props = PropertiesService.getScriptProperties();
+  if (kind === 'clear') {
+    const data = clearData_(bucket);
+    const mail = clearEmail_(y, m, s, data, !!props.getProperty('CLEAR_SENT_' + y + '_' + m));
+    return { bucket, data, email: mail.plain, facts: clearFacts_(data) };
+  }
+  const mail = accrueEmail_(y, m, s, !!props.getProperty('ACCRUE_SENT_' + y + '_' + m));
+  return { bucket, email: mail.plain, facts: accrueFacts_(bucket) };
+}
+
+function accrueFacts_(bucket) {
+  return { exatRows: bucket.exat.length, exatTotal: bucket.exatTotal, bemNights: bucket.bem.length, bemTotal: bucket.bemTotal };
+}
+
+function clearFacts_(data) {
+  const byWay = {};
+  data.byWay.forEach(w => { byWay[w.way] = { amount: w.amount, food: w.food, net: w.net }; });
+  return { rows: data.items.length, amount: data.amount, food: data.food, net: data.net, byWay };
+}
+
+function verifyKey_(kind, y, m) { return 'VERIFY_' + kind.toUpperCase() + '_' + y + '_' + m; }
+
+function verifyLatest_(kind, y, m) {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(verifyKey_(kind, y, m)) || 'null'); } catch (err) { return null; }
+}
+
+/** อ่านยอดรวมจากไฟล์ที่สร้าง (แถว "รวม") — อ่านไม่ได้คืน null */
+function fileTotal_(url, row, col) {
+  try {
+    const v = SpreadsheetApp.openByUrl(url).getSheets()[0].getRange(row, col).getValue();
+    return typeof v === 'number' ? v : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/**
+ * เทียบสิ่งที่จะส่งกับชีท: อ่านชีทใหม่อีกรอบ แล้วเทียบยอด จำนวนรายการ ยอดแยกสายทางในอีเมล และยอดรวมในไฟล์แนบ
+ * sent = { facts, email, files: [{ label, url, row, col, total }] } — ชุดที่ใช้สร้างไฟล์ / อีเมล
+ */
+function verifySend_(kind, y, m, sent) {
+  const fresh = checkContext_(kind, y, m);
+  const checks = [];
+  const add = (label, expected, actual) => checks.push({ label, expected, actual, ok: expected === actual });
+  const f0 = sent.facts, f1 = fresh.facts;
+  if (kind === 'clear') {
+    add('จำนวนรายการ EXAT', f1.rows, f0.rows);
+    add('ยอดรวม (บาท)', f1.amount, f0.amount);
+    add('ค่าอาหาร (บาท)', f1.food, f0.food);
+    add('ยอดสั่งจ่ายเช็ค (บาท)', f1.net, f0.net);
+    Object.keys(f1.byWay).forEach(w => {
+      add(w + ' (บาท)', f1.byWay[w].net, f0.byWay[w] ? f0.byWay[w].net : null);
+      if (f1.byWay[w].net) add('อีเมลระบุ ' + w + ' ' + money_(f1.byWay[w].net) + ' บาท', true, sent.email.indexOf(w + ' จำนวน ' + money_(f1.byWay[w].net) + ' บาท') >= 0);
+    });
+    add('อีเมลระบุยอดรวม ' + money_(f1.net) + ' บาท', true, sent.email.indexOf('รวม ' + money_(f1.net) + ' บาท') >= 0);
+  } else {
+    add('จำนวนรายการ EXAT', f1.exatRows, f0.exatRows);
+    add('ยอด EXAT (บาท)', f1.exatTotal, f0.exatTotal);
+    add('จำนวนคืน BEM', f1.bemNights, f0.bemNights);
+    add('ยอด BEM (บาท)', f1.bemTotal, f0.bemTotal);
+  }
+  const notes = [];
+  (sent.files || []).forEach(file => {
+    const v = fileTotal_(file.url, file.row, file.col);
+    if (v === null) notes.push('อ่านยอดรวมในไฟล์ ' + file.label + ' ไม่ได้ — ตรวจจากยอดที่ใช้สร้างไฟล์แทน');
+    else add('ยอดรวมในไฟล์ ' + file.label + ' (บาท)', file.total, Math.round(v * 100) / 100);
+  });
+  const issues = checks.filter(c => !c.ok).map(c => (c.expected === true ? c.label + ' — ไม่พบข้อความนี้ในอีเมล' : c.label + ': ชีท ' + c.expected + ' / ที่จะส่ง ' + c.actual));
+  const res = { kind, y, m, at: nowText_(), ok: !issues.length, checks, issues, notes, facts: f1 };
+  aiSave_(verifyKey_(kind, y, m), res, 'checks');
+  return res;
+}
+
+/** ตัวเลขไม่ตรงชีท: บันทึกประวัติ "ระงับการส่ง" + แจ้งผู้ดูแลระบบ แล้วหยุด (ไม่ส่งถึงฝ่ายบัญชี) */
+function verifyBlocked_(verify, by, logRow) {
+  logAccrue_(logRow.concat(['ระงับการส่ง — ตัวเลขไม่ตรงชีท: ' + verify.issues.join(' · ')]));
+  verifyAlertAdmins_(verify, by);
+  audit_(by || 'system', 'verify_failed', '', '', { kind: verify.kind, y: verify.y, m: verify.m, issues: verify.issues });
+  throw new Error('ระงับการส่ง ' + AI_KIND_TEXT[verify.kind] + ' — ตัวเลขในอีเมล / ไฟล์แนบไม่ตรงกับ Google Sheet: ' + verify.issues.join(' · ') + ' (แจ้งผู้ดูแลระบบแล้ว)');
+}
+
+/** ตรวจก่อนส่ง (หน้าเว็บ / ปุ่มให้ AI ตรวจ) — เทียบการอ่านชีทสองรอบ และตัวเลขในอีเมล โดยยังไม่สร้างไฟล์ */
+function verifyPreview_(kind, y, m) {
+  const first = checkContext_(kind, y, m);
+  return verifySend_(kind, y, m, { facts: first.facts, email: first.email, files: [] });
+}
+
+/** ตัวเลขไม่ตรงชีท → แจ้งผู้ดูแลระบบ (ระงับการส่งแล้ว) */
+function verifyAlertAdmins_(verify, by) {
+  try {
+    const to = adminNotifyEmails_();
+    if (!to.length || MailApp.getRemainingDailyQuota() < to.length) return null;
+    const label = AI_KIND_TEXT[verify.kind] + ' เดือน ' + accrueMonthShort_(verify.y, verify.m);
+    const subject = '[ระงับการส่ง] ' + label + ' — ตัวเลขในอีเมล / ไฟล์แนบไม่ตรงกับ Google Sheet';
+    const body = 'ระบบตรวจก่อนส่งแล้วพบตัวเลขไม่ตรงกับชีท จึงยังไม่ส่ง ' + label + ' ถึงฝ่ายบัญชี\n\n' + verify.issues.map(x => '- ' + x).join('\n') +
+      '\n\nตรวจข้อมูลในชีทแล้วกด “ส่งอีเมลตอนนี้” ในระบบอีกครั้ง\n' + appUrl_() + '\n\n— ระบบ Protection Fee (อีเมลอัตโนมัติ)';
+    MailApp.sendEmail({ to: to.join(','), subject, body, name: 'Protection Fee' });
+    audit_(by || 'system', 'notify_verify_failed', '', '', { kind: verify.kind, y: verify.y, m: verify.m, issues: verify.issues.length });
+    return { to };
+  } catch (err) {
+    console.error('verifyAlertAdmins_ failed', err);
+    return null;
+  }
+}
+
 /** อีเมลผลตรวจถึงผู้ดูแลระบบ (แยกจากอีเมลถึงฝ่ายบัญชี) — ส่งเมื่อ AI ตรวจสำเร็จ ไม่โยนข้อผิดพลาด */
-function aiNotifyAdmins_(ai, sentText, by) {
+function aiNotifyAdmins_(ai, sentText, by, verify) {
   if (!ai || !ai.ok) return null;
   try {
     const to = adminNotifyEmails_();
     if (!to.length || MailApp.getRemainingDailyQuota() < to.length) return null;
     const label = AI_KIND_TEXT[ai.kind] + ' เดือน ' + accrueMonthShort_(ai.y, ai.m);
     const n = ai.anomalies.length;
+    const who = (AI_PROVIDERS[ai.provider] || AI_PROVIDERS.gemini).label;
     const subject = '[ผลตรวจโดย AI] ' + label + (n ? ' — พบ ' + n + ' รายการที่ควรตรวจ' : ' — ไม่พบรายการผิดปกติ');
     const lines = ai.anomalies.map(a => '- ' + (a.rowId || 'ทั้งเดือน') + (a.date ? ' · ' + a.date : '') + (a.place ? ' · ' + a.place : '') +
       ' [' + AI_TYPE_TEXT[a.type] + '] ' + a.message);
+    const vText = verify ? 'ตรวจตัวเลขกับ Google Sheet (โค้ด): ' + (verify.ok ? 'ตรงกันทั้ง ' + verify.checks.length + ' รายการ' : 'ไม่ตรง ' + verify.issues.length + ' รายการ') : '';
     const note = 'ยอดเงินและไฟล์ที่ส่งฝ่ายบัญชีคำนวณจากระบบ ไม่ได้มาจาก AI — ผลนี้ใช้ช่วยตรวจทานเท่านั้น';
     const link = appUrl_();
-    const plain = 'ผลตรวจโดย AI (Claude) — ' + label + '\n' + sentText + '\n\n' + (ai.summary || '') + '\n\n' +
+    const plain = 'ผลตรวจโดย AI (' + who + ') — ' + label + '\n' + sentText + '\n' + vText + '\n\n' + (ai.summary || '') + '\n\n' +
       (lines.length ? lines.join('\n') + '\n\n' : '') + note + '\nโมเดล ' + ai.model + ' · ' + ai.at + '\n\nเปิดระบบ: ' + link;
     const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     const html = '<div style="font-family:Tahoma,sans-serif;font-size:14px;line-height:1.7;color:#14211B">' +
-      '<p style="margin:0 0 6px"><b>ผลตรวจโดย AI (Claude)</b> — ' + esc(label) + '</p>' +
-      '<p style="margin:0 0 12px;color:#56655D">' + esc(sentText) + '</p>' +
+      '<p style="margin:0 0 6px"><b>ผลตรวจโดย AI (' + esc(who) + ')</b> — ' + esc(label) + '</p>' +
+      '<p style="margin:0 0 4px;color:#56655D">' + esc(sentText) + '</p>' +
+      (vText ? '<p style="margin:0 0 12px;color:' + (verify.ok ? '#0D5C3B' : '#B42318') + '"><b>' + esc(vText) + '</b></p>' : '') +
       '<p style="margin:0 0 12px">' + esc(ai.summary || '') + '</p>' +
       (lines.length ? '<table style="border-collapse:collapse;font-size:13px">' + ai.anomalies.map(a =>
         '<tr><td style="padding:3px 12px 3px 0;white-space:nowrap;vertical-align:top">' + esc(a.rowId || 'ทั้งเดือน') + '</td>' +
@@ -2959,20 +3169,163 @@ function aiBrief_(ai) {
   return ai ? { ok: ai.ok, skipped: ai.skipped, count: ai.anomalies.length, error: ai.error || '' } : null;
 }
 
-/** ผู้ดูแลระบบกด "ให้ AI ตรวจตอนนี้" ที่หน้า File Accrue / File Clear */
+/** ผู้ดูแลระบบกด "ให้ AI ตรวจตอนนี้" ที่หน้า File Accrue / File Clear — ตรวจตัวเลขด้วยโค้ดก่อน แล้วให้ AI ตรวจ */
 function aiCheckNow(token, kind, y, m) {
   const user = requireUser_(token, true);
   if (!AI_KIND_TEXT[kind]) throw new Error('ชนิดไม่ถูกต้อง');
   y = Number(y); m = Number(m);
   if (!(m >= 1 && m <= 12) || !(y > 2000)) throw new Error('เดือนไม่ถูกต้อง');
-  return Object.assign(aiCheck_(kind, y, m, user.username), { status: aiStatus_() });
+  const verify = verifyPreview_(kind, y, m);
+  const ctx = checkContext_(kind, y, m);
+  return Object.assign(aiCheck_(kind, y, m, user.username, ctx), { status: aiStatus_(), verify });
+}
+
+/* ---------- กุญแจ API (ผู้ดูแลระบบเท่านั้น) ---------- */
+
+function maskKey_(k) { return k ? k.slice(0, 4) + '…' + k.slice(-4) : ''; }
+
+/** ตั้งค่า AI สำหรับหน้าเว็บ — คืนกุญแจแบบปิดบังเท่านั้น */
+function getAiSettings(token) {
+  requireUser_(token, true);
+  const p = PropertiesService.getScriptProperties();
+  const providers = {};
+  Object.keys(AI_PROVIDERS).forEach(id => {
+    const P = AI_PROVIDERS[id];
+    const k = String(p.getProperty(P.keyProp) || '').trim();
+    providers[id] = { label: P.label, configured: !!k, masked: maskKey_(k), model: String(p.getProperty(P.modelProp) || '').trim() || P.model, hint: P.keyHint };
+  });
+  return { provider: aiProvider_(), enabled: aiConfig_().enabled, providers };
+}
+
+/** บันทึกผู้ให้บริการ / กุญแจใหม่ (เว้นว่าง = ใช้กุญแจเดิม) — AuditLog ไม่เก็บค่ากุญแจ */
+function saveAiSettings(token, form) {
+  const user = requireUser_(token, true);
+  form = form || {};
+  const prov = String(form.provider || '');
+  if (!AI_PROVIDERS[prov]) throw new Error('กรุณาเลือกผู้ให้บริการ AI');
+  const P = AI_PROVIDERS[prov];
+  const p = PropertiesService.getScriptProperties();
+  const key = String(form.key || '').replace(/\s+/g, '');
+  if (key) {
+    if (!P.keyRe.test(key)) throw new Error('รูปแบบกุญแจไม่ถูกต้อง — กุญแจ ' + P.label + ' ' + P.keyHint);
+    p.setProperty(P.keyProp, key);
+  }
+  p.setProperty('AI_PROVIDER', prov);
+  if (form.enabled !== undefined) p.setProperty('AI_CHECK_ENABLED', form.enabled === false || form.enabled === 'false' ? 'false' : 'true');
+  audit_(user.username, 'ai_settings', '', '', { provider: prov, keyChanged: !!key, enabled: aiConfig_().enabled });
+  return getAiSettings(token);
+}
+
+function deleteAiKey(token, provider) {
+  const user = requireUser_(token, true);
+  const P = AI_PROVIDERS[provider];
+  if (!P) throw new Error('ผู้ให้บริการไม่ถูกต้อง');
+  PropertiesService.getScriptProperties().deleteProperty(P.keyProp);
+  audit_(user.username, 'ai_key_deleted', '', '', { provider });
+  return getAiSettings(token);
+}
+
+const AI_TEST_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['ok', 'reply_th'],
+  properties: { ok: { type: 'boolean' }, reply_th: { type: 'string' } },
+};
+
+/** ทดสอบกุญแจด้วยคำขอสั้น ๆ หนึ่งครั้ง */
+function testAiKey(token, provider) {
+  const user = requireUser_(token, true);
+  const cfg = aiConfig_(provider);
+  if (!cfg.key) throw new Error('ยังไม่ได้ใส่กุญแจ ' + cfg.label);
+  const t0 = Date.now();
+  const out = { provider: cfg.provider, model: cfg.model, ok: false };
+  try {
+    const r = aiCall_(cfg, 'You are a connection test. Set ok to true and reply_th to a short Thai greeting.', 'ทดสอบการเชื่อมต่อ', AI_TEST_SCHEMA, 2048);
+    out.ok = r.parsed && r.parsed.ok === true;
+    out.reply = String((r.parsed && r.parsed.reply_th) || '').slice(0, 120);
+    out.model = r.model;
+    out.usage = r.usage;
+    if (!out.ok) out.error = 'คำตอบไม่ตรงรูปแบบที่ขอ';
+  } catch (err) {
+    out.error = String((err && err.message) || err).slice(0, 300);
+  }
+  out.ms = Date.now() - t0;
+  audit_(user.username, 'ai_key_test', '', '', { provider: out.provider, model: out.model, ok: out.ok, ms: out.ms, error: out.error || '' });
+  return out;
+}
+
+/* ---------- ตรวจการกรอกการจองด้วย AI (คำแนะนำเท่านั้น ไม่ขวางการจอง) ---------- */
+
+const BOOKING_AI_SCHEMA = {
+  type: 'object', additionalProperties: false, required: ['warnings', 'summary_th'],
+  properties: {
+    warnings: {
+      type: 'array',
+      items: {
+        type: 'object', additionalProperties: false, required: ['field', 'message_th'],
+        properties: { field: { type: 'string', enum: ['jobType', 'places', 'time', 'meetingPoint', 'note', 'other'] }, message_th: { type: 'string' } },
+      },
+    },
+    summary_th: { type: 'string' },
+  },
+};
+
+const BOOKING_AI_SYSTEM = [
+  'You check one protection-vehicle (รถคุ้มครอง) booking form of Plan B Media for data-entry mistakes before an admin approves it.',
+  'Places marked inDatabase=false were typed by hand. Look for: a typed place that looks like a misspelling of a database place or is not a road / toll / sign location,',
+  'a place that belongs to the other provider (owner differs from provider), a time that is not a valid time, a job type or note that contradicts the places or provider,',
+  'and text that looks unfinished or garbled. Do not comment on style. Return at most 5 warnings; return none when the form looks fine.',
+  'Write message_th as one short polite Thai sentence that says what to check.',
+].join('\n');
+
+/** ลบข้อมูลที่ระบุตัวบุคคลออกจากข้อความอิสระก่อนส่งให้ AI */
+function maskPersonal_(s) {
+  return String(s || '').replace(/[^\s@]+@[^\s@]+\.[^\s@]+/g, '[อีเมล]').replace(/\+?\d[\d\-\s]{6,}\d/g, '[เบอร์]').slice(0, 500);
+}
+
+/** หน้าเว็บเรียกหลังบันทึกการจอง (เบื้องหลัง) — คืนคำแนะนำ ถ้า AI ไม่พร้อม / โควตาหมด คืนว่าง */
+function aiReviewBooking(token, id) {
+  const user = requireUser_(token);
+  const b = readBookings_(bookingsSheet_(false)).find(x => x.id === String(id || ''));
+  if (!b || (b.requestedBy !== user.username && user.role !== 'admin')) throw new Error('ไม่พบการจองนี้');
+  const cfg = aiConfig_();
+  const out = { ok: false, skipped: false, warnings: [], summary: '' };
+  if (!cfg.enabled || !cfg.key) return Object.assign(out, { skipped: true });
+  const t0 = Date.now();
+  try {
+    const locs = sharedAppData_().locations;
+    const types = placeTypesOf_(b);
+    const places = placeLines_(b.places).map((p, i) => {
+      const np = norm_(p);
+      const loc = locs.find(l => norm_(l.area) === np || (l.code && norm_(l.code) === np));
+      return { place: p, inDatabase: !!loc, owner: loc ? (/^BEM/i.test(loc.operator) || /BECL|BEM/i.test(loc.mediaSite) ? 'BEM' : 'EXAT') : '',
+        dbExpressway: loc ? loc.expressway : '', mediaType: types[i] || '' };
+    });
+    const form = { provider: b.provider, date: b.date, time: b.time, expressway: b.expressway, meetingPoint: b.meetingPoint,
+      jobType: b.jobType, places, note: maskPersonal_(b.note) };
+    const r = aiCall_(cfg, BOOKING_AI_SYSTEM, 'Booking form (JSON):\n' + JSON.stringify(form), BOOKING_AI_SCHEMA, 2048);
+    out.ok = true;
+    out.warnings = (Array.isArray(r.parsed && r.parsed.warnings) ? r.parsed.warnings : []).slice(0, 5)
+      .map(w => ({ field: String(w.field || 'other'), message: String(w.message_th || '').trim().slice(0, 200) })).filter(w => w.message);
+    out.summary = String((r.parsed && r.parsed.summary_th) || '').slice(0, 300);
+    out.usage = r.usage;
+    out.model = r.model;
+  } catch (err) {
+    out.error = String((err && err.message) || err).slice(0, 300);
+  }
+  try {
+    audit_(user.username, 'ai_check', BOOKING_SHEET, b.row, { kind: 'booking', id: b.id, provider: cfg.provider, model: out.model || cfg.model, ok: out.ok,
+      warnings: out.warnings.length, input_tokens: (out.usage && out.usage.input) || 0, output_tokens: (out.usage && out.usage.output) || 0,
+      ms: Date.now() - t0, error: out.error || '' });
+  } catch (err) {
+    console.error('ai audit failed', err);
+  }
+  return out;
 }
 
 /** รันจากตัวแก้ไข: ทดสอบ AI กับข้อมูลจริงหนึ่งเดือน (ค่าเริ่มต้น ส.ค. 2569) — ไม่ส่งอีเมล */
 function testAiCheck() {
   const res = aiCheck_('accrue', 2026, 8, 'test');
-  console.log(JSON.stringify({ ok: res.ok, skipped: res.skipped, error: res.error, model: res.model, rows: res.rows, usage: res.usage, ms: res.ms,
-    dropped: res.dropped, summary: res.summary, anomalies: res.anomalies }, null, 1));
+  console.log(JSON.stringify({ ok: res.ok, skipped: res.skipped, error: res.error, provider: res.provider, model: res.model, rows: res.rows,
+    usage: res.usage, ms: res.ms, dropped: res.dropped, summary: res.summary, anomalies: res.anomalies }, null, 1));
 }
 
 /* ------------------------------------------------------------------ */
