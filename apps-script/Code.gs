@@ -2735,7 +2735,7 @@ const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models
 const GEMINI_DEFAULT_MODEL = 'gemini-3.5-flash-lite';
 const AI_PROVIDERS = {
   gemini: { label: 'Google Gemini (ฟรี)', keyProp: 'GEMINI_API_KEY', modelProp: 'AI_MODEL_GEMINI', model: GEMINI_DEFAULT_MODEL,
-    keyRe: /^AIza[0-9A-Za-z_-]{30,60}$/, keyHint: 'ขึ้นต้นด้วย AIza' },
+    keyRe: /^[A-Za-z0-9._-]{20,200}$/, keyHint: 'คัดลอกจาก AI Studio (มักขึ้นต้นด้วย AIza)' },
   claude: { label: 'Claude (Anthropic · มีค่าใช้จ่าย)', keyProp: 'ANTHROPIC_API_KEY', modelProp: 'AI_MODEL', model: AI_DEFAULT_MODEL,
     keyRe: /^sk-ant-[0-9A-Za-z_-]{20,200}$/, keyHint: 'ขึ้นต้นด้วย sk-ant-' },
 };
