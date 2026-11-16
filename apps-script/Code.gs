@@ -2814,7 +2814,7 @@ function aiConfig_(provider) {
 /** สถานะสำหรับหน้าเว็บ (ไม่ส่งกุญแจออกไป) */
 function aiStatus_() {
   const c = aiConfig_();
-  return { provider: c.provider, label: c.label, configured: !!c.key, enabled: c.enabled, model: c.model };
+  return { provider: c.provider, label: c.label, configured: !!c.key, enabled: c.enabled, model: c.model, health: aiHealth_(c.provider, c.key) };
 }
 
 /** แถวของเดือน y/m ที่ส่งให้ AI (เฉพาะฟิลด์ที่จำเป็น) + ยอดที่โค้ดคำนวณ + จำนวนแถว 3 เดือนก่อนหน้า */
@@ -2852,7 +2852,38 @@ function aiRows_(kind, y, m) {
 
 /** เรียก AI ตามผู้ให้บริการ — คืน { parsed, usage, model } หรือโยนข้อผิดพลาด */
 function aiCall_(cfg, system, prompt, schema, maxTokens) {
-  return cfg.provider === 'claude' ? aiCallClaude_(cfg, system, prompt, schema, maxTokens) : aiCallGemini_(cfg, system, prompt, schema, maxTokens);
+  try {
+    const r = cfg.provider === 'claude' ? aiCallClaude_(cfg, system, prompt, schema, maxTokens) : aiCallGemini_(cfg, system, prompt, schema, maxTokens);
+    aiHealthSet_(cfg, 'ok', '', r.model);
+    return r;
+  } catch (err) {
+    const msg = String((err && err.message) || err);
+    // มี usage = AI ตอบกลับมาแล้ว (กุญแจใช้ได้) แค่ผลไม่ตรงรูปแบบ
+    const state = err && err.usage ? 'ok' : /429|RESOURCE_EXHAUSTED|rate_limit|โควตา/i.test(msg) ? 'limited'
+      : /\b(400|401|403|404)\b|API_KEY|PERMISSION_DENIED|UNAUTHENTICATED|authentication|invalid.*key|NOT_FOUND/i.test(msg) ? 'bad' : 'error';
+    aiHealthSet_(cfg, state, state === 'ok' ? '' : msg, (err && err.model) || cfg.model);
+    throw err;
+  }
+}
+
+/* ---------- สถานะกุญแจ AI (🟢 ใช้งานได้ / 🟡 โควตาเต็ม / 🔴 ใช้งานไม่ได้ / ⚪ ยังไม่ทดสอบ) — อัปเดตจากการเรียก AI จริงทุกครั้ง ---------- */
+function aiKeyTail_(k) { return k ? k.slice(-6) : ''; }
+
+function aiHealthSet_(cfg, state, error, model) {
+  try {
+    PropertiesService.getScriptProperties().setProperty('AI_HEALTH_' + cfg.provider, JSON.stringify({
+      state, at: nowText_(), error: String(error || '').slice(0, 200), model: model || cfg.model, tail: aiKeyTail_(cfg.key),
+    }));
+  } catch (err) { /* บันทึกสถานะไม่ได้ ไม่กระทบการตรวจ */ }
+}
+
+/** สถานะกุญแจของผู้ให้บริการ — เปลี่ยนกุญแจ (แม้ใส่ตรงใน Script Properties) = กลับเป็น "ยังไม่ทดสอบ" */
+function aiHealth_(provider, key) {
+  if (!key) return { state: 'none' };
+  let h = null;
+  try { h = JSON.parse(PropertiesService.getScriptProperties().getProperty('AI_HEALTH_' + provider) || 'null'); } catch (err) { h = null; }
+  if (!h || h.tail !== aiKeyTail_(key)) return { state: 'unknown' };
+  return { state: h.state, at: h.at, error: h.error || '', model: h.model || '' };
 }
 
 function aiParseJson_(text, usage, model) {
@@ -3192,7 +3223,7 @@ function getAiSettings(token) {
   Object.keys(AI_PROVIDERS).forEach(id => {
     const P = AI_PROVIDERS[id];
     const k = String(p.getProperty(P.keyProp) || '').trim();
-    providers[id] = { label: P.label, configured: !!k, masked: maskKey_(k), model: String(p.getProperty(P.modelProp) || '').trim() || P.model, hint: P.keyHint };
+    providers[id] = { label: P.label, configured: !!k, masked: maskKey_(k), model: String(p.getProperty(P.modelProp) || '').trim() || P.model, hint: P.keyHint, health: aiHealth_(id, k) };
   });
   return { provider: aiProvider_(), enabled: aiConfig_().enabled, providers };
 }

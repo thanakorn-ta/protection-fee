@@ -175,6 +175,16 @@ html.syncing #sync-bar { opacity: 1; animation: sync-run 1.1s linear infinite; }
 .key-btn { background: var(--amber); border-color: var(--amber); color: #1F1A00; }
 .key-btn .k-ico { font-size: 17px; line-height: 1; }
 @media (max-width: 640px) { .key-btn .key-label { display: none; } }
+.key-btn { position: relative; }
+.key-dot { position: absolute; top: -5px; right: -5px; width: 16px; height: 16px; border-radius: 50%; border: 2px solid #fff; background: #98A2B3; }
+.key-dot.ok { background: #12B76A; } .key-dot.limited { background: #F79009; } .key-dot.bad, .key-dot.error { background: var(--danger); }
+.key-state { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--line-soft); font-size: 14px; line-height: 1.45; }
+.key-state b { display: block; font-size: 15px; }
+.key-state .ks-ico { flex: none; width: 14px; height: 14px; margin-top: 4px; border-radius: 50%; background: #98A2B3; }
+.key-state.ok { background: #ECFDF3; border-color: #ABEFC6; } .key-state.ok .ks-ico { background: #12B76A; }
+.key-state.limited { background: var(--amber-soft); border-color: #FEDF89; } .key-state.limited .ks-ico { background: #F79009; }
+.key-state.bad, .key-state.error { background: var(--danger-soft); border-color: #FECDCA; } .key-state.bad .ks-ico, .key-state.error .ks-ico { background: var(--danger); }
+.key-state .ks-err { color: var(--muted); font-size: 13px; word-break: break-word; }
 .key-row { display: flex; gap: 8px; }
 .key-row input { flex: 1; min-width: 0; }
 .key-row .btn { flex: none; white-space: nowrap; }
@@ -691,7 +701,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
           <span class="rf-label">รีเฟรช</span>
         </button>
         <button type="button" class="refresh-btn key-btn" data-ai-key data-admin hidden aria-label="ใส่กุญแจ AI (API KEY)" title="ใส่กุญแจ AI (API KEY)">
-          <span class="k-ico" aria-hidden="true">🔑</span><span class="key-label">API KEY</span>
+          <span class="k-ico" aria-hidden="true">🔑</span><span class="key-label">API KEY</span><span class="key-dot" data-key-dot hidden></span>
         </button>
         <button type="button" class="icon-btn" data-install data-install-quick hidden aria-label="ติดตั้งแอป" title="ติดตั้งแอป">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11"/><path d="M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
@@ -1195,6 +1205,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     </form>
     <div class="card install-card" id="ai-key-card" data-admin hidden>
       <h2>🔑 กุญแจ AI (API KEY)</h2>
+      <div class="key-state" data-key-state hidden></div>
       <p>ใส่กุญแจ Google Gemini (ฟรี) เพื่อให้ AI ช่วยตรวจ File Accrue / File Clear ก่อนส่งอีเมล — เฉพาะผู้ดูแลระบบ</p>
       <button type="button" class="btn primary block" data-ai-key>ใส่ / เปลี่ยน API KEY</button>
     </div>
@@ -1336,6 +1347,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       <label class="check"><input type="radio" name="provider" value="gemini"> <span>Google Gemini — <b>ฟรี</b> (แนะนำ)</span></label>
       <label class="check"><input type="radio" name="provider" value="claude"> <span>Claude (Anthropic) — มีค่าใช้จ่าย</span></label>
     </div>
+    <div class="key-state" data-key-state hidden></div>
     <p class="ai-key-status" id="ai-key-status"></p>
     <label class="field"><span>วางกุญแจใหม่ <span class="opt">(เว้นว่าง = ใช้กุญแจเดิม)</span></span>
       <span class="key-row"><input type="password" name="key" autocomplete="off" spellcheck="false" autocapitalize="off" placeholder="AIza…"><button type="button" class="btn" id="ai-key-paste">📋 วาง</button></span>
@@ -1943,6 +1955,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     setBookingBadge(S.data.bookingPending || 0);
     setAppBadge(S.data.appBadge || 0);
     refreshPush();
+    if (isAdmin) loadKeyHealth();
     setMode(S.mode);
     renderLocations();
     if (first) {
@@ -3538,6 +3551,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         var res = await api('aiCheckNow', S.token, kind, page.data.y, page.data.m);
         page.data.aiStatus = res.status;
         page.data.verify = res.verify;
+        if (res.status && res.status.health) renderKeyHealth(res.status.health, res.status.label);
         if (!res.skipped) page.data.ai = res;
         cacheSet((kind === 'accrue' ? 'ac:' : 'cl:') + page.data.y + '-' + page.data.m, page.data);
         var vText = res.verify && !res.verify.ok ? 'ตัวเลขไม่ตรงชีท ' + res.verify.issues.length + ' รายการ · ' : 'ตัวเลขตรงกับชีท · ';
@@ -3559,15 +3573,61 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     claude: 'สร้างกุญแจที่ <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> (ขึ้นต้นด้วย sk-ant-) · มีค่าใช้จ่ายตามการใช้งาน',
   };
   S.aiKey = null;
+  // ---- สัญลักษณ์สถานะกุญแจ: 🟢 ใช้งานได้ / 🟡 โควตาเต็มชั่วคราว / 🔴 ใช้งานไม่ได้ / ⚪ ยังไม่ทดสอบ หรือยังไม่มีกุญแจ ----
+  var KEY_STATE_TEXT = {
+    ok: 'API KEY ใช้งานได้', limited: 'โควตาฟรีเต็มชั่วคราว', bad: 'API KEY ใช้งานไม่ได้', error: 'เชื่อมต่อ AI ไม่สำเร็จ',
+    unknown: 'ยังไม่ได้ทดสอบกุญแจ', none: 'ยังไม่ได้ใส่ API KEY',
+  };
+  var KEY_STATE_HINT = {
+    ok: 'AI พร้อมตรวจก่อนส่งอีเมล', limited: 'กุญแจถูกต้อง แต่ใช้ครบโควตาฟรีแล้ว — ระบบลองใหม่เองรอบถัดไป (อีเมลยังส่งได้ปกติ)',
+    bad: 'กุญแจผิด หมดอายุ หรือถูกปิด — สร้างกุญแจใหม่ที่ AI Studio แล้วกด 🔑 ใส่ใหม่', error: 'อาจเป็นปัญหาเครือข่ายชั่วคราว — กด “ทดสอบกุญแจ” อีกครั้ง',
+    unknown: 'กด “ทดสอบกุญแจ” เพื่อตรวจ', none: 'กด 🔑 API KEY แล้ววางกุญแจ Google Gemini (ฟรี)',
+  };
+  function renderKeyHealth(h, label) {
+    h = h || { state: 'none' };
+    var st = KEY_STATE_TEXT[h.state] ? h.state : 'unknown';
+    var when = h.at ? 'ตรวจล่าสุด ' + stamp(h.at) : '';
+    $$('[data-key-dot]').forEach(function (d) { d.className = 'key-dot ' + st; d.hidden = false; });
+    $$('.key-btn').forEach(function (b) { b.title = KEY_STATE_TEXT[st] + (when ? ' · ' + when : '') + ' — กดเพื่อใส่ / ทดสอบกุญแจ'; b.setAttribute('aria-label', 'API KEY: ' + KEY_STATE_TEXT[st]); });
+    $$('[data-key-state]').forEach(function (el) {
+      el.className = 'key-state ' + st;
+      el.hidden = false;
+      el.innerHTML = '<span class="ks-ico" aria-hidden="true"></span><div><b>' + esc(KEY_STATE_TEXT[st]) + (label && st !== 'none' ? ' · ' + esc(label) : '') + '</b>' +
+        esc(KEY_STATE_HINT[st]) + (when ? ' · ' + esc(when) : '') +
+        (h.error && st !== 'ok' ? '<div class="ks-err">' + esc(h.error) + '</div>' : '') + '</div>';
+    });
+  }
+  function keyHealthFrom(s) { var p = s && s.providers[s.provider]; return p ? { h: p.health, label: p.label } : null; }
+  async function loadKeyHealth() {
+    try {
+      var s = await api('getAiSettings', S.token);
+      S.aiKey = s;
+      var k = keyHealthFrom(s);
+      renderKeyHealth(k.h, k.label);
+      // กุญแจใหม่ที่ยังไม่เคยทดสอบ → ทดสอบให้เองหนึ่งครั้ง (คำขอสั้น ๆ)
+      if (k.h && k.h.state === 'unknown' && !S.keyAutoTested) {
+        S.keyAutoTested = true;
+        await api('testAiKey', S.token, s.provider);
+        s = await api('getAiSettings', S.token);
+        S.aiKey = s;
+        k = keyHealthFrom(s);
+        renderKeyHealth(k.h, k.label);
+        if (!$('#ai-key-dlg').hidden) renderAiKey();
+      }
+    } catch (err) { /* ไม่มีสิทธิ์ / ออฟไลน์ — ไม่แสดงสัญลักษณ์ */ }
+  }
   function aiKeyProvider() { var r = $('#form-ai-key [name="provider"]:checked'); return r ? r.value : 'gemini'; }
   function aiStatusFrom(s) {
     var p = s.providers[s.provider];
-    return { provider: s.provider, label: p.label, configured: p.configured, enabled: s.enabled, model: p.model };
+    return { provider: s.provider, label: p.label, configured: p.configured, enabled: s.enabled, model: p.model, health: p.health };
   }
   function renderAiKey() {
     var s = S.aiKey, f = $('#form-ai-key');
     if (!s) return;
     var prov = aiKeyProvider(), p = s.providers[prov];
+    var cur = keyHealthFrom(s);
+    renderKeyHealth(cur.h, cur.label);
+    if (prov !== s.provider) { var el = $('#ai-key-dlg [data-key-state]'); el.className = 'key-state ' + ((p.health && p.health.state) || 'none'); el.innerHTML = '<span class="ks-ico" aria-hidden="true"></span><div><b>' + esc(p.label) + ': ' + esc(KEY_STATE_TEXT[(p.health && p.health.state) || 'none'] || '') + '</b>ยังไม่ได้เลือกใช้</div>'; }
     $('#ai-key-status').innerHTML = (p.configured ? 'กุญแจที่บันทึกไว้: <b>' + esc(p.masked) + '</b>' : 'ยังไม่มีกุญแจ ' + esc(p.label)) +
       ' · โมเดล ' + esc(p.model) + (s.provider === prov ? ' · <b>ใช้งานอยู่</b>' : ' · ยังไม่ได้เลือกใช้ (กดบันทึกเพื่อใช้)');
     $('#ai-key-help').innerHTML = AI_KEY_HELP[prov];
@@ -3610,6 +3670,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       var s = await api('saveAiSettings', S.token, { provider: prov, key: f.key.value.trim() });
       f.key.value = '';
       aiKeyChanged(s);
+      if (s.providers[s.provider].health.state === 'unknown') { S.keyAutoTested = false; loadKeyHealth(); }
       $('#ai-key-result').textContent = 'บันทึกแล้ว — ใช้ ' + s.providers[s.provider].label + ' ตรวจก่อนส่ง';
       toast('บันทึกการตั้งค่า AI แล้ว');
     });
@@ -3636,6 +3697,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       var r = await api('testAiKey', S.token, aiKeyProvider());
       out.textContent = r.ok ? '✓ ใช้งานได้ · ' + r.model + ' · ' + (r.ms / 1000).toFixed(1) + ' วินาที' + (r.reply ? ' · “' + r.reply + '”' : '')
         : '✗ ใช้งานไม่ได้: ' + (r.error || '');
+      aiKeyChanged(await api('getAiSettings', S.token));
     } catch (err) {
       out.textContent = '✗ ' + errText(err);
     } finally {
