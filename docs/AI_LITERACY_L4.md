@@ -25,6 +25,8 @@
 
 ## Workflow (L4.1)
 
+> ภาพสำหรับสไลด์: `Workflow-Protection Fee.png` (1920×1080 · อัปเดต 16 พ.ย. 69 — ขั้น AI เป็น Google Gemini ฟรี และเพิ่มขั้น "โค้ดเทียบตัวเลขกับชีท" ก่อนส่ง) — ไฟล์ภาพไม่อยู่ใน git
+
 ```mermaid
 flowchart LR
   U[ผู้ใช้<br/>มือถือ / คอมพิวเตอร์] -->|จองรถคุ้มครอง| W[Web App<br/>Vercel / Netlify]
