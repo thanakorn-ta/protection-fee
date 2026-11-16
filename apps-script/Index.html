@@ -441,7 +441,23 @@ input.upper::placeholder { text-transform: none; }
 .review-box h3 { font-size: 15px; }
 .field textarea, .fsec > textarea { min-height: 80px; padding: 10px 12px; border: 1.5px solid var(--field); border-radius: 10px; background: #fff; font: inherit; font-weight: 400; font-size: 16px; resize: vertical; width: 100%; }
 .field textarea:focus, .fsec > textarea:focus { border-color: var(--green); }
-.place-add { display: flex; gap: 8px; }
+.place-add { display: flex; gap: 8px; flex-wrap: wrap; }
+.place-add select { height: 44px; border: 1.5px solid var(--field); border-radius: 10px; background: #fff; padding: 0 8px; font-size: 14px; max-width: 150px; }
+.place-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.place-list li { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto auto; gap: 8px; align-items: center; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.place-list li.locked { background: var(--line-soft); }
+.place-list li.new { border-color: var(--green); box-shadow: inset 3px 0 0 var(--green); }
+.place-list .pl-no { font-weight: 600; color: var(--muted); text-align: right; }
+.place-list .pl-name { min-width: 0; overflow-wrap: anywhere; font-size: 15px; }
+.place-list .pl-name small { display: block; color: var(--green); font-weight: 600; font-size: 12px; }
+.place-list select { height: 36px; border: 1.5px solid var(--field); border-radius: 8px; background: #fff; font-size: 13px; padding: 0 6px; max-width: 150px; }
+.place-list .pl-rm { width: 36px; height: 36px; border-radius: 8px; border: 1.5px solid var(--field); background: #fff; font-size: 18px; line-height: 1; }
+.place-list .pl-rm:disabled { opacity: .45; }
+.place-list li.place-empty { display: block; border: 0; background: none; color: var(--muted); font-size: 14px; padding: 6px 2px; }
+@media (max-width: 640px) { .place-list li { grid-template-columns: 24px minmax(0, 1fr) auto; } .place-list select { grid-column: 2; justify-self: start; } .place-list .pl-rm { grid-row: 1; grid-column: 3; } }
+.add-banner { padding: 12px 14px; border-radius: 10px; background: var(--green-soft); color: var(--green-ink); font-size: 14px; line-height: 1.6; }
+.place-tag { font-size: 12px; color: var(--muted); }
+.place-tag.new { color: var(--green); font-weight: 600; }
 .place-add input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border: 1.5px solid var(--field); border-radius: 10px; background: #fff; font-size: 15px; }
 
 @media (max-width: 760px) {
@@ -1192,9 +1208,13 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
               <button type="button" data-val="BEM" aria-pressed="false">BEM</button>
             </div>
           </div>
-          <label class="field">Media Type<select name="mediaType"><option>Flyover 2.0</option><option>Gateway Billboard</option><option>Mainline</option></select></label>
+          <label class="field"><span>Media Type หลัก <span class="opt">(ใช้กับจุดที่ไม่มีในฐานข้อมูลป้าย)</span></span><select name="mediaType"><option>Flyover 2.0</option><option>Gateway Billboard</option><option>Mainline</option></select></label>
         </div>
       </section>
+      <div class="add-banner" id="bk-add-banner" hidden>
+        <b>เพิ่ม / แทรกงาน</b> — เพิ่มจุดที่ไปใหม่ได้ทุกตำแหน่ง จุดเดิมที่บันทึกลงตารางแล้ว <span class="lock-ico">🔒</span> แก้หรือลบไม่ได้ ·
+        บันทึกแล้วการจองจะกลับเป็น “รออนุมัติ” — อนุมัติแล้วระบบบันทึกเฉพาะจุดใหม่ลงตาราง
+      </div>
 
       <section class="fsec">
         <h3><span class="fnum">1</span>วัน เวลา และจุดนัดพบ</h3>
@@ -1214,12 +1234,15 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
       <section class="fsec">
         <h3><span class="fnum">2</span>จุดที่ไป <span class="req">*</span></h3>
-        <p class="fhint">บรรทัดละ 1 จุด — ค้นหาจากฐานข้อมูลป้ายแล้วกด “เพิ่ม” หรือพิมพ์เองก็ได้</p>
+        <p class="fhint">ค้นหาจากฐานข้อมูลป้ายหรือพิมพ์เอง แล้วกด “เพิ่ม” — เลือกตำแหน่งเพื่อแทรกระหว่างจุดได้ · Media Type ของแต่ละจุดตั้งให้ตามฐานข้อมูลป้าย (เปลี่ยนได้)</p>
         <div class="place-add">
           <input id="bk-place-pick" list="dl-bk-places" placeholder="ค้นหาป้าย เช่น 6.2" aria-label="เลือกจุดที่ไปจากฐานข้อมูลป้าย">
+          <select id="bk-place-pos" aria-label="ตำแหน่งที่เพิ่ม"></select>
           <button type="button" class="btn sm" id="bk-place-add">+ เพิ่ม</button>
         </div>
-        <textarea name="places" rows="3" placeholder="ถนนเอกมัยมุ่งพระรามเก้า" aria-label="จุดที่ไป"></textarea>
+        <ol class="place-list" id="bk-place-list"></ol>
+        <textarea name="places" hidden aria-hidden="true"></textarea>
+        <input type="hidden" name="placeTypes">
       </section>
 
       <section class="fsec">
@@ -2058,7 +2081,8 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 
   function projectFor(loc) {
     var op = /^BEM/i.test(loc.operator) || /BECL|BEM/i.test(loc.mediaSite) ? 'BEM' : 'EXAT';
-    return (/gateway/i.test(loc.mediaSite) ? 'Gateway ' : 'Flyover 2.0 ') + op;
+    var t = locType(loc);
+    return (t === 'Gateway Billboard' ? 'Gateway ' : t === 'Mainline' ? 'Mainline ' : 'Flyover 2.0 ') + op;
   }
 
   $$('[data-day]').forEach(function (b) {
@@ -2650,7 +2674,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   function thaiDateLong(iso) { var d = parseIsoDate(iso); return 'วัน' + ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์'][d.getDay()] + 'ที่ ' + d.getDate() + ' ' + TH_MONTHS_LONG[d.getMonth()] + ' ' + (d.getFullYear() + 543); }
   function lines(s) { return String(s || '').split(/\r?\n/).map(function (x) { return x.trim(); }).filter(Boolean); }
   function stamp(s) { var m = /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}:\d{2})/.exec(s || ''); return m ? (Number(m[3]) + ' ' + TH_MONTHS[Number(m[2]) - 1] + ' ' + pad2((Number(m[1]) + 543) % 100) + ' ' + m[4]) : (s || ''); }
-  function evLabel(b) { return (b.jobType || b.title) + ' · ' + b.mediaType + ' · แจ้งใช้รถ ' + b.provider; }
+  function evLabel(b) { return (b.jobType || b.title) + ' · ' + mediaTypesText(b) + ' · แจ้งใช้รถ ' + b.provider; }
 
   function setBookingBadge(n) {
     var el = $('#bk-count');
@@ -2664,7 +2688,11 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     if (b.expressway) out.push('จุดที่ 1 : ' + b.expressway);
     if (b.time) out.push('เวลา : ' + b.time);
     if (b.meetingPoint) out.push('จุดนัดพบ : ' + b.meetingPoint);
-    lines(b.places).forEach(function (p, i) { out.push('ไปที่ ' + (i + 1) + ' : ' + p); });
+    var types = placeTypesOf(b), mixed = mediaTypesText(b).indexOf(' / ') >= 0;
+    lines(b.places).forEach(function (p, i) {
+      var t = types[i], named = t && new RegExp(t.split(' ')[0], 'i').test(p); // ชื่อจุดบอกชนิดอยู่แล้ว เช่น "Mainline …"
+      out.push('ไปที่ ' + (i + 1) + ' : ' + p + (mixed && t && !named ? ' (' + t + ')' : ''));
+    });
     if (b.jobType) out.push('ประเภทงาน : ' + b.jobType);
     if (b.worker) out.push('ผู้เข้างาน : ' + b.worker + (b.phone ? ' โทร ' + b.phone : ''));
     if (b.note) out.push('หมายเหตุ : ' + b.note);
@@ -2983,6 +3011,16 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     showModal(true);
   }
 
+  /** จุดที่ไปแบบมีเลขลำดับ — หลายชนิดป้ายต่อท้ายด้วยชนิด · markNew ใส่ "(ใหม่)" ที่จุดที่เพิ่ม/แทรกรออนุมัติ */
+  function placeListLines(b, markNew) {
+    var types = placeTypesOf(b), mixed = mediaTypesText(b).indexOf(' / ') >= 0;
+    var fresh = markNew ? multiset(lines(b.addedPlaces)) : {};
+    return lines(b.places).map(function (p, i) {
+      var k = norm(p), isNew = fresh[k] > 0 && fresh[k]--;
+      return (i + 1) + '. ' + p + (mixed && types[i] ? ' [' + types[i] + ']' : '') + (isNew ? ' (ใหม่)' : '');
+    });
+  }
+
   function renderBookingView() {
     var b = S.bk;
     $('#bk-form').hidden = true;
@@ -2993,10 +3031,10 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       ['วันที่', thaiDateLong(b.date) + (b.time ? ' · ' + b.time : '')],
       ['วันหยุด', holidayText(b.date)],
       ['แจ้งใช้รถ', b.provider],
-      ['Media Type', b.mediaType],
+      ['Media Type', mediaTypesText(b)],
       ['สายทาง', b.expressway],
       ['จุดนัดพบ', b.meetingPoint],
-      ['จุดที่ไป', lines(b.places).map(function (p, i) { return (i + 1) + '. ' + p; }).join('\n')],
+      ['จุดที่ไป', placeListLines(b, b.status === 'pending').join('\n')],
       ['ประเภทงาน', b.jobType],
       ['ผู้เข้างาน', b.worker],
       ['เบอร์ติดต่อ', b.phone],
@@ -3008,13 +3046,14 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     }
     if (b.status === 'cancelled') hist.push('ยกเลิกเมื่อ ' + stamp(b.updatedAt));
     if (b.loggedRows) hist.push('บันทึกลงตาราง ' + b.loggedRows + ' เมื่อ ' + stamp(b.loggedAt));
+    if (b.status === 'pending' && b.addedPlaces) hist.push('เพิ่ม / แทรกงาน ' + lines(b.addedPlaces).length + ' จุด — รออนุมัติอีกครั้ง (อนุมัติแล้วบันทึกเฉพาะจุดใหม่)');
 
     var review = '';
     if (b.canReview) {
       review = '<div class="review-box"><h3>' + (b.status === 'pending' ? 'พิจารณาการจอง (ผู้ดูแลระบบ)' : 'เปลี่ยนผลการพิจารณา') + '</h3>' +
         '<label class="field"><span>หมายเหตุถึงผู้จอง <span class="opt">(ไม่บังคับ)</span></span><input id="bk-review-note" value="' + esc(b.status === 'pending' ? '' : b.reviewNote) + '" placeholder="เช่น อนุมัติ แจ้ง BEM แล้ว"></label>' +
         '<div class="actions">' +
-          (b.status !== 'approved' ? '<button type="button" class="btn primary" data-review="approved">' + (b.loggedRows ? 'อนุมัติ' : 'อนุมัติ + บันทึกลงตาราง ' + esc(b.provider)) + '</button>' : '') +
+          (b.status !== 'approved' ? '<button type="button" class="btn primary" data-review="approved">' + (b.loggedRows ? (b.addedPlaces ? 'อนุมัติ + บันทึกจุดใหม่ลงตาราง ' + esc(b.provider) : 'อนุมัติ') : 'อนุมัติ + บันทึกลงตาราง ' + esc(b.provider)) + '</button>' : '') +
           (b.status !== 'rejected' ? '<button type="button" class="btn danger" data-review="rejected">ไม่อนุมัติ</button>' : '') +
         '</div></div>';
     }
@@ -3026,11 +3065,12 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       review +
       '<div class="actions">' +
         (b.canEdit ? '<button type="button" class="btn" id="bk-edit">แก้ไข</button>' : '') +
+        (b.canAdd ? '<button type="button" class="btn" id="bk-add">+ เพิ่ม / แทรกงาน</button>' : '') +
         (b.canLog ? '<button type="button" class="btn primary" id="bk-log">บันทึกลงตาราง ' + esc(b.provider) + '</button>' : '') +
         (b.canCancel ? '<button type="button" class="btn danger" id="bk-cancel">ยกเลิกการจอง</button>' : '') +
       '</div>' +
       (b.status === 'pending' ? '<p class="sub">เมื่อผู้ดูแลระบบอนุมัติ ระบบจะบันทึกทุกจุดลงตาราง ' + esc(b.provider) + ' ในชีท และคิดค่าใช้จ่ายตามอัตราให้เอง</p>' : '') +
-      (!b.canEdit && b.mine && b.status === 'approved' ? '<p class="sub">อนุมัติแล้ว — ถ้าต้องการเปลี่ยนแปลง ให้ติดต่อผู้ดูแลระบบ</p>' : '') +
+      (b.canAdd && !b.canEdit ? '<p class="sub">อนุมัติแล้ว — มีงานแทรกหรือเพิ่ม กด “เพิ่ม / แทรกงาน” (จุดเดิมไม่เปลี่ยน ต้องอนุมัติอีกครั้ง) · เปลี่ยนแปลงอื่นติดต่อผู้ดูแลระบบ</p>' : '') +
       (b.loggedRows && b.canEdit ? '<p class="sub">บันทึกลงตารางแล้ว — ถ้าแก้ไขการจอง ต้องแก้แถวในชีทเองด้วย</p>' : '');
   }
 
@@ -3049,6 +3089,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     if (!btn) return;
     if (btn.id === 'bk-copy') return copyText(bookingMessage(b), $('#bk-msg'));
     if (btn.id === 'bk-edit') return openBookingForm(b);
+    if (btn.id === 'bk-add') return openBookingForm(b, null, 'add');
     if (btn.id === 'bk-cancel') return renderCancelForm();
     if (btn.id === 'cx-back') { dropCxFiles(); return renderBookingView(); }
     if (btn.id === 'cx-submit') return submitCancel();
@@ -3797,33 +3838,117 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     input.hidden = !v || known;
   }
 
-  function openBookingForm(b, dateIso) {
+  // mode 'add' = เพิ่ม / แทรกงานในการจองที่อนุมัติแล้ว (แก้ได้เฉพาะจุดที่ไป ชนิดป้าย และหมายเหตุ)
+  // ผู้ใช้ที่แก้การจองซึ่งบันทึกลงตารางแล้ว ก็อยู่ในโหมดนี้ (เหมือน saveBooking ใน Code.gs)
+  function openBookingForm(b, dateIso, mode) {
     var form = $('#bk-form');
     form.reset();
     showError(form, '');
     S.bk = b;
+    S.bkAdd = !!b && (mode === 'add' || (S.user.role !== 'admin' && !!b.loggedRows));
     var v = b
       ? Object.assign({}, b, { jobType: b.jobType || b.title }, splitWorker(b.worker, b.phone))
       : { date: dateIso || today(), provider: 'EXAT', mediaType: 'Flyover 2.0', worker: LS.get('worker'), phone: LS.get('bkPhone') };
-    ['date', 'time', 'provider', 'mediaType', 'expressway', 'meetingPoint', 'places', 'worker', 'phone', 'note'].forEach(function (k) {
+    ['date', 'time', 'provider', 'mediaType', 'expressway', 'meetingPoint', 'worker', 'phone', 'note'].forEach(function (k) {
       if (form[k] && v[k] !== undefined) form[k].value = v[k];
     });
+    // จุดที่ไป: จุดที่บันทึกลงตารางแล้วล็อกไว้ (ลบ / แก้ไม่ได้)
+    var logged = multiset(lines(b ? b.loggedPlaces : ''));
+    var types = placeTypesOf(v);
+    S.bkOrig = lines(v.places);
+    S.bkPlaces = S.bkOrig.map(function (p, i) {
+      var k = norm(p), locked = logged[k] > 0;
+      if (locked) logged[k]--;
+      return { place: p, type: types[i] || v.mediaType || 'Flyover 2.0', locked: locked };
+    });
+    renderPlaceList();
     setJob(form, v.jobType || '', b && b.jobCategory);
     if (!form.provider.value) form.provider.value = 'EXAT';
     setSeg(form, 'provider');
     syncPick(form, 'time');
     syncPick(form, 'meetingPoint');
     refreshWorkers(form);
-    $('#bk-modal-title').textContent = b ? 'แก้ไขการจอง' : 'จองรถคุ้มครอง';
+    $$('input, select, textarea, [data-seg] button', form).forEach(function (el) {
+      el.disabled = S.bkAdd && !(el.name === 'note' || el.type === 'hidden' || el.closest('.place-add') || el.closest('#bk-place-list'));
+    });
+    renderPlaceList(); // ปุ่มลบของจุดที่ล็อก
+    $('#bk-add-banner').hidden = !S.bkAdd;
+    $('[type="submit"]', form).textContent = S.bkAdd ? 'ส่งขออนุมัติอีกครั้ง' : 'บันทึกการจอง';
+    $('#bk-modal-title').textContent = S.bkAdd ? 'เพิ่ม / แทรกงาน' : b ? 'แก้ไขการจอง' : 'จองรถคุ้มครอง';
     $('#bk-modal-status').innerHTML = b ? '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status]) + '</span>' : '';
     $('#bk-view').hidden = true;
     form.hidden = false;
     showModal(true);
     $('#bk-modal').scrollTop = 0;
     updateDateNote();
-    setTimeout(function () { form.jobCategory.focus(); }, 30);
+    setTimeout(function () { (S.bkAdd ? $('#bk-place-pick') : form.jobCategory).focus(); }, 30);
   }
   $('#bk-cancel-edit').addEventListener('click', askClose);
+
+  // ---------- จุดที่ไป: รายการ + Media Type ของแต่ละจุด (การจองเดียวมีหลายชนิดป้ายได้) ----------
+  var MEDIA_TYPES = ['Flyover 2.0', 'Gateway Billboard', 'Mainline'];
+  /** ชนิดป้ายจากฐานข้อมูลป้าย — ตรงกับ locMediaType_ ใน Code.gs */
+  function locType(loc) {
+    if (!loc) return '';
+    if (/gateway/i.test(loc.mediaSite || '')) return 'Gateway Billboard';
+    if (/mainline/i.test((loc.mediaSite || '') + ' ' + (loc.area || ''))) return 'Mainline';
+    return 'Flyover 2.0';
+  }
+  /** Media Type ของแต่ละจุด (เรียงตามจุดที่ไป) — ว่าง = ตามฐานข้อมูลป้าย / Media Type หลัก */
+  function placeTypesOf(b) {
+    var t = String(b.placeTypes || '').split(/\r?\n/);
+    return lines(b.places).map(function (p, i) {
+      var x = String(t[i] || '').trim();
+      return MEDIA_TYPES.indexOf(x) >= 0 ? x : (locType(placeLoc(p)) || b.mediaType || '');
+    });
+  }
+  function mediaTypesText(b) {
+    var out = [];
+    placeTypesOf(b).forEach(function (t) { if (t && out.indexOf(t) < 0) out.push(t); });
+    return out.join(' / ') || b.mediaType || '';
+  }
+  function multiset(list) {
+    var m = {};
+    list.forEach(function (p) { var k = norm(p); m[k] = (m[k] || 0) + 1; });
+    return m;
+  }
+  /** จุดใน a ที่ไม่มีใน b (นับซ้ำ) */
+  function minusPlaces(a, b) {
+    var left = multiset(b);
+    return a.filter(function (p) { var k = norm(p); if (left[k] > 0) { left[k]--; return false; } return true; });
+  }
+  function renderPlaceList() {
+    var form = $('#bk-form'), list = S.bkPlaces || [];
+    form.places.value = list.map(function (x) { return x.place; }).join('\n');
+    form.placeTypes.value = list.map(function (x) { return x.type; }).join('\n');
+    var fresh = multiset(minusPlaces(list.map(function (x) { return x.place; }), S.bkOrig || []));
+    $('#bk-place-list').innerHTML = list.length ? list.map(function (x, i) {
+      var k = norm(x.place), isNew = S.bkAdd && !x.locked && fresh[k] > 0 && fresh[k]--;
+      return '<li class="' + (x.locked ? 'locked' : isNew ? 'new' : '') + '"><span class="pl-no">' + (i + 1) + '</span>' +
+        '<span class="pl-name">' + (x.locked ? '🔒 ' : '') + esc(x.place) + (isNew ? '<small>จุดใหม่</small>' : '') + '</span>' +
+        '<select data-pl-type="' + i + '" aria-label="Media Type ของจุดที่ ' + (i + 1) + '"' + (x.locked ? ' disabled' : '') + '>' +
+          MEDIA_TYPES.map(function (t) { return '<option' + (t === x.type ? ' selected' : '') + '>' + t + '</option>'; }).join('') + '</select>' +
+        '<button type="button" class="pl-rm" data-pl-rm="' + i + '" aria-label="เอาจุดที่ ' + (i + 1) + ' ออก"' +
+          (x.locked ? ' disabled title="บันทึกลงตารางแล้ว — ลบไม่ได้"' : '') + '>×</button></li>';
+    }).join('') : '<li class="place-empty">ยังไม่มีจุดที่ไป — ค้นหาแล้วกด “+ เพิ่ม”</li>';
+    var pos = $('#bk-place-pos'), keep = pos.value;
+    pos.innerHTML = '<option value="end">ท้ายรายการ</option>' +
+      list.map(function (x, i) { return '<option value="' + i + '">แทรกก่อนจุดที่ ' + (i + 1) + '</option>'; }).join('');
+    pos.value = keep && Number(keep) < list.length ? keep : 'end';
+    pos.hidden = !list.length;
+  }
+  $('#bk-place-list').addEventListener('change', function (e) {
+    var i = e.target.dataset.plType;
+    if (i === undefined || !S.bkPlaces[i]) return;
+    S.bkPlaces[i].type = e.target.value;
+    renderPlaceList();
+  });
+  $('#bk-place-list').addEventListener('click', function (e) {
+    var btn = e.target.closest('[data-pl-rm]');
+    if (!btn || btn.disabled) return;
+    S.bkPlaces.splice(Number(btn.dataset.plRm), 1);
+    renderPlaceList();
+  });
 
   // จุดที่ไป: แจ้งใช้รถ BEM เลือกได้เฉพาะจุดของ BEM · EXAT เฉพาะจุดของ EXAT (ฐานข้อมูลป้าย + ที่เคยบันทึกในตารางนั้น)
   // เจ้าของจุดตัดสินแบบเดียวกับ bookingToForms_ ใน Code.gs (เขตพื้นที่ขึ้นต้น BEM หรือ Media Site มี BECL / BEM)
@@ -3849,12 +3974,15 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     if (loc) {
       if (locOwner(loc) !== form.provider.value) { toast(otherOwnerText(loc, form.provider.value), true); return pick.focus(); }
       v = loc.area;
-      if (!form.expressway.value && loc.expressway) form.expressway.value = loc.expressway;
-      if (!form.meetingPoint.value && loc.meetingPoint) { form.meetingPoint.value = loc.meetingPoint; syncPick(form, 'meetingPoint'); }
+      if (!S.bkAdd && !form.expressway.value && loc.expressway) form.expressway.value = loc.expressway;
+      if (!S.bkAdd && !form.meetingPoint.value && loc.meetingPoint) { form.meetingPoint.value = loc.meetingPoint; syncPick(form, 'meetingPoint'); }
     }
-    var cur = lines(form.places.value);
-    if (cur.indexOf(v) < 0) cur.push(v);
-    form.places.value = cur.join('\n');
+    if (S.bkPlaces.some(function (x) { return x.place === v; })) { toast('มีจุดนี้ในรายการแล้ว', true); return pick.focus(); }
+    var pos = $('#bk-place-pos').value;
+    var at = pos === 'end' || pos === '' ? S.bkPlaces.length : Number(pos);
+    S.bkPlaces.splice(at, 0, { place: v, type: locType(loc) || form.mediaType.value || 'Flyover 2.0', locked: false });
+    renderPlaceList();
+    $('#bk-place-pos').value = 'end';
     pick.value = '';
     pick.focus();
   });
@@ -3872,7 +4000,9 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     if (!data.date) return bad(form.date, 'กรุณาเลือกวันที่');
     if (!lines(data.places).length) return bad($('#bk-place-pick'), 'กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด');
     var wrong = lines(data.places).map(placeLoc).find(function (l) { return l && locOwner(l) !== data.provider; });
-    if (wrong) return bad(form.places, otherOwnerText(wrong, data.provider));
+    if (wrong) return bad($('#bk-place-pick'), otherOwnerText(wrong, data.provider));
+    var adding = S.bkAdd;
+    if (adding && S.bk.status === 'approved' && !minusPlaces(lines(data.places), S.bkOrig).length) return bad($('#bk-place-pick'), 'เพิ่มหรือแทรกจุดที่ไปใหม่อย่างน้อย 1 จุด');
     if (!data.worker.trim()) return bad(form.worker.hidden ? form.querySelector('[data-pick="worker"]') : form.worker, 'กรุณาเลือกหรือกรอกชื่อผู้เข้างาน');
     if (!data.phone.trim()) return bad(form.phone, 'กรุณากรอกเบอร์ติดต่อผู้เข้างาน');
     if (!PHONE_RE.test(data.phone.trim())) return bad(form.phone, 'เบอร์ติดต่อไม่ถูกต้อง เช่น 061-895-3563');
@@ -3889,7 +4019,8 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       closeModal(); // บันทึกสำเร็จ = ตกลง ปิดหน้าจอง
       if (!editing || !S.cal.range || res.date < S.cal.range[0] || res.date > S.cal.range[1]) await loadSchedule(true);
       else renderSchedule();
-      toast((editing ? 'บันทึกการแก้ไขแล้ว' : 'ส่งคำขอจองแล้ว — รอผู้ดูแลระบบอนุมัติ') + notifyText(res.notify, 'ผู้ดูแลระบบ'));
+      toast((adding && res.status === 'pending' ? 'ส่งเพิ่ม / แทรกงานแล้ว — รอผู้ดูแลระบบอนุมัติอีกครั้ง'
+        : editing ? 'บันทึกการแก้ไขแล้ว' : 'ส่งคำขอจองแล้ว — รอผู้ดูแลระบบอนุมัติ') + notifyText(res.notify, 'ผู้ดูแลระบบ'));
     });
   });
 
