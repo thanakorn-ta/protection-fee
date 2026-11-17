@@ -59,7 +59,7 @@ const API_FUNCTIONS = {
   register, login, logout, changePassword, requestPasswordReset, resetPasswordWithToken, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
   getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings, getClear, downloadClear, sendClearNow,
   listHolidays, saveHoliday, deleteHoliday,
-  addLocation, listUsers, updateUser, reviewUser, resetPassword, getNotifySettings, saveNotifySettings,
+  addLocation, listUsers, updateUser, reviewUser, deleteUser, resetPassword, getNotifySettings, saveNotifySettings,
   getPushConfig, savePushSub, removePushSub, pushInbox,
   aiCheckNow, getAiSettings, saveAiSettings, deleteAiKey, testAiKey, aiReviewBooking,
 };
@@ -3849,9 +3849,15 @@ function addLocation(token, form) {
 /* จัดการผู้ใช้ (admin)                                                  */
 /* ------------------------------------------------------------------ */
 
+// ลบสมาชิกได้เฉพาะเจ้าของระบบ (ธนากร ตลับศรี) — ผู้ดูแลระบบคนอื่นทำได้แค่ระงับ
+const OWNER_USERNAME = 'pb00337';
+function isOwner_(u) { return !!u && u.role === 'admin' && u.username === OWNER_USERNAME; }
+
 function listUsers(token) {
-  requireUser_(token, true);
+  const admin = requireUser_(token, true);
+  const owner = isOwner_(admin);
   return readUsers_(usersSheet_()).map(u => Object.assign(publicUser_(u), {
+    deletable: owner && u.username !== admin.username,
     email: u.email,
     status: u.status,
     requestedRole: u.requestedRole === 'admin' ? 'admin' : 'user',
@@ -3885,6 +3891,26 @@ function updateUser(token, username, changes) {
     }
     audit_(admin.username, 'update_user', CONFIG.USERS_SHEET, user.row, { username, changes });
     return true;
+  });
+}
+
+/** ลบสมาชิกถาวร (ลบแถวในชีทผู้ใช้) — เฉพาะเจ้าของระบบ · เก็บข้อมูลบัญชีที่ลบไว้ใน AuditLog · ประวัติการจองยังอยู่ */
+function deleteUser(token, username) {
+  const admin = requireUser_(token, true);
+  if (!isOwner_(admin)) throw new Error('ลบสมาชิกได้เฉพาะเจ้าของระบบ (ธนากร ตลับศรี) เท่านั้น');
+  username = cleanUsername_(username);
+  if (username === admin.username) throw new Error('ไม่สามารถลบบัญชีของตัวเองได้');
+  return withLock_(() => {
+    const sh = usersSheet_();
+    const user = readUsers_(sh).find(u => u.username === username);
+    if (!user) throw new Error('ไม่พบผู้ใช้');
+    const snap = { username, fullName: String(user.fullName || ''), email: String(user.email || ''), role: user.role, status: user.status,
+      createdAt: formatDateTime_(user.createdAt), lastLogin: formatDateTime_(user.lastLogin) };
+    sh.deleteRow(user.row);
+    PropertiesService.getScriptProperties().deleteProperty('RESET_REQ_' + username);
+    CacheService.getScriptCache().remove('fail_' + username);
+    audit_(admin.username, 'delete_user', CONFIG.USERS_SHEET, user.row, snap);
+    return { username, deleted: true };
   });
 }
 

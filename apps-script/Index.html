@@ -4524,6 +4524,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
             ? '<button type="button" class="btn sm" data-act="approve" data-user="' + esc(u.username) + '">อนุมัติ</button>'
             : '<button type="button" class="btn sm" data-act="reset" data-user="' + esc(u.username) + '">รีเซ็ตรหัสผ่าน</button> ' +
               (self ? '' : '<button type="button" class="btn sm danger" data-act="toggle" data-user="' + esc(u.username) + '" data-status="' + esc(u.status) + '">' + (u.status === 'active' ? 'ระงับ' : 'เปิดใช้งาน') + '</button>')) +
+          (u.deletable ? ' <button type="button" class="btn sm danger-fill" data-act="delete" data-user="' + esc(u.username) + '" title="ลบสมาชิกถาวร (เฉพาะเจ้าของระบบ)">ลบ</button>' : '') +
         '</td></tr>';
     }).join('') : '<tr><td class="empty" colspan="5">ยังไม่มีผู้ใช้</td></tr>';
   }
@@ -4591,6 +4592,11 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       if (!await askConfirm({ title: (next === 'active' ? 'เปิดใช้งาน ' : 'ระงับ ') + u + '?', text: next === 'active' ? who + ' จะเข้าสู่ระบบได้อีกครั้ง' : who + ' จะเข้าสู่ระบบไม่ได้จนกว่าจะเปิดใช้งาน', ok: next === 'active' ? 'เปิดใช้งาน' : 'ระงับ', danger: next !== 'active' })) return;
       b.disabled = true;
       return userAction('updateUser', [u, { status: next }], (next === 'active' ? 'เปิดใช้งาน ' : 'ระงับ ') + u + ' แล้ว');
+    }
+    if (b.dataset.act === 'delete') {
+      if (!await askConfirm({ title: 'ลบสมาชิก ' + u + ' ถาวร?', text: who + ' จะถูกลบออกจากระบบและเข้าสู่ระบบไม่ได้อีก — ย้อนกลับไม่ได้ (ประวัติการจองและ AuditLog ยังอยู่) · ถ้าต้องการหยุดใช้ชั่วคราว ให้ใช้ปุ่ม ระงับ แทน', ok: 'ลบถาวร', danger: true })) return;
+      b.disabled = true;
+      return userAction('deleteUser', [u], 'ลบสมาชิก ' + u + ' แล้ว');
     }
     if (b.dataset.act === 'reset') {
       if (!await askConfirm({ title: 'รีเซ็ตรหัสผ่านของ ' + u + '?', text: 'ระบบจะสร้างรหัสผ่านชั่วคราวให้ แจ้งผู้ใช้ให้เปลี่ยนหลังเข้าสู่ระบบ', ok: 'รีเซ็ต' })) return;
