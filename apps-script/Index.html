@@ -4358,7 +4358,9 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     data.jobType = composeJob(data.jobCategory, data.jobDetail);
     if (!data.date) return bad(form.date, 'กรุณาเลือกวันที่');
     if (!lines(data.places).length) return bad($('#bk-place-pick'), 'กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด');
-    var wrong = lines(data.places).map(placeLoc).find(function (l) { return l && locOwner(l) !== data.provider; });
+    // จุดที่อยู่ในการจองเดิมแล้วไม่ตรวจซ้ำ (จองก่อนมีการตรวจเจ้าของจุด) — ตรวจเฉพาะจุดที่เพิ่มใหม่ (ตรงกับ saveBooking ใน Code.gs)
+    var known = S.bk && S.bk.provider === data.provider ? S.bkOrig.concat(lines(S.bk.loggedPlaces)) : [];
+    var wrong = minusPlaces(lines(data.places), known).map(placeLoc).find(function (l) { return l && locOwner(l) !== data.provider; });
     if (wrong) return bad($('#bk-place-pick'), otherOwnerText(wrong, data.provider));
     var adding = S.bkAdd;
     if (adding && S.bk.status === 'approved' && !minusPlaces(lines(data.places), S.bkOrig).length && !minusPlaces(S.bkOrig, lines(data.places)).length &&

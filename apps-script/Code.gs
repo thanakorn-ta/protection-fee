@@ -995,7 +995,11 @@ function saveBooking(token, form) {
   const f = validateBooking_(form);
   // จุดที่อยู่ในฐานข้อมูลป้ายต้องเป็นของ EXAT / BEM ตามที่แจ้งใช้รถ (หน้าเว็บตรวจแล้ว — ตรวจซ้ำที่เซิร์ฟเวอร์)
   const locs = sharedAppData_().locations;
-  placeLines_(f.places).forEach(p => {
+  // จุดที่อยู่ในการจองเดิมแล้ว (เช่นจองก่อนมีการตรวจเจ้าของจุด) ไม่ตรวจซ้ำ — ตรวจเฉพาะจุดที่เพิ่มใหม่
+  const editId = String((form && form.id) || '').trim();
+  const prev = editId ? readBookings_(bookingsSheet_()).find(x => x.id === editId) : null;
+  const checkPlaces = prev && prev.provider === f.provider ? minusPlaces_(placeLines_(f.places), placeLines_(prev.places).concat(placeLines_(prev.loggedPlaces))) : placeLines_(f.places);
+  checkPlaces.forEach(p => {
     const np = norm_(p);
     const loc = locs.find(l => norm_(l.area) === np || (l.code && norm_(l.code) === np));
     const owner = loc ? (/^BEM/i.test(loc.operator) || /BECL|BEM/i.test(loc.mediaSite) ? 'BEM' : 'EXAT') : '';
@@ -4390,4 +4394,122 @@ function formatDateTime_(v) {
 function authorizeDrive() {
   const folder = cancelFolder_();
   console.log('โฟลเดอร์ไฟล์แนบการยกเลิก: ' + folder.getName() + ' — ' + folder.getUrl());
+}
+
+/* ------------------------------------------------------------------ */
+/* อัปเดตโค้ดจาก GitHub อัตโนมัติ (ฟรี) — Apps Script ดึงโค้ดล่าสุดจาก main เอง ทุก 5 นาที                   */
+/* มีการเปลี่ยนแปลง → อัปเดตไฟล์ในโปรเจ็กต์ + สร้างเวอร์ชันใหม่ + ชี้การทำให้ใช้งานได้เดิมไปที่เวอร์ชันนั้น      */
+/* (URL เว็บแอปเดิม — Vercel / Netlify ไม่ต้องตั้งค่าใหม่)                                                */
+/* ต้องเปิด "Google Apps Script API" ที่ script.google.com/home/usersettings และกด Run setupGitHubSync ครั้งเดียว */
+/* ------------------------------------------------------------------ */
+
+const GITHUB_RAW = 'https://raw.githubusercontent.com/thanakorn-ta/protection-fee/main/apps-script/';
+const GITHUB_SYNC_JOB = 'githubSyncJob';
+
+/** กด Run ครั้งเดียว: ให้สิทธิ์ + ตั้งตัวตั้งเวลาทุก 5 นาที + ซิงก์ทันที */
+function setupGitHubSync() {
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === GITHUB_SYNC_JOB).forEach(t => ScriptApp.deleteTrigger(t));
+  ScriptApp.newTrigger(GITHUB_SYNC_JOB).timeBased().everyMinutes(5).create();
+  const r = syncFromGitHub(true);
+  console.log(JSON.stringify(r));
+  return r;
+}
+
+function githubSyncJob() {
+  try { syncFromGitHub(false); } catch (err) { console.error('githubSyncJob failed', err); }
+}
+
+/** ซิงก์ตอนนี้ (กด Run ได้) */
+function syncFromGitHubNow() {
+  const r = syncFromGitHub(true);
+  console.log(JSON.stringify(r));
+  return r;
+}
+
+function githubFetchRaw_(name) {
+  const r = UrlFetchApp.fetch(GITHUB_RAW + encodeURIComponent(name) + '?t=' + Date.now(), { muteHttpExceptions: true, headers: { 'Cache-Control': 'no-cache' } });
+  if (r.getResponseCode() !== 200) throw new Error('ดึง ' + name + ' จาก GitHub ไม่ได้ (HTTP ' + r.getResponseCode() + ')');
+  return r.getContentText('UTF-8');
+}
+
+/** เรียก Apps Script API ของโปรเจ็กต์นี้ด้วยสิทธิ์ของเจ้าของ */
+function scriptApi_(method, path, body) {
+  const r = UrlFetchApp.fetch('https://script.googleapis.com/v1/projects/' + ScriptApp.getScriptId() + path, {
+    method: method, contentType: 'application/json', headers: { Authorization: 'Bearer ' + ScriptApp.getOAuthToken() },
+    payload: body ? JSON.stringify(body) : undefined, muteHttpExceptions: true,
+  });
+  let j = {};
+  try { j = JSON.parse(r.getContentText() || '{}'); } catch (err) { j = {}; }
+  if (r.getResponseCode() >= 300) {
+    const msg = (j.error && j.error.message) || ('HTTP ' + r.getResponseCode());
+    const hint = /has not been used|disabled|SERVICE_DISABLED|not enabled/i.test(msg) ? ' — เปิด Google Apps Script API ที่ script.google.com/home/usersettings' : '';
+    throw new Error('Apps Script API: ' + msg + hint);
+  }
+  return j;
+}
+
+function syncFromGitHub(force) {
+  // กันซิงก์ซ้อนด้วย cache (ไม่ใช้ script lock — การจอง / บันทึกไม่ต้องรอการซิงก์)
+  const cache = CacheService.getScriptCache();
+  if (cache.get('GITHUB_SYNC_RUNNING')) return { skipped: 'กำลังซิงก์อยู่' };
+  cache.put('GITHUB_SYNC_RUNNING', '1', 240);
+  const lock = { releaseLock: () => cache.remove('GITHUB_SYNC_RUNNING') };
+  const props = PropertiesService.getScriptProperties();
+  try {
+    const code = githubFetchRaw_('Code.gs');
+    const html = githubFetchRaw_('Index.html');
+    const manifest = githubFetchRaw_('appsscript.json');
+    // ตรวจก่อนใช้ — ไฟล์ไม่ครบ / ไวยากรณ์ผิด / manifest ไม่ถูกต้อง → ไม่อัปเดต (ระบบเดิมทำงานต่อ)
+    if (code.length < 50000 || code.indexOf('function doPost') < 0 || code.indexOf('function syncFromGitHub') < 0) throw new Error('Code.gs จาก GitHub ไม่ครบ');
+    if (html.indexOf('<!DOCTYPE html>') < 0 || html.indexOf('</html>') < 0) throw new Error('Index.html จาก GitHub ไม่ครบ');
+    let man;
+    try { man = JSON.parse(manifest); } catch (err) { throw new Error('appsscript.json จาก GitHub ไม่ใช่ JSON'); }
+    if (!man.webapp || (man.oauthScopes || []).indexOf('https://www.googleapis.com/auth/script.projects') < 0) throw new Error('appsscript.json จาก GitHub ขาด webapp / สิทธิ์ script.projects');
+    try { new Function(code); } catch (err) { if (err instanceof SyntaxError) throw new Error('Code.gs จาก GitHub มีไวยากรณ์ผิด: ' + err.message); }
+    const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, code + '\u0000' + html + '\u0000' + manifest, Utilities.Charset.UTF_8);
+    const hash = Utilities.base64Encode(digest).replace(/[^A-Za-z0-9]/g, '').slice(0, 12);
+    if (!force && props.getProperty('GITHUB_SYNC_HASH') === hash) return { upToDate: true, hash };
+
+    const cur = scriptApi_('get', '/content');
+    const isIndex = f => f.type === 'HTML' && f.name === 'Index';
+    const same = (cur.files || []).every(f => {
+      if (f.type === 'SERVER_JS') return f.source === code;
+      if (isIndex(f)) return f.source === html;
+      if (f.type === 'JSON') { try { return JSON.stringify(JSON.parse(f.source)) === JSON.stringify(man); } catch (err) { return false; } }
+      return true;
+    });
+    if (!same) {
+      // ชื่อไฟล์คงเดิม (เช่น "รหัส") เปลี่ยนเฉพาะเนื้อหา
+      const files = (cur.files || []).map(f => ({
+        name: f.name, type: f.type,
+        source: f.type === 'SERVER_JS' ? code : isIndex(f) ? html : f.type === 'JSON' ? manifest : f.source,
+      }));
+      scriptApi_('put', '/content', { files });
+    }
+    // เวอร์ชันใหม่ + ชี้การทำให้ใช้งานได้เดิม (เว็บแอป) ไปที่เวอร์ชันนั้น — URL เดิม
+    const deps = (scriptApi_('get', '/deployments').deployments || []).filter(d =>
+      d.deploymentConfig && d.deploymentConfig.versionNumber && (d.entryPoints || []).some(e => e.entryPointType === 'WEB_APP'));
+    deps.sort((a, b) => String(b.updateTime).localeCompare(String(a.updateTime)));
+    const dep = deps[0];
+    let version = dep ? dep.deploymentConfig.versionNumber : null;
+    const deployed = props.getProperty('GITHUB_SYNC_DEPLOYED') === hash;
+    if (dep && (!same || !deployed)) {
+      version = scriptApi_('post', '/versions', { description: 'GitHub main ' + hash + ' · ' + nowText_() }).versionNumber;
+      scriptApi_('put', '/deployments/' + dep.deploymentId, { deploymentConfig: {
+        scriptId: ScriptApp.getScriptId(), versionNumber: version, manifestFileName: 'appsscript', description: 'GitHub main ' + hash,
+      } });
+      props.setProperty('GITHUB_SYNC_DEPLOYED', hash);
+    }
+    props.setProperty('GITHUB_SYNC_HASH', hash);
+    props.setProperty('GITHUB_SYNC_AT', nowText_());
+    props.deleteProperty('GITHUB_SYNC_ERROR');
+    const out = { updated: !same, version, hash, deployment: dep ? dep.deploymentId.slice(0, 12) + '…' : 'ไม่พบเว็บแอป' };
+    if (!same || !deployed) audit_('system', 'github_sync', '', '', out);
+    return out;
+  } catch (err) {
+    try { props.setProperty('GITHUB_SYNC_ERROR', nowText_() + ' ' + String(err.message || err).slice(0, 300)); } catch (e) { /* ไม่เป็นไร */ }
+    throw err;
+  } finally {
+    lock.releaseLock();
+  }
 }
