@@ -2053,7 +2053,7 @@ function pushBooker_(kind, b, by) {
 }
 
 /* ------------------------------------------------------------------ */
-/* File Accrue ค่ารถคุ้มครองรายเดือน (EXAT / BEM) + ส่งอีเมลทุกวันที่ 21 — เฉพาะผู้ดูแลระบบ */
+/* File Accrue ค่ารถคุ้มครองรายเดือน (EXAT / BEM) + ส่งอีเมลวันที่ 19, 21, 25, 27, 30, 31 — เฉพาะผู้ดูแลระบบ */
 /* ------------------------------------------------------------------ */
 
 const ACCRUE_PROP = 'ACCRUE_SETTINGS';
@@ -2061,7 +2061,7 @@ const ACCRUE_DEFAULTS = {
   to: 'teraporn.ru@planbmedia.co.th', cc: '',
   greeting: 'น้องหม่อง', ccLabel: 'ผู้เกี่ยวข้อง', signOff: 'ขอบคุณครับ',
   checker: 'นายณัฐวุฒิ อู่ยายโสม', timeIn: '22', timeOut: '4',
-  autoSend: true, sendDays: '21, 25, 27, 30, 31', sendHour: 9,
+  autoSend: true, sendDays: '19, 21, 25, 27, 30, 31', sendHour: 9,
   lateWatch: true, // วันที่ 22–30: ตรวจทุกชั่วโมง มีอัปเดตส่งฉบับแก้ไขทันที
   clearAuto: true, clearDay: 25, // File Clear ของเดือนก่อนหน้า
 };
@@ -2076,8 +2076,18 @@ const TH_MONTHS_FULL = ['มกราคม', 'กุมภาพันธ์', 
 const ACCRUE_FONT = 'Cordia New';
 
 function accrueSettings_() {
+  const props = PropertiesService.getScriptProperties();
   let saved = {};
-  try { saved = JSON.parse(PropertiesService.getScriptProperties().getProperty(ACCRUE_PROP) || '{}'); } catch (err) { saved = {}; }
+  try { saved = JSON.parse(props.getProperty(ACCRUE_PROP) || '{}'); } catch (err) { saved = {}; }
+  // เพิ่มวันที่ 19 ให้ค่าที่บันทึกไว้เดิมครั้งเดียว (ผู้ดูแลลบออกเองได้ภายหลัง — ไม่เติมกลับ)
+  if (saved.sendDays && !props.getProperty('ACCRUE_DAY19_ADDED')) {
+    const days = accrueDays_(saved);
+    if (!days.some(x => Number(x) === 19)) {
+      saved.sendDays = accrueDays_({ sendDays: days.concat(19).join(',') }).join(', ');
+      props.setProperty(ACCRUE_PROP, JSON.stringify(saved));
+    }
+    props.setProperty('ACCRUE_DAY19_ADDED', nowText_());
+  }
   return Object.assign({}, ACCRUE_DEFAULTS, saved);
 }
 
@@ -2369,7 +2379,7 @@ function sendAccrue_(y, m, by, bucket) {
   return { sent: true, at: when, to, cc, subject: mail.subject, revised, files: files.map(f => ({ name: f.name, total: f.total, count: f.count })), ai: aiBrief_(ai) };
 }
 
-/** วันที่ที่ตั้งให้ส่ง เช่น "21, 25, 27, 30, 31" → [21, 25, 27, 30, 31] */
+/** วันที่ที่ตั้งให้ส่ง เช่น "19, 21, 25, 27, 30, 31" → [19, 21, 25, 27, 30, 31] */
 function accrueDays_(s) {
   const list = String(s.sendDays || '').split(/[\s,;]+/).map(Number).filter(d => d >= 1 && d <= 31);
   return uniq_(list.length ? list : [21]).sort((a, b) => a - b);
@@ -2585,7 +2595,7 @@ function saveAccrueSettings(token, form) {
   return accrueSettingsOut_();
 }
 
-/** รันครั้งเดียวจากตัวแก้ไข: ให้สิทธิ์ (อีเมล / ตัวตั้งเวลา / ส่งออกไฟล์) และเปิดการส่งอัตโนมัติทุกวันที่ 21 */
+/** รันครั้งเดียวจากตัวแก้ไข: ให้สิทธิ์ (อีเมล / ตัวตั้งเวลา / ส่งออกไฟล์) และเปิดการส่งอัตโนมัติตามวันที่ตั้งไว้ (19, 21, 25, 27, 30, 31) */
 function setupAccrue() {
   ensureAccrueTrigger_(accrueSettings_());
   accrueFolder_();
