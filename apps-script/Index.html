@@ -468,6 +468,7 @@ input.upper::placeholder { text-transform: none; }
 .kv { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px 14px; margin: 0; font-size: 15px; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.kv dd .place-edit-btn { display: flex; margin-top: 10px; min-height: 44px; white-space: normal; border-color: var(--green); color: var(--green-ink); font-weight: 600; }
 .msg-box { background: var(--blue-soft); border-radius: 12px; padding: 12px 14px; font-size: 14px; white-space: pre-wrap; line-height: 1.65; }
 .msg-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
 .history { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
@@ -3167,6 +3168,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     }
     if (b.status === 'cancelled') hist.push('ยกเลิกเมื่อ ' + stamp(b.updatedAt));
     if (b.loggedRows) hist.push('บันทึกลงตาราง ' + b.loggedRows + ' เมื่อ ' + stamp(b.loggedAt));
+    if (b.changedAt) hist.push('แก้ไข / แทรกจุดที่ไปโดย ' + (b.changedByName || b.changedBy) + ' เมื่อ ' + stamp(b.changedAt));
     if (b.status === 'pending' && (b.addedPlaces || b.removedPlaces)) {
       hist.push('แก้ไข / แทรกจุดที่ไป — รออนุมัติอีกครั้ง' +
         (b.addedPlaces ? ' · จุดใหม่ ' + lines(b.addedPlaces).length + ' จุด: ' + lines(b.addedPlaces).join(', ') : '') +
@@ -3183,7 +3185,11 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         '</div></div>';
     }
     $('#bk-view').innerHTML =
-      '<dl class="kv">' + kv.map(function (x) { return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + '</dd>'; }).join('') + '</dl>' +
+      '<dl class="kv">' + kv.map(function (x) {
+        // ปุ่มแก้ไข / แทรกจุดที่ไป อยู่ติดกับรายการจุดที่ไป (เห็นได้ทันทีโดยไม่ต้องเลื่อนลง)
+        var extra = x[0] === 'จุดที่ไป' && b.canAdd ? '<button type="button" class="btn sm place-edit-btn" id="bk-add-top">✎ แก้ไข / แทรกจุดที่ไป</button>' : '';
+        return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + extra + '</dd>';
+      }).join('') + '</dl>' +
       '<div><div class="msg-head"><span>ข้อความแจ้งการทาง</span><button type="button" class="btn sm" id="bk-copy">คัดลอก</button></div>' +
       '<div class="msg-box" id="bk-msg">' + esc(bookingMessage(b)) + '</div></div>' +
       '<div class="history">' + hist.map(function (h) { return '<span>' + esc(h) + '</span>'; }).join('') + '</div>' +
@@ -3195,7 +3201,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         (b.canCancel ? '<button type="button" class="btn danger" id="bk-cancel">ยกเลิกการจอง</button>' : '') +
       '</div>' +
       (b.status === 'pending' ? '<p class="sub">เมื่อผู้ดูแลระบบอนุมัติ ระบบจะบันทึกทุกจุดลงตาราง ' + esc(b.provider) + ' ในชีท และคิดค่าใช้จ่ายตามอัตราให้เอง</p>' : '') +
-      (b.canAdd && !b.canEdit ? '<p class="sub">อนุมัติแล้ว — แก้ เอาออก หรือแทรกจุดที่ไปได้ที่ “แก้ไข / แทรกจุดที่ไป” (ต้องให้ผู้ดูแลระบบอนุมัติอีกครั้ง) · เปลี่ยนวันที่หรือข้อมูลอื่นติดต่อผู้ดูแลระบบ</p>' : '') +
+      (b.canAdd && !b.canEdit ? '<p class="sub">' + (b.status === 'approved' ? 'อนุมัติแล้ว — ' : '') + 'ผู้ใช้ทุกคนแก้ เอาออก หรือแทรกจุดที่ไปได้ที่ “แก้ไข / แทรกจุดที่ไป” (ต้องให้ผู้ดูแลระบบอนุมัติอีกครั้ง) · เปลี่ยนวันที่หรือข้อมูลอื่นติดต่อผู้ดูแลระบบ</p>' : '') +
       (b.loggedRows && b.canEdit && S.user.role === 'admin' ? '<p class="sub">บันทึกลงตารางแล้ว — แก้จุดที่ไประบบปรับตารางให้เอง · ถ้าแก้วันที่หรือข้อมูลอื่น ต้องแก้แถวในชีทเองด้วย</p>' : '');
   }
 
@@ -3214,7 +3220,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     if (!btn) return;
     if (btn.id === 'bk-copy') return copyText(bookingMessage(b), $('#bk-msg'));
     if (btn.id === 'bk-edit') return openBookingForm(b);
-    if (btn.id === 'bk-add') return openBookingForm(b, null, 'add');
+    if (btn.id === 'bk-add' || btn.id === 'bk-add-top') return openBookingForm(b, null, 'add');
     if (btn.id === 'bk-cancel') return renderCancelForm();
     if (btn.id === 'cx-back') { dropCxFiles(); return renderBookingView(); }
     if (btn.id === 'cx-submit') return submitCancel();

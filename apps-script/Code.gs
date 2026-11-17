@@ -796,6 +796,7 @@ const BOOKING_HEADERS = [
   'loggedPlaces', 'addedPlaces', // จุดที่บันทึกลงตารางแล้ว / จุดที่เพิ่ม-แทรกหลังอนุมัติ (รออนุมัติอีกครั้ง)
   'removedPlaces', // จุดที่บันทึกลงตารางแล้วแต่ผู้จองแก้ / เอาออก (รออนุมัติ — อนุมัติแล้วนำแถวออกจากตาราง)
   'changeFrom', // JSON { places, placeTypes } ของรายการที่อนุมัติล่าสุด — ไม่อนุมัติการแก้ไข = กลับเป็นรายการนี้
+  'changedBy', 'changedByName', 'changedAt', // ผู้แก้ไข / แทรกจุดที่ไปล่าสุดหลังอนุมัติ (ผู้ใช้คนใดก็ได้)
 ];
 
 // ประเภทงาน: เลือกหมวด + พิมพ์รายละเอียดเพิ่ม → บันทึกเป็นข้อความเดียว เช่น "งานติดตั้งสินค้า COM7"
@@ -874,9 +875,13 @@ function canEditBooking_(b, user) {
   return b.requestedBy === user.username && (b.status === 'pending' || b.status === 'rejected');
 }
 
-/** เพิ่ม / แทรกงานในการจองที่อนุมัติแล้ว (ผู้จองหรือผู้ดูแลระบบ) — บันทึกแล้วต้องอนุมัติอีกครั้ง */
+/**
+ * แก้ไข / แทรกจุดที่ไปในการจองที่อนุมัติแล้ว — ผู้ใช้ทุกคนในระบบ (ไม่ใช่เฉพาะผู้จอง) · ผู้ใช้ส่งแล้วต้องให้ผู้ดูแลระบบอนุมัติอีกครั้ง
+ * รวมการจองที่รออนุมัติการแก้ไขอยู่ (แก้ซ้ำได้ก่อนผู้ดูแลระบบพิจารณา)
+ */
 function canAddBooking_(b, user) {
-  return b.status === 'approved' && (user.role === 'admin' || b.requestedBy === user.username);
+  if (b.status === 'approved') return true;
+  return b.status === 'pending' && !!(b.loggedRows || b.changeFrom) && (user.role === 'admin' || !!user.username);
 }
 
 // ผู้จองที่เพิ่ม/แทรกงาน (หรือการจองที่บันทึกลงตารางแล้ว) แก้ได้เฉพาะจุดที่ไป ชนิดป้าย และหมายเหตุ
@@ -1008,7 +1013,7 @@ function saveBooking(token, form) {
       const isAdmin = user.role === 'admin';
       // ผู้จอง: การจองที่อนุมัติแล้ว หรือบันทึกลงตารางแล้ว → เพิ่ม / แทรกจุดที่ไปได้อย่างเดียว (ข้อมูลอื่นคงเดิม)
       const addOnly = !isAdmin && b.status !== 'cancelled' && (b.status === 'approved' || !!b.loggedRows);
-      if (!(addOnly ? b.requestedBy === user.username : canEditBooking_(b, user))) throw new Error('แก้ไขได้เฉพาะการจองของคุณที่ยังไม่ได้อนุมัติ — ติดต่อผู้ดูแลระบบ');
+      if (!(addOnly ? canAddBooking_(b, user) || b.requestedBy === user.username : canEditBooking_(b, user))) throw new Error('แก้ไขได้เฉพาะการจองของคุณที่ยังไม่ได้อนุมัติ — ติดต่อผู้ดูแลระบบ');
       if (addOnly) ADD_LOCKED_FIELDS.forEach(k => { f[k] = b[k]; });
       const oldPlaces = placeLines_(b.places);
       const newPlaces = placeLines_(f.places);
@@ -1038,9 +1043,14 @@ function saveBooking(token, form) {
         b.reviewedAt = '';
         notice = b.addedPlaces ? 'addition' : 'resubmit';
       }
+      if ((addOnly || wasApproved) && (added.length || removedNow.length)) {
+        b.changedBy = user.username; // ผู้แก้ไข / แทรกจุดล่าสุด (อาจไม่ใช่ผู้จอง)
+        b.changedByName = user.fullName || user.username;
+        b.changedAt = now;
+      }
       writeBooking_(sh, b.row, b);
-      audit_(user.username, added.length ? 'add_booking_places' : 'update_booking', BOOKING_SHEET, b.row,
-        { id: b.id, status: b.status, added: added.join(', ') });
+      audit_(user.username, added.length || removedNow.length ? 'change_booking_places' : 'update_booking', BOOKING_SHEET, b.row,
+        { id: b.id, status: b.status, added: added.join(', '), removed: removedNow.join(', '), owner: b.requestedBy });
     } else {
       b = Object.assign({
         id: 'B' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 36 * 36).toString(36).toUpperCase(),
@@ -1080,7 +1090,7 @@ function reviewBooking(token, id, decision, note) {
     try { from = b.changeFrom ? JSON.parse(b.changeFrom) : null; } catch (err) { from = null; }
     if (decision === 'rejected' && from) {
       // ไม่อนุมัติการแก้ไข / แทรกจุด → กลับเป็นรายการเดิมที่อนุมัติแล้ว (ตารางไม่เปลี่ยน)
-      Object.assign(b, { places: from.places || b.places, placeTypes: from.placeTypes || '', status: 'approved', addedPlaces: '', removedPlaces: '', changeFrom: '' });
+      Object.assign(b, { places: from.places || b.places, placeTypes: from.placeTypes || '', status: 'approved', addedPlaces: '', removedPlaces: '', changeFrom: '', changedBy: '', changedByName: '', changedAt: '' });
       kind = 'changeRejected';
     } else {
       b.status = decision;
@@ -1723,6 +1733,7 @@ function bookingMail_(kind, b) {
     ['จุดที่แก้ / เอาออก', kind === 'addition' || kind === 'approved' ? placeLines_(b.removedPlaces).join('\n') : ''],
     ['ผู้เข้างาน', [b.worker, b.phone].filter(Boolean).join(' · ')],
     ['ผู้จอง', b.requestedByName || b.requestedBy],
+    ['แก้ไข / แทรกจุดโดย', kind === 'addition' && b.changedBy && b.changedBy !== b.requestedBy ? (b.changedByName || b.changedBy) : ''],
     ['หมายเหตุ', b.note],
   ];
   if (kind === 'approved' || kind === 'rejected' || kind === 'changeRejected') {
@@ -2073,7 +2084,7 @@ function pushInbox(endpoint) {
 const PUSH_TEXT = {
   pending: b => ({ title: 'จองรถคุ้มครองใหม่ — รออนุมัติ', body: 'โดย ' + (b.requestedByName || b.requestedBy) }),
   resubmit: b => ({ title: 'ส่งขออนุมัติใหม่', body: 'แก้ไขโดย ' + (b.requestedByName || b.requestedBy) }),
-  addition: b => ({ title: 'แก้ไข / แทรกจุดที่ไป — รออนุมัติอีกครั้ง', body: 'โดย ' + (b.requestedByName || b.requestedBy) + ' · เพิ่ม ' + placeLines_(b.addedPlaces).length + ' จุด' + (placeLines_(b.removedPlaces).length ? ' · เอาออก ' + placeLines_(b.removedPlaces).length + ' จุด' : '') }),
+  addition: b => ({ title: 'แก้ไข / แทรกจุดที่ไป — รออนุมัติอีกครั้ง', body: 'โดย ' + (b.changedByName || b.requestedByName || b.requestedBy) + ' · เพิ่ม ' + placeLines_(b.addedPlaces).length + ' จุด' + (placeLines_(b.removedPlaces).length ? ' · เอาออก ' + placeLines_(b.removedPlaces).length + ' จุด' : '') }),
   cancelled: b => ({ title: 'ยกเลิกการจองรถคุ้มครอง', body: 'โดย ' + (b.cancelledByName || b.cancelledBy || '') + (b.cancelReason ? ' · ' + b.cancelReason : '') }),
   approved: b => ({ title: 'อนุมัติการจองแล้ว ✓', body: b.reviewNote ? 'หมายเหตุ: ' + b.reviewNote : '' }),
   rejected: b => ({ title: 'ไม่อนุมัติการจอง', body: b.reviewNote ? 'เหตุผล: ' + b.reviewNote : 'แก้ไขแล้วส่งขออนุมัติใหม่ได้ในระบบ' }),
