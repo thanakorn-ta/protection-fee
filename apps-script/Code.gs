@@ -1272,7 +1272,107 @@ function getCancelFile(token, id, fileId) {
 }
 
 /**
- * นำแถวของการจองออกจากตาราง EXAT / BEM (ล้างข้อมูล คงเลขลำดับไว้ให้แถวถัดไปใช้ต่อ)
+ * ลบแถวว่างในตาราง EXAT / BEM (เหลือแต่เลขลำดับ เช่นหลังยกเลิกการจอง) ที่อยู่ก่อนแถวข้อมูลสุดท้าย
+ * แล้วรันเลขลำดับใหม่ให้ต่อเนื่อง (รวมแถวที่เตรียมเลขไว้ล่วงหน้าด้านล่าง) — คืน map เลขเดิม → เลขใหม่
+ * ลบเฉพาะเซลล์ในความกว้างของตาราง (ไม่กระทบคอลัมน์อื่นในชีท) · เรียกภายใน withLock_ เท่านั้น
+ */
+function compactLogTable_(key) {
+  const t = findTable_(key);
+  const sh = t.sheet;
+  const noCol = colIndex_(t.headers, 'ลำดับ');
+  const out = { key, deleted: [], renumbered: 0, map: {} };
+  if (noCol < 0) return out;
+  const costCol = colIndex_(t.headers, COST_HEADER); // คอลัมน์ที่ระบบคำนวณเอง — ไม่นับเป็นข้อมูล
+  const start = t.headerRow + 1;
+  const lastData = lastLogRow_(t);
+  if (lastData >= start) {
+    const vals = sh.getRange(start, 1, lastData - start + 1, t.width).getValues();
+    const blanks = [];
+    vals.forEach((r, i) => { if (r.every((v, j) => j === noCol || j === costCol || v === '' || v === null)) blanks.push(i); });
+    // ลบจากล่างขึ้นบนทีละช่วงที่ติดกัน — แถวด้านบนไม่เลื่อนระหว่างลบ
+    for (let k = blanks.length - 1; k >= 0; k--) {
+      const end = k;
+      while (k > 0 && blanks[k - 1] === blanks[k] - 1) k--;
+      sh.getRange(start + blanks[k], 1, blanks[end] - blanks[k] + 1, t.width).deleteCells(SpreadsheetApp.Dimension.ROWS);
+    }
+    out.deleted = blanks.map(i => vals[i][noCol]).filter(v => v !== '' && v !== null);
+  }
+  // รันเลขใหม่: แถวแรกคงเลขเดิม แถวถัดไป = แถวก่อนหน้า + 1 จนสุดช่วงที่มีเลขลำดับ
+  // (แถวข้อมูลที่ไม่มีเลข → ใส่เลขให้ · แถวว่างไม่มีเลขหลังแถวข้อมูลสุดท้าย = จบตาราง)
+  const lastRow = sh.getLastRow();
+  if (lastRow < start) return out;
+  const dataEnd = lastLogRow_(t) - start; // index ของแถวข้อมูลสุดท้ายหลังลบ
+  const range = sh.getRange(start, noCol + 1, lastRow - start + 1, 1);
+  const nos = range.getValues();
+  const fx = range.getFormulas();
+  const fixes = [];
+  let expect = null;
+  for (let i = 0; i < nos.length; i++) {
+    const v = nos[i][0];
+    const num = v !== '' && v !== null && isFinite(Number(v));
+    if (!num && i > dataEnd) break;
+    if (expect === null) { expect = (num ? Number(v) : 1) + 1; if (!num) { nos[i][0] = 1; fixes.push(i); } continue; }
+    if (fx[i][0]) { expect++; continue; }
+    if (!num || Number(v) !== expect) {
+      if (num && !(Number(v) in out.map)) out.map[Number(v)] = expect;
+      nos[i][0] = expect;
+      fixes.push(i);
+    }
+    expect++;
+  }
+  if (fixes.length) {
+    if (fx.some(f => f[0])) fixes.forEach(i => sh.getRange(start + i, noCol + 1).setValue(nos[i][0]));
+    else sh.getRange(start, noCol + 1, fixes[fixes.length - 1] + 1, 1).setValues(nos.slice(0, fixes[fixes.length - 1] + 1));
+  }
+  out.renumbered = fixes.length;
+  SpreadsheetApp.flush();
+  return out;
+}
+
+/** แก้เลขลำดับที่การจอง (ที่ยังไม่ยกเลิก) อ้างถึงใน loggedRows ตาม map ของ compactLogTable_ · เรียกภายใน withLock_ */
+function remapLoggedRows_(key, map) {
+  if (!Object.keys(map || {}).length) return [];
+  const P = key.toUpperCase();
+  const re = new RegExp('^' + P + '\\s*ลำดับ\\s*(.+)$');
+  const sh = bookingsSheet_();
+  const changed = [];
+  readBookings_(sh).forEach(b => {
+    if (b.status === 'cancelled') return;
+    const m = re.exec(String(b.loggedRows || '').trim());
+    if (!m) return;
+    const text = P + ' ลำดับ ' + m[1].split(/[,\s]+/).filter(Boolean).map(n => (Number(n) in map ? map[Number(n)] : n)).join(', ');
+    if (text === String(b.loggedRows).trim()) return;
+    b.loggedRows = text;
+    writeBooking_(sh, b.row, b);
+    changed.push(b.id + ': ' + text);
+  });
+  return changed;
+}
+
+/** ลบแถวว่าง + รันเลขใหม่ + แก้เลขในการจอง (ใช้ร่วมกันตอนยกเลิกการจอง และฟังก์ชันจัดตารางใหม่) */
+function compactAndRemap_(key) {
+  const c = compactLogTable_(key);
+  c.bookings = remapLoggedRows_(key, c.map);
+  return c;
+}
+
+/** กด Run ในหน้า Apps Script: จัดตาราง EXAT / BEM ใหม่ (ลบแถวว่างที่ค้างจากการยกเลิก + รันเลขลำดับใหม่) */
+function compactLogTablesNow() {
+  const res = withLock_(() => ['exat', 'bem'].map(key => compactAndRemap_(key)));
+  res.forEach(r => {
+    if (r.deleted.length || r.renumbered) audit_('system', 'compact_' + r.key, '', '', { deleted: r.deleted, renumbered: r.renumbered, bookings: r.bookings });
+  });
+  if (res.some(r => r.deleted.length || r.renumbered)) {
+    CacheService.getScriptCache().remove(DASH_CACHE_KEY);
+    clearAppDataCache_();
+    try { recalcCosts_(); } catch (err) { console.error('recalcCosts_ failed', err); }
+  }
+  console.log(JSON.stringify(res.map(r => ({ key: r.key, deleted: r.deleted, renumbered: r.renumbered, bookings: r.bookings }))));
+  return res;
+}
+
+/**
+ * นำแถวของการจองออกจากตาราง EXAT / BEM แล้วลบแถวว่างออกจากตาราง + รันเลขลำดับใหม่ให้ต่อเนื่อง
  * ล้างเฉพาะแถวที่เลขลำดับและวันที่ตรงกับการจอง — ถ้ามีคนแก้ชีทไปแล้วจะข้ามและแจ้งเตือน
  */
 function removeLoggedRows_(b) {
@@ -1303,6 +1403,10 @@ function removeLoggedRows_(b) {
       out.removed.push(no);
     });
     SpreadsheetApp.flush();
+    if (out.removed.length) {
+      const c = compactAndRemap_(key);
+      out.compact = { deleted: c.deleted, renumbered: c.renumbered, bookings: c.bookings };
+    }
     return out;
   });
 }
@@ -1375,7 +1479,7 @@ function cancelBooking(token, id, reason, fileIds) {
   } catch (err) {
     console.error('appendCancelLog_ failed', err);
   }
-  audit_(user.username, 'cancel_booking', BOOKING_SHEET, b.row, { id: b.id, prev: b.prevStatus, files: files.length, removed: b.removedRows, skipped: rem.skipped });
+  audit_(user.username, 'cancel_booking', BOOKING_SHEET, b.row, { id: b.id, prev: b.prevStatus, files: files.length, removed: b.removedRows, skipped: rem.skipped, compact: rem.compact || null });
   return Object.assign(bookingOut_(b, user), { removeWarnings: rem.skipped, notify: notifyAdmins_('cancelled', b, user.username),
     push: pushAdmins_('cancelled', b, user.username) });
 }
