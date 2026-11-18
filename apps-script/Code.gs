@@ -795,8 +795,9 @@ const BOOKING_HEADERS = [
   'placeTypes', // Media Type ของแต่ละจุด (บรรทัดตรงกับ places — ว่าง = ตามฐานข้อมูลป้าย / mediaType)
   'loggedPlaces', 'addedPlaces', // จุดที่บันทึกลงตารางแล้ว / จุดที่เพิ่ม-แทรกหลังอนุมัติ (รออนุมัติอีกครั้ง)
   'removedPlaces', // จุดที่บันทึกลงตารางแล้วแต่ผู้จองแก้ / เอาออก (รออนุมัติ — อนุมัติแล้วนำแถวออกจากตาราง)
-  'changeFrom', // JSON { places, placeTypes } ของรายการที่อนุมัติล่าสุด — ไม่อนุมัติการแก้ไข = กลับเป็นรายการนี้
+  'changeFrom', // JSON { places, placeTypes, date, time } ของรายการที่อนุมัติล่าสุด — ไม่อนุมัติการแก้ไข = กลับเป็นรายการนี้
   'changedBy', 'changedByName', 'changedAt', // ผู้แก้ไข / แทรกจุดที่ไปล่าสุดหลังอนุมัติ (ผู้ใช้คนใดก็ได้)
+  'loggedDate', // วันที่ของแถวในตาราง EXAT / BEM ระหว่างรออนุมัติการย้ายวันที่ (ว่าง = ตรงกับ date)
 ];
 
 // ประเภทงาน: เลือกหมวด + พิมพ์รายละเอียดเพิ่ม → บันทึกเป็นข้อความเดียว เช่น "งานติดตั้งสินค้า COM7"
@@ -833,7 +834,9 @@ function bookingsSheet_(create) {
     sh.getRange(1, 1, sh.getMaxRows(), BOOKING_HEADERS.length).setNumberFormat('@'); // เก็บเป็นข้อความ ไม่ให้ชีทแปลงวันที่เอง
     sh.setFrozenRows(1);
   } else if (sh && sh.getLastColumn() < BOOKING_HEADERS.length) {
-    // แท็บเดิมก่อนมีคอลัมน์ใหม่ — เขียนหัวตารางให้ครบ (ลำดับคอลัมน์เดิมไม่เปลี่ยน)
+    // แท็บเดิมก่อนมีคอลัมน์ใหม่ — เพิ่มคอลัมน์ให้พอ แล้วเขียนหัวตารางให้ครบ (ลำดับคอลัมน์เดิมไม่เปลี่ยน)
+    const short = BOOKING_HEADERS.length - sh.getMaxColumns();
+    if (short > 0) sh.insertColumnsAfter(sh.getMaxColumns(), short);
     sh.getRange(1, 1, 1, BOOKING_HEADERS.length).setValues([BOOKING_HEADERS]);
   }
   return sh;
@@ -884,8 +887,31 @@ function canAddBooking_(b, user) {
   return b.status === 'pending' && !!(b.loggedRows || b.changeFrom) && (user.role === 'admin' || !!user.username);
 }
 
-// ผู้จองที่เพิ่ม/แทรกงาน (หรือการจองที่บันทึกลงตารางแล้ว) แก้ได้เฉพาะจุดที่ไป ชนิดป้าย และหมายเหตุ
-const ADD_LOCKED_FIELDS = ['title', 'date', 'time', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'jobType', 'jobCategory', 'worker', 'phone'];
+// ผู้ใช้ที่แก้การจองที่อนุมัติแล้ว (หรือบันทึกลงตารางแล้ว) แก้ได้เฉพาะวันที่ เวลา จุดที่ไป ชนิดป้าย และหมายเหตุ
+const ADD_LOCKED_FIELDS = ['title', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'jobType', 'jobCategory', 'worker', 'phone'];
+
+/** วันที่ของแถวในตาราง EXAT / BEM (ระหว่างรออนุมัติการย้าย แถวยังอยู่วันที่เดิม) */
+function rowDate_(b) {
+  return b.loggedDate || b.date;
+}
+
+/** การย้ายวันที่ / เวลาที่รออนุมัติ → { date, time } เดิม · ไม่มีการย้าย = null */
+function pendingMove_(b) {
+  let from = null;
+  try { from = b.changeFrom ? JSON.parse(b.changeFrom) : null; } catch (err) { from = null; }
+  const date = (from && from.date) || b.loggedDate || '';
+  if (!date) return null;
+  const time = from && from.time !== undefined ? String(from.time || '').trim() : String(b.time || '').trim();
+  return date !== b.date || time !== String(b.time || '').trim() ? { date, time } : null;
+}
+
+/** "17 พ.ย. 69 22.00 น. → 26 พ.ย. 69 22.00 น." */
+function moveText_(b) {
+  const from = pendingMove_(b);
+  if (!from) return '';
+  const when = (d, t) => bookingDateShort_(d) + (t ? ' เวลา ' + t : '');
+  return when(from.date, from.time) + ' → ' + when(b.date, String(b.time || '').trim());
+}
 // Media Type → คำนำหน้าโครงการในตาราง EXAT / BEM
 const PROJECT_PREFIX = { 'Flyover 2.0': 'Flyover 2.0 ', 'Gateway Billboard': 'Gateway ', 'Mainline': 'Mainline ' };
 
@@ -930,6 +956,7 @@ function bookingOut_(b, user) {
   out.canEdit = canEditBooking_(b, user);
   out.canAdd = canAddBooking_(b, user);
   out.loggedPlaces = loggedPlaces_(b).join('\n');
+  out.moveFrom = b.status === 'cancelled' ? null : pendingMove_(b);
   out.canCancel = canCancelBooking_(b, user);
   out.cancelNeedsProof = cancelNeedsProof_(b);
   out.cancelFiles = cancelFilesOut_(b.cancelFiles);
@@ -1016,7 +1043,7 @@ function saveBooking(token, form) {
       if (!b) throw new Error('ไม่พบการจองนี้ อาจถูกลบไปแล้ว');
       const isAdmin = user.role === 'admin';
       // ผู้จอง: การจองที่อนุมัติแล้ว หรือบันทึกลงตารางแล้ว → เพิ่ม / แทรกจุดที่ไปได้อย่างเดียว (ข้อมูลอื่นคงเดิม)
-      const addOnly = !isAdmin && b.status !== 'cancelled' && (b.status === 'approved' || !!b.loggedRows);
+      const addOnly = !isAdmin && b.status !== 'cancelled' && (b.status === 'approved' || !!b.loggedRows || !!b.changeFrom);
       if (!(addOnly ? canAddBooking_(b, user) || b.requestedBy === user.username : canEditBooking_(b, user))) throw new Error('แก้ไขได้เฉพาะการจองของคุณที่ยังไม่ได้อนุมัติ — ติดต่อผู้ดูแลระบบ');
       if (addOnly) ADD_LOCKED_FIELDS.forEach(k => { f[k] = b[k]; });
       const oldPlaces = placeLines_(b.places);
@@ -1024,37 +1051,51 @@ function saveBooking(token, form) {
       // แก้ / เอาออก / แทรกจุดที่ไปได้ทั้งหมด (รวมจุดที่บันทึกลงตารางแล้ว) — ผู้จองต้องรออนุมัติ ผู้ดูแลระบบปรับตารางทันที
       const added = minusPlaces_(newPlaces, oldPlaces);
       const removedNow = minusPlaces_(oldPlaces, newPlaces);
-      if (addOnly && b.status === 'approved' && !added.length && !removedNow.length && f.placeTypes === b.placeTypes && f.places === b.places && f.note === b.note) {
-        throw new Error('ยังไม่ได้แก้ไขจุดที่ไป — แก้ เพิ่ม หรือแทรกอย่างน้อย 1 จุด');
+      // ย้ายวันที่ / เวลา — แถวในตารางยังอยู่วันที่เดิมจนกว่าผู้ดูแลระบบจะอนุมัติ
+      const moved = f.date !== b.date || f.time !== String(b.time || '').trim();
+      if (addOnly && b.status === 'approved' && !moved && !added.length && !removedNow.length && f.placeTypes === b.placeTypes && f.places === b.places && f.note === b.note) {
+        throw new Error('ยังไม่ได้แก้ไข — ย้ายวันที่ หรือแก้ เพิ่ม แทรกจุดที่ไปอย่างน้อย 1 จุด');
       }
       if (b.loggedRows && !b.loggedPlaces) b.loggedPlaces = oldPlaces.join('\n');
       const wasApproved = b.status === 'approved';
-      const before = { places: b.places, placeTypes: b.placeTypes };
+      const before = { places: b.places, placeTypes: b.placeTypes, date: b.date, time: b.time };
+      if (b.loggedRows && f.date !== b.date && !b.loggedDate) b.loggedDate = b.date;
+      if (moved && b.changeFrom) {
+        // รายการแก้จุดที่ค้างอนุมัติจากก่อนมีการย้ายวันที่ — จำวันที่เดิมไว้ด้วย
+        try {
+          const prevFrom = JSON.parse(b.changeFrom);
+          if (prevFrom.date === undefined) b.changeFrom = JSON.stringify(Object.assign(prevFrom, { date: before.date, time: before.time }));
+        } catch (err) { /* ข้อมูลเดิมอ่านไม่ได้ — คงไว้ */ }
+      }
       Object.assign(b, f, { updatedAt: now });
+      if (b.loggedDate === b.date) b.loggedDate = ''; // ย้ายกลับมาวันที่เดิม = แถวตรงกันแล้ว
       const logged = placeLines_(b.loggedPlaces);
       if (b.loggedRows) {
         b.addedPlaces = minusPlaces_(newPlaces, logged).join('\n');
         b.removedPlaces = minusPlaces_(logged, newPlaces).join('\n');
       }
-      if (wasApproved && (added.length || removedNow.length) && !isAdmin) {
-        b.status = 'pending'; // แก้ไข / แทรกจุดที่ไป → อนุมัติอีกครั้ง (อนุมัติแล้วปรับตารางให้ตรง)
+      const changed = moved || added.length || removedNow.length;
+      if (wasApproved && changed && !isAdmin) {
+        b.status = 'pending'; // ย้ายวันที่ / แก้ไข / แทรกจุดที่ไป → อนุมัติอีกครั้ง (อนุมัติแล้วปรับตารางให้ตรง)
         b.reviewedAt = '';
         if (!b.changeFrom) b.changeFrom = JSON.stringify(before);
         if (!b.loggedRows) { b.addedPlaces = added.join('\n'); b.removedPlaces = ''; }
-        notice = 'addition';
+        notice = moved ? 'dateMove' : 'addition';
       } else if (!isAdmin && b.status === 'rejected') {
         b.status = 'pending'; // แก้แล้วส่งขออนุมัติใหม่
         b.reviewedAt = '';
-        notice = b.addedPlaces ? 'addition' : 'resubmit';
+        notice = moved && b.loggedRows ? 'dateMove' : b.addedPlaces ? 'addition' : 'resubmit';
+      } else if (!isAdmin && moved && b.status === 'pending' && b.changeFrom) {
+        notice = 'dateMove'; // รออนุมัติการแก้ไขอยู่ แล้วย้ายวันที่เพิ่ม — แจ้งผู้ดูแลระบบอีกครั้ง
       }
-      if ((addOnly || wasApproved) && (added.length || removedNow.length)) {
-        b.changedBy = user.username; // ผู้แก้ไข / แทรกจุดล่าสุด (อาจไม่ใช่ผู้จอง)
+      if ((addOnly || wasApproved) && changed) {
+        b.changedBy = user.username; // ผู้แก้ไขล่าสุด (อาจไม่ใช่ผู้จอง)
         b.changedByName = user.fullName || user.username;
         b.changedAt = now;
       }
       writeBooking_(sh, b.row, b);
-      audit_(user.username, added.length || removedNow.length ? 'change_booking_places' : 'update_booking', BOOKING_SHEET, b.row,
-        { id: b.id, status: b.status, added: added.join(', '), removed: removedNow.join(', '), owner: b.requestedBy });
+      audit_(user.username, moved ? 'move_booking_date' : added.length || removedNow.length ? 'change_booking_places' : 'update_booking', BOOKING_SHEET, b.row,
+        { id: b.id, status: b.status, from: moved ? before.date + ' ' + before.time : '', to: moved ? b.date + ' ' + b.time : '', added: added.join(', '), removed: removedNow.join(', '), owner: b.requestedBy });
     } else {
       b = Object.assign({
         id: 'B' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random() * 36 * 36).toString(36).toUpperCase(),
@@ -1068,9 +1109,9 @@ function saveBooking(token, form) {
     }
     return b;
   });
-  // ผู้ดูแลระบบแก้จุดที่ไปของการจองที่อนุมัติและบันทึกแล้ว → ปรับตารางทันที (ไม่ต้องอนุมัติซ้ำ)
+  // ผู้ดูแลระบบย้ายวันที่ / แก้จุดที่ไปของการจองที่อนุมัติและบันทึกแล้ว → ปรับตารางทันที (ไม่ต้องอนุมัติซ้ำ)
   const out = user.role === 'admin' && saved.status === 'approved' && saved.loggedRows &&
-    (placeLines_(saved.addedPlaces).length || placeLines_(saved.removedPlaces).length)
+    (saved.loggedDate || placeLines_(saved.addedPlaces).length || placeLines_(saved.removedPlaces).length)
     ? syncApprovedPlaces_(saved, user) : bookingOut_(saved, user);
   if (notice) {
     out.notify = notifyAdmins_(notice, saved, user.username);
@@ -1092,9 +1133,11 @@ function reviewBooking(token, id, decision, note) {
     let kind = decision;
     let from = null;
     try { from = b.changeFrom ? JSON.parse(b.changeFrom) : null; } catch (err) { from = null; }
+    const moveNote = moveText_(b); // ข้อความย้ายวันที่สำหรับอีเมล (อ่านก่อนล้าง changeFrom)
     if (decision === 'rejected' && from) {
-      // ไม่อนุมัติการแก้ไข / แทรกจุด → กลับเป็นรายการเดิมที่อนุมัติแล้ว (ตารางไม่เปลี่ยน)
+      // ไม่อนุมัติการย้ายวันที่ / แก้ไข / แทรกจุด → กลับเป็นรายการเดิมที่อนุมัติแล้ว (ตารางไม่เปลี่ยน)
       Object.assign(b, { places: from.places || b.places, placeTypes: from.placeTypes || '', status: 'approved', addedPlaces: '', removedPlaces: '', changeFrom: '', changedBy: '', changedByName: '', changedAt: '' });
+      if (from.date) Object.assign(b, { date: from.date, time: from.time === undefined ? b.time : from.time, loggedDate: '' });
       kind = 'changeRejected';
     } else {
       b.status = decision;
@@ -1104,9 +1147,10 @@ function reviewBooking(token, id, decision, note) {
     writeBooking_(sh, b.row, b);
     audit_(user.username, decision === 'approved' ? 'approve_booking' : kind === 'changeRejected' ? 'reject_booking_change' : 'reject_booking', BOOKING_SHEET, b.row, { id: b.id, note: b.reviewNote });
     b.kind = kind;
+    b.moveNote = moveNote;
     return b;
   });
-  // อนุมัติแล้ว → ปรับตาราง EXAT / BEM ให้ตรง (ครั้งแรกบันทึกทุกจุด · แก้ไขภายหลัง = นำจุดที่เอาออกออก + บันทึกจุดใหม่)
+  // อนุมัติแล้ว → ปรับตาราง EXAT / BEM ให้ตรง (ครั้งแรกบันทึกทุกจุด · แก้ไขภายหลัง = ย้ายวันที่ + นำจุดที่เอาออกออก + บันทึกจุดใหม่)
   const added = reviewed.addedPlaces;
   const removed = reviewed.removedPlaces;
   const out = decision === 'approved' ? syncApprovedPlaces_(reviewed, user) : bookingOut_(reviewed, user);
@@ -1116,8 +1160,79 @@ function reviewBooking(token, id, decision, note) {
   return out;
 }
 
-/** การจองที่อนุมัติแล้ว: นำจุดที่เอาออกออกจากตาราง แล้วบันทึกจุดที่ยังไม่ได้บันทึก (ครั้งแรก = ทุกจุด) */
+/** การจองที่อนุมัติแล้ว: ย้ายแถวไปวันที่ใหม่ นำจุดที่เอาออกออกจากตาราง แล้วบันทึกจุดที่ยังไม่ได้บันทึก (ครั้งแรก = ทุกจุด) */
 function syncApprovedPlaces_(b, user) {
+  let move = null;
+  if (b.loggedRows && b.loggedDate) {
+    try {
+      move = moveLoggedRows_(b, user);
+    } catch (err) {
+      move = { moved: [], skipped: [], error: String((err && err.message) || err) };
+    }
+    b = readBookings_(bookingsSheet_()).find(x => x.id === b.id) || b;
+  }
+  const out = syncPlacesAfterMove_(b, user);
+  if (move) out.move = { moved: move.moved, skipped: move.skipped, error: move.error || '', date: b.date };
+  return out;
+}
+
+/**
+ * ย้ายแถวของการจองในตาราง EXAT / BEM จาก loggedDate ไปวันที่ใหม่ (เลขลำดับและตำแหน่งแถวคงเดิม) แล้วคิดค่าใช้จ่ายของทั้งสองวันใหม่
+ * แก้เฉพาะแถวที่เลขลำดับและวันที่ตรงกับการจอง — ถ้ามีคนแก้ชีทไปแล้วจะข้ามและแจ้งเตือน
+ */
+function moveLoggedRows_(b, user) {
+  const from = b.loggedDate;
+  const to = b.date;
+  const m = /^(EXAT|BEM)\s*ลำดับ\s*(.+)$/.exec(String(b.loggedRows || '').trim());
+  const key = m ? m[1].toLowerCase() : '';
+  const nos = m ? m[2].split(/[,\s]+/).map(Number).filter(n => isFinite(n) && n > 0) : [];
+  const toDate = parseDate_(to);
+  const res = withLock_(() => {
+    const out = { key, moved: [], skipped: [], warnings: [] };
+    if (m) {
+      const t = findTable_(key);
+      const sh = t.sheet;
+      const noCol = colIndex_(t.headers, 'ลำดับ');
+      const dateCol = colIndex_(t.headers, 'วันที่');
+      const monthCol = colIndex_(t.headers, 'เดือน');
+      const start = t.headerRow + 1;
+      const lastRow = sh.getLastRow();
+      if (noCol < 0 || dateCol < 0 || lastRow < start) {
+        out.skipped = nos.map(n => n + ' (ไม่พบแถว)');
+      } else {
+        const range = sh.getRange(start, 1, lastRow - start + 1, t.width);
+        const vals = range.getValues();
+        const disp = range.getDisplayValues();
+        nos.forEach(no => {
+          const i = vals.findIndex(r => Number(r[noCol]) === no);
+          if (i < 0) { out.skipped.push(no + ' (ไม่พบแถว)'); return; }
+          const cur = dateIsoOf_(vals[i][dateCol], disp[i][dateCol]);
+          if (cur === to) { out.moved.push(no); return; } // ย้ายไปแล้ว
+          if (cur !== from) { out.skipped.push(no + ' (วันที่ในชีทไม่ตรงกับการจอง)'); return; }
+          const row = start + i;
+          writeCellValidated_(sh.getRange(row, dateCol + 1), dateValue_(toDate, vals[i][dateCol]), t.rawHeaders[dateCol] || '', out.warnings);
+          if (monthCol >= 0 && from.slice(0, 7) !== to.slice(0, 7)) {
+            writeCellValidated_(sh.getRange(row, monthCol + 1), monthValue_(toDate, vals[i][monthCol]), t.rawHeaders[monthCol] || '', out.warnings);
+          }
+          out.moved.push(no);
+        });
+      }
+    }
+    const shB = bookingsSheet_();
+    const cur = readBookings_(shB).find(x => x.id === b.id);
+    if (cur) {
+      cur.loggedDate = '';
+      writeBooking_(shB, cur.row, cur);
+    }
+    SpreadsheetApp.flush();
+    return out;
+  });
+  if (res.moved.length) afterLogSaved_(key, [from, to]);
+  audit_(user.username, 'move_logged_rows', BOOKING_SHEET, b.row, { id: b.id, from, to, moved: res.moved, skipped: res.skipped, warnings: res.warnings });
+  return res;
+}
+
+function syncPlacesAfterMove_(b, user) {
   let unlog = null;
   if (b.loggedRows && placeLines_(b.removedPlaces).length) {
     unlog = unlogPlaces_(b, user);
@@ -1513,7 +1628,7 @@ function removeLoggedRows_(b) {
     nos.forEach(no => {
       const i = vals.findIndex(r => Number(r[noCol]) === no);
       if (i < 0) { out.skipped.push(no + ' (ไม่พบแถว)'); return; }
-      if (dateIsoOf_(vals[i][dateCol], disp[i][dateCol]) !== b.date) { out.skipped.push(no + ' (วันที่ในชีทไม่ตรงกับการจอง)'); return; }
+      if (dateIsoOf_(vals[i][dateCol], disp[i][dateCol]) !== rowDate_(b)) { out.skipped.push(no + ' (วันที่ในชีทไม่ตรงกับการจอง)'); return; }
       out.snapshot.push(disp[i].map(v => String(v).trim()).filter(Boolean).join(' | '));
       const row = t.headerRow + 1 + i;
       if (noCol > 0) sh.getRange(row, 1, 1, noCol).clearContent();
@@ -1576,7 +1691,7 @@ function cancelBooking(token, id, reason, fileIds) {
   }
 
   const rem = b0.loggedRows ? removeLoggedRows_(b0) : { key: '', removed: [], skipped: [], snapshot: [] };
-  if (rem.removed.length) afterLogSaved_(rem.key, [b0.date]);
+  if (rem.removed.length) afterLogSaved_(rem.key, [rowDate_(b0)]);
 
   const b = withLock_(() => {
     const sh = bookingsSheet_();
@@ -1588,6 +1703,7 @@ function cancelBooking(token, id, reason, fileIds) {
       cancelReason: why, cancelFiles: JSON.stringify(files),
       cancelledBy: user.username, cancelledByName: user.fullName || user.username, cancelledAt: now,
       removedRows: rem.removed.length ? rem.key.toUpperCase() + ' ลำดับ ' + rem.removed.join(', ') : '',
+      loggedDate: '',
     });
     writeBooking_(sh, cur.row, cur);
     return cur;
@@ -1661,7 +1777,8 @@ const NOTIFY_TEXT = {
   pending: { tag: 'รอการอนุมัติ', intro: 'มีการจองรถคุ้มครองใหม่ รอผู้ดูแลระบบอนุมัติ', button: 'เปิดการจองเพื่ออนุมัติ' },
   resubmit: { tag: 'รอการอนุมัติ', intro: 'ผู้จองแก้ไขการจองที่ไม่อนุมัติ แล้วส่งขออนุมัติใหม่', button: 'เปิดการจองเพื่ออนุมัติ' },
   addition: { tag: 'รอการอนุมัติ', intro: 'มีการแก้ไข / แทรกจุดที่ไปในการจองที่อนุมัติแล้ว — รออนุมัติอีกครั้ง (อนุมัติแล้วระบบปรับตาราง EXAT / BEM ให้ตรง: บันทึกจุดใหม่ และนำจุดที่เอาออกออกจากตาราง)', button: 'เปิดการจองเพื่ออนุมัติ' },
-  changeRejected: { tag: 'ไม่อนุมัติการแก้ไข', intro: 'การแก้ไข / แทรกจุดที่ไปไม่ได้รับการอนุมัติ — การจองกลับเป็นรายการเดิมที่อนุมัติแล้ว', button: 'ดูการจองในระบบ' },
+  dateMove: { tag: 'รอการอนุมัติ', intro: 'มีการขอย้ายวันที่ใช้รถคุ้มครอง — รอผู้ดูแลระบบอนุมัติอีกครั้ง (อนุมัติแล้วระบบย้ายแถวในตาราง EXAT / BEM ไปวันที่ใหม่ให้เอง)', button: 'เปิดการจองเพื่ออนุมัติ' },
+  changeRejected: { tag: 'ไม่อนุมัติการแก้ไข', intro: 'การย้ายวันที่ / แก้ไขจุดที่ไปไม่ได้รับการอนุมัติ — การจองกลับเป็นรายการเดิมที่อนุมัติแล้ว', button: 'ดูการจองในระบบ' },
   cancelled: { tag: 'ยกเลิก', intro: 'การจองรถคุ้มครองถูกยกเลิก', button: 'ดูเหตุผล รูป และวิดีโอในระบบ' },
   approved: { tag: 'อนุมัติแล้ว', intro: 'การจองรถคุ้มครองของคุณได้รับการอนุมัติแล้ว', button: 'ดูการจองในระบบ' },
   rejected: { tag: 'ไม่อนุมัติ', intro: 'การจองรถคุ้มครองของคุณไม่ได้รับการอนุมัติ — แก้ไขแล้วส่งขออนุมัติใหม่ได้ในระบบ', button: 'ดูและแก้ไขการจองในระบบ' },
@@ -1724,20 +1841,22 @@ function bookingMail_(kind, b) {
   const greet = kind === 'approved' || kind === 'rejected' || kind === 'changeRejected'
     ? 'เรียน คุณ' + String(b.requestedByName || b.requestedBy || '').replace(/^คุณ\s*/, '') : '';
   const job = b.jobType || b.title;
-  const subject = '[' + t.tag + '] ' + (kind === 'addition' ? 'แก้ไข/แทรกจุด · ' : '') + 'จองรถคุ้มครอง ' + b.provider + ' ' + bookingDateShort_(b.date) + ' · ' + job;
-  const places = placeListText_(b, kind === 'addition');
+  const isChange = kind === 'addition' || kind === 'dateMove';
+  const subject = '[' + t.tag + '] ' + (kind === 'addition' ? 'แก้ไข/แทรกจุด · ' : kind === 'dateMove' ? 'ย้ายวันที่ · ' : '') + 'จองรถคุ้มครอง ' + b.provider + ' ' + bookingDateShort_(b.date) + ' · ' + job;
+  const places = placeListText_(b, isChange);
   const rows = [
     ['ประเภทงาน', job],
     ['วันที่ใช้รถ', bookingDateShort_(b.date) + (b.time ? ' เวลา ' + b.time + ' น.' : '')],
+    ['ย้ายวันที่', isChange ? moveText_(b) : kind === 'approved' ? b.moveNote : ''],
     ['แจ้งใช้รถ', b.provider + ' · ' + mediaTypesText_(b)],
     ['สายทาง', b.expressway],
     ['จุดนัดพบ', b.meetingPoint],
     ['จุดที่ไป', places.join('\n')],
-    ['เพิ่ม / แทรกงาน', kind === 'addition' || kind === 'approved' ? placeLines_(b.addedPlaces).join('\n') : ''],
-    ['จุดที่แก้ / เอาออก', kind === 'addition' || kind === 'approved' ? placeLines_(b.removedPlaces).join('\n') : ''],
+    ['เพิ่ม / แทรกงาน', isChange || kind === 'approved' ? placeLines_(b.addedPlaces).join('\n') : ''],
+    ['จุดที่แก้ / เอาออก', isChange || kind === 'approved' ? placeLines_(b.removedPlaces).join('\n') : ''],
     ['ผู้เข้างาน', [b.worker, b.phone].filter(Boolean).join(' · ')],
     ['ผู้จอง', b.requestedByName || b.requestedBy],
-    ['แก้ไข / แทรกจุดโดย', kind === 'addition' && b.changedBy && b.changedBy !== b.requestedBy ? (b.changedByName || b.changedBy) : ''],
+    ['แก้ไขโดย', isChange && b.changedBy && b.changedBy !== b.requestedBy ? (b.changedByName || b.changedBy) : ''],
     ['หมายเหตุ', b.note],
   ];
   if (kind === 'approved' || kind === 'rejected' || kind === 'changeRejected') {
@@ -2089,10 +2208,11 @@ const PUSH_TEXT = {
   pending: b => ({ title: 'จองรถคุ้มครองใหม่ — รออนุมัติ', body: 'โดย ' + (b.requestedByName || b.requestedBy) }),
   resubmit: b => ({ title: 'ส่งขออนุมัติใหม่', body: 'แก้ไขโดย ' + (b.requestedByName || b.requestedBy) }),
   addition: b => ({ title: 'แก้ไข / แทรกจุดที่ไป — รออนุมัติอีกครั้ง', body: 'โดย ' + (b.changedByName || b.requestedByName || b.requestedBy) + ' · เพิ่ม ' + placeLines_(b.addedPlaces).length + ' จุด' + (placeLines_(b.removedPlaces).length ? ' · เอาออก ' + placeLines_(b.removedPlaces).length + ' จุด' : '') }),
+  dateMove: b => ({ title: 'ขอย้ายวันที่ — รออนุมัติอีกครั้ง', body: 'โดย ' + (b.changedByName || b.requestedByName || b.requestedBy) + ' · ' + moveText_(b) }),
   cancelled: b => ({ title: 'ยกเลิกการจองรถคุ้มครอง', body: 'โดย ' + (b.cancelledByName || b.cancelledBy || '') + (b.cancelReason ? ' · ' + b.cancelReason : '') }),
   approved: b => ({ title: 'อนุมัติการจองแล้ว ✓', body: b.reviewNote ? 'หมายเหตุ: ' + b.reviewNote : '' }),
   rejected: b => ({ title: 'ไม่อนุมัติการจอง', body: b.reviewNote ? 'เหตุผล: ' + b.reviewNote : 'แก้ไขแล้วส่งขออนุมัติใหม่ได้ในระบบ' }),
-  changeRejected: b => ({ title: 'ไม่อนุมัติการแก้ไขจุดที่ไป', body: (b.reviewNote ? 'เหตุผล: ' + b.reviewNote + ' · ' : '') + 'การจองกลับเป็นรายการเดิมที่อนุมัติแล้ว' }),
+  changeRejected: b => ({ title: 'ไม่อนุมัติการแก้ไขการจอง', body: (b.reviewNote ? 'เหตุผล: ' + b.reviewNote + ' · ' : '') + 'การจองกลับเป็นรายการเดิมที่อนุมัติแล้ว' }),
 };
 
 /** ส่งแจ้งเตือนถึงผู้ใช้ตามรายชื่อ — ไม่โยนข้อผิดพลาดออกไป คืน { sent, failed, removed } */
