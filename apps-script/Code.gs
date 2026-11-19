@@ -2309,6 +2309,9 @@ const ACCRUE_DEFAULTS = {
 };
 const ACCRUE_JOB = 'accrueMonthlyJob';
 const ACCRUE_LATE_JOB = 'accrueLateJob';
+const ACCRUE_EXACT_JOB = 'accrueExactJob'; // ตัวตั้งเวลาครั้งเดียว ตรงเวลาส่งของวันส่งถัดไป (เช่น 09:00 น.)
+const ACCRUE_MAX_TRIES = 4; // รอบอัตโนมัติของวันส่ง ลองได้สูงสุดกี่ครั้งต่อวัน
+const ACCRUE_LEASE_MS = 31 * 60 * 1000; // Apps Script หยุดการทำงานที่ 30 นาที — เกินนี้ถือว่ารอบก่อนหน้าจบแล้ว
 const ACCRUE_LATE_FROM = 22;
 const ACCRUE_LATE_TO = 30;
 const ACCRUE_LOG_SHEET = 'ประวัติส่ง File Accrue';
@@ -2593,8 +2596,11 @@ function sendAccrue_(y, m, by, bucket) {
   bucket = bucket || accrueYear_(y)[m - 1];
   const props = PropertiesService.getScriptProperties();
   const revised = !!props.getProperty('ACCRUE_SENT_' + y + '_' + m);
+  const stage = text => { if (by === 'ส่งอัตโนมัติ') accrueStage_(text); };
   const files = [];
+  stage('สร้างไฟล์ EXAT');
   if (bucket.exat.length) files.push(buildAccrueFile_('exat', y, m, bucket));
+  stage('สร้างไฟล์ BEM');
   if (bucket.bem.length) files.push(buildAccrueFile_('bem', y, m, bucket));
   const when = nowText_();
   const label = accrueMonthShort_(y, m);
@@ -2603,21 +2609,25 @@ function sendAccrue_(y, m, by, bucket) {
     return { sent: false, reason: 'ไม่มีการใช้รถคุ้มครองในเดือน ' + label };
   }
   const mail = accrueEmail_(y, m, s, revised);
+  stage('ตรวจยอดกับชีท');
   // ตรวจก่อนส่ง (โค้ด): อ่านชีทใหม่แล้วเทียบยอด จำนวนรายการ และยอดรวมในไฟล์แนบ — ไม่ตรง = ระงับการส่ง + แจ้งผู้ดูแลระบบ
   const verify = verifySend_('accrue', y, m, {
     facts: accrueFacts_(bucket), email: mail.plain,
     files: files.map(f => ({ label: f.name, url: f.url, row: (f.key === 'exat' ? 4 : 6) + f.count, col: f.key === 'exat' ? 11 : 7, total: f.total })),
   });
   if (!verify.ok) verifyBlocked_(verify, by, [when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n')]);
+  stage('AI ตรวจ');
   // AI ตรวจเป็นความเห็นที่สอง — ไม่ขวาง ไม่เปลี่ยนยอดหรือไฟล์
   const ai = aiCheck_('accrue', y, m, by, { email: mail.plain + '\nไฟล์แนบ: ' + files.map(f => f.name).join(', '), facts: verify.facts });
   const msg = { to: to.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, attachments: files.map(f => f.blob) };
   if (cc.length) msg.cc = cc.join(',');
+  stage('ส่งอีเมล');
   MailApp.sendEmail(msg);
-  aiNotifyAdmins_(ai, 'ส่ง File Accrue ' + (revised ? 'ฉบับแก้ไขเพิ่มเติม ' : '') + 'ถึง ' + to.join(', ') + ' แล้ว เมื่อ ' + when, by, verify);
-  logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n'), revised ? 'ส่งแล้ว (แก้ไขเพิ่มเติม)' : 'ส่งแล้ว']);
+  // จดว่าส่งแล้วทันทีหลังส่ง — ถ้าขั้นถัดไปหยุดกลางคัน รอบที่ลองใหม่จะไม่ส่งซ้ำ
   props.setProperty('ACCRUE_SENT_' + y + '_' + m, when);
   props.setProperty('ACCRUE_HASH_' + y + '_' + m, accrueHash_(bucket));
+  aiNotifyAdmins_(ai, 'ส่ง File Accrue ' + (revised ? 'ฉบับแก้ไขเพิ่มเติม ' : '') + 'ถึง ' + to.join(', ') + ' แล้ว เมื่อ ' + when, by, verify);
+  logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n'), revised ? 'ส่งแล้ว (แก้ไขเพิ่มเติม)' : 'ส่งแล้ว']);
   return { sent: true, at: when, to, cc, subject: mail.subject, revised, files: files.map(f => ({ name: f.name, total: f.total, count: f.count })), ai: aiBrief_(ai) };
 }
 
@@ -2636,37 +2646,117 @@ function isAccrueDay_(s, y, m, d) {
   return accrueDays_(s).some(x => Math.min(x, last) === d);
 }
 
+/** วัน เวลาปัจจุบันตามเขตเวลาของระบบ (Asia/Bangkok) */
+function accrueNow_(now) {
+  now = now || new Date();
+  const part = f => Number(Utilities.formatDate(now, CONFIG.TIMEZONE, f));
+  return { y: part('yyyy'), m: part('M'), d: part('d'), h: part('H'), iso: Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy-MM-dd') };
+}
+
+/** จดขั้นตอนที่รอบอัตโนมัติกำลังทำ — ถ้าหยุดกลางคันจะรู้ว่าค้างที่ขั้นไหน (ดูได้ใน AuditLog: accrue_retry) */
+function accrueStage_(text) {
+  console.log('File Accrue อัตโนมัติ: ' + text);
+  PropertiesService.getScriptProperties().setProperty('ACCRUE_STAGE', nowText_() + ' ' + text);
+}
+
+/** มีรอบอัตโนมัติกำลังทำงานอยู่หรือไม่ */
+function accrueBusy_() {
+  const at = Number(PropertiesService.getScriptProperties().getProperty('ACCRUE_RUNNING') || 0);
+  return !!at && Date.now() - at < ACCRUE_LEASE_MS;
+}
+
 /**
- * ตัวตั้งเวลา (ทำงานทุกวัน ช่วงเวลาที่ตั้งไว้): ถ้าวันนี้เป็นวันส่ง
- * - ยังไม่เคยส่งเดือนนี้ → ส่ง
- * - เคยส่งแล้ว และข้อมูลเปลี่ยนจากครั้งที่ส่งล่าสุด → ส่ง "แก้ไขเพิ่มเติม"
- * - ข้อมูลไม่เปลี่ยน → ไม่ส่งซ้ำ
+ * ให้รอบอัตโนมัติทำงานทีละรอบ โดยไม่ถือ script lock ตลอดการส่ง
+ * (ถ้าส่งช้าหรือค้าง ผู้ใช้ยังจอง / บันทึกข้อมูลได้ตามปกติ) — คืน false เมื่อมีรอบอื่นทำงานอยู่
  */
-function accrueMonthlyJob() {
-  const s = accrueSettings_();
-  try { ensureAccrueTrigger_(s); } catch (err) { console.error('ensureAccrueTrigger_ failed', err); } // ตัวตรวจรายชั่วโมงหายไป → สร้างใหม่
-  if (!s.autoSend && !s.clearAuto) return;
-  const now = new Date();
-  const y = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy'));
-  const m = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'M'));
-  const d = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'd'));
+function accrueLease_(fn) {
   const props = PropertiesService.getScriptProperties();
-  const dayKey = 'ACCRUE_DAY_' + y + '_' + m + '_' + d;
-  // กันส่งซ้อน (ตัวตั้งเวลาเก่า/ใหม่ หรือสั่งรันจากตัวแก้ไขพร้อมกัน)
   const lock = LockService.getScriptLock();
-  if (!lock.tryLock(5 * 60 * 1000)) return;
-  let error = null;
+  if (!lock.tryLock(30 * 1000)) return false;
   try {
-    // File Accrue ของเดือนนี้ (วันที่ตั้งไว้ · เฉพาะเมื่อข้อมูลเปลี่ยน)
-    if (s.autoSend && isAccrueDay_(s, y, m, d) && !props.getProperty(dayKey)) {
-      try { accrueDailyCheck_(s, y, m, props, dayKey); } catch (err) { error = err; }
-    }
-    // File Clear ของเดือนก่อนหน้า (วันที่ 25 · ครั้งเดียว)
-    try { clearDailyCheck_(s, y, m, d, props); } catch (err) { error = error || err; }
+    if (accrueBusy_()) return false;
+    props.setProperty('ACCRUE_RUNNING', String(Date.now()));
   } finally {
     lock.releaseLock();
   }
+  try {
+    fn();
+    return true;
+  } finally {
+    props.deleteProperty('ACCRUE_RUNNING');
+  }
+}
+
+/** ลองครบจำนวนครั้งแล้วยังไม่สำเร็จ → บันทึกประวัติ + แจ้งผู้ดูแลระบบให้กดส่งเอง (ครั้งเดียวต่อวัน) */
+function accrueGiveUp_(s, t, stage) {
+  const props = PropertiesService.getScriptProperties();
+  const key = 'ACCRUE_ALERT_' + t.y + '_' + t.m + '_' + t.d;
+  if (props.getProperty(key)) return;
+  props.setProperty(key, nowText_());
+  const why = 'ส่งอัตโนมัติไม่สำเร็จ ลองครบ ' + ACCRUE_MAX_TRIES + ' ครั้งแล้ว' + (stage ? ' (ค้างล่าสุดที่: ' + stage + ')' : '');
+  logAccrue_([nowText_(), accrueMonthShort_(t.y, t.m), 'ส่งอัตโนมัติ', s.to, s.cc, '', '', '', why]);
+  audit_('system', 'accrue_give_up', ACCRUE_LOG_SHEET, '', { y: t.y, m: t.m, d: t.d, stage });
+  try {
+    const to = adminNotifyEmails_();
+    if (to.length && MailApp.getRemainingDailyQuota() >= to.length) {
+      MailApp.sendEmail({ to: to.join(','), subject: '[ส่งไม่สำเร็จ] File Accrue เดือน ' + accrueMonthShort_(t.y, t.m) + ' รอบวันที่ ' + t.d,
+        body: why + '\n\nกรุณาเปิดหน้า File Accrue แล้วกด “ส่งอีเมลตอนนี้”\n' + appUrl_() + '\n\n— ระบบ Protection Fee (อีเมลอัตโนมัติ)', name: 'Protection Fee' });
+    }
+  } catch (err) {
+    console.error('accrueGiveUp_ notify failed', err);
+  }
+}
+
+/**
+ * รอบส่งของวันนี้: ถ้าวันนี้เป็นวันส่ง
+ * - ยังไม่เคยส่งเดือนนี้ → ส่ง
+ * - เคยส่งแล้ว และข้อมูลเปลี่ยนจากครั้งที่ส่งล่าสุด → ส่ง "แก้ไขเพิ่มเติม"
+ * - ข้อมูลไม่เปลี่ยน หรือวันนี้ส่งไปแล้ว → ไม่ส่งซ้ำ
+ * รอบที่หยุดกลางคัน (เช่นหมดเวลา 30 นาที) ตัวตรวจรายชั่วโมงจะลองใหม่ให้ สูงสุด ACCRUE_MAX_TRIES ครั้งต่อวัน
+ */
+function accrueRunToday_(source) {
+  const s = accrueSettings_();
+  try { ensureAccrueTrigger_(s); } catch (err) { console.error('ensureAccrueTrigger_ failed', err); } // ตัวตั้งเวลาหายไป → สร้างใหม่
+  if (!s.autoSend && !s.clearAuto) return;
+  const t = accrueNow_();
+  const props = PropertiesService.getScriptProperties();
+  const dayKey = 'ACCRUE_DAY_' + t.y + '_' + t.m + '_' + t.d;
+  const tryKey = 'ACCRUE_TRY_' + t.y + '_' + t.m + '_' + t.d;
+  let error = null;
+  accrueLease_(() => {
+    // File Accrue ของเดือนนี้ (วันที่ตั้งไว้ · เฉพาะเมื่อข้อมูลเปลี่ยน)
+    if (s.autoSend && isAccrueDay_(s, t.y, t.m, t.d) && !props.getProperty(dayKey)) {
+      const sentAt = String(props.getProperty('ACCRUE_SENT_' + t.y + '_' + t.m) || '');
+      const tries = Number(props.getProperty(tryKey) || 0);
+      const stage = props.getProperty('ACCRUE_STAGE') || '';
+      if (sentAt.indexOf(t.iso) === 0) {
+        props.setProperty(dayKey, nowText_()); // วันนี้ส่งแล้ว (เช่นกดส่งเอง) — รอบนี้ไม่ต้องส่งซ้ำ
+      } else if (tries >= ACCRUE_MAX_TRIES) {
+        accrueGiveUp_(s, t, stage);
+      } else {
+        if (tries) audit_('system', 'accrue_retry', ACCRUE_LOG_SHEET, '', { y: t.y, m: t.m, d: t.d, try: tries + 1, source, lastStage: stage });
+        props.setProperty(tryKey, String(tries + 1));
+        accrueStage_('เริ่มรอบ ' + source + ' ครั้งที่ ' + (tries + 1));
+        try {
+          accrueDailyCheck_(s, t.y, t.m, props, dayKey);
+          props.deleteProperty('ACCRUE_STAGE');
+        } catch (err) { error = err; }
+      }
+    }
+    // File Clear ของเดือนก่อนหน้า (วันที่ 25 · ครั้งเดียว)
+    try { clearDailyCheck_(s, t.y, t.m, t.d, props); } catch (err) { error = error || err; }
+  });
   if (error) throw error;
+}
+
+/** ตัวตั้งเวลาสำรองรายวัน — Google เลือกเวลาให้เองในช่วงชั่วโมงที่ตั้ง (เช่น 09:00–10:00) */
+function accrueMonthlyJob() {
+  accrueRunToday_('รายวัน');
+}
+
+/** ตัวตั้งเวลาครั้งเดียว ตรงเวลาส่ง (เช่น 09:00 น.) */
+function accrueExactJob() {
+  accrueRunToday_('ตรงเวลา');
 }
 
 function accrueDailyCheck_(s, y, m, props, dayKey) {
@@ -2697,22 +2787,49 @@ function accrueDailyCheck_(s, y, m, props, dayKey) {
  */
 function accrueLateJob() {
   const s = accrueSettings_();
-  if (!s.autoSend || !s.lateWatch) return;
-  const now = new Date();
-  const d = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'd'));
-  if (d < ACCRUE_LATE_FROM || d > ACCRUE_LATE_TO) return;
-  const y = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyyy'));
-  const m = Number(Utilities.formatDate(now, CONFIG.TIMEZONE, 'M'));
-  const lock = LockService.getScriptLock();
-  if (!lock.tryLock(5 * 60 * 1000)) return;
-  try {
-    accrueDailyCheck_(s, y, m, PropertiesService.getScriptProperties(), '');
-  } finally {
-    lock.releaseLock();
+  try { ensureAccrueTrigger_(s); } catch (err) { console.error('ensureAccrueTrigger_ failed', err); } // ตั้งเวลา 09:00 ของวันส่งถัดไป
+  if (!s.autoSend) return;
+  const t = accrueNow_();
+  const props = PropertiesService.getScriptProperties();
+  // วันส่งที่เลยเวลาแล้วแต่รอบวันนี้ยังไม่สำเร็จ (หมดเวลา / ผิดพลาด / ตัวตั้งเวลาไม่ทำงาน) → ลองใหม่
+  if (isAccrueDay_(s, t.y, t.m, t.d) && t.h >= Number(s.sendHour) && !props.getProperty('ACCRUE_DAY_' + t.y + '_' + t.m + '_' + t.d)) {
+    accrueRunToday_('ลองใหม่');
+    return;
   }
+  if (!s.lateWatch || t.d < ACCRUE_LATE_FROM || t.d > ACCRUE_LATE_TO) return;
+  accrueLease_(() => accrueDailyCheck_(s, t.y, t.m, props, ''));
 }
 
-/** เปิด / ปิด ตัวตั้งเวลา: รายวัน (ตามชั่วโมงที่ตั้ง แล้วตรวจเองว่าวันนี้เป็นวันส่งหรือไม่) และรายชั่วโมง (วันที่ 22–30) */
+/** เวลาส่งถัดไปที่ยังไม่ถึง (วันส่ง + ชั่วโมงที่ตั้ง ตามเขตเวลาของระบบ) */
+function nextAccrueMoment_(s, now) {
+  const start = accrueNow_(now);
+  let y = start.y, m = start.m, d = start.d;
+  for (let i = 0; i < 70; i++) {
+    const last = new Date(y, m, 0).getDate();
+    if (d > last) { d = 1; m++; if (m > 12) { m = 1; y++; } }
+    if (isAccrueDay_(s, y, m, d)) {
+      const iso = y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+      const at = Utilities.parseDate(iso + ' ' + String(s.sendHour).padStart(2, '0') + ':00', CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm');
+      if (at.getTime() > now.getTime() + 60 * 1000) return { at, sig: iso + '@' + s.sendHour };
+    }
+    d++;
+  }
+  return null;
+}
+
+/** ตั้งตัวตั้งเวลาครั้งเดียวไว้ที่เวลาส่งถัดไป (everyDays().atHour() ของ Google เลือกนาทีเอง จึงช้าได้ถึงเกือบ 1 ชั่วโมง) */
+function scheduleAccrueExact_(s) {
+  const props = PropertiesService.getScriptProperties();
+  const existing = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === ACCRUE_EXACT_JOB);
+  const next = s.autoSend ? nextAccrueMoment_(s, new Date()) : null;
+  const sig = next ? next.sig : '';
+  if (existing.length === (sig ? 1 : 0) && props.getProperty('ACCRUE_EXACT_AT') === sig) return;
+  existing.forEach(t => ScriptApp.deleteTrigger(t));
+  if (next) ScriptApp.newTrigger(ACCRUE_EXACT_JOB).timeBased().at(next.at).create();
+  props.setProperty('ACCRUE_EXACT_AT', sig);
+}
+
+/** เปิด / ปิด ตัวตั้งเวลา: ตรงเวลาส่ง (ครั้งเดียวต่อรอบ) + รายวัน (สำรอง) + รายชั่วโมง (ลองใหม่เมื่อรอบวันนี้ไม่สำเร็จ และตรวจวันที่ 22–30) */
 function ensureAccrueTrigger_(s) {
   const props = PropertiesService.getScriptProperties();
   const all = ScriptApp.getProjectTriggers();
@@ -2725,8 +2842,9 @@ function ensureAccrueTrigger_(s) {
   };
   sync(ACCRUE_JOB, 'ACCRUE_TRIGGER', s.autoSend || s.clearAuto ? 'daily@' + s.sendHour : '',
     () => ScriptApp.newTrigger(ACCRUE_JOB).timeBased().everyDays(1).atHour(s.sendHour).inTimezone(CONFIG.TIMEZONE).create());
-  sync(ACCRUE_LATE_JOB, 'ACCRUE_LATE_TRIGGER', s.autoSend && s.lateWatch ? 'hourly' : '',
+  sync(ACCRUE_LATE_JOB, 'ACCRUE_LATE_TRIGGER', s.autoSend ? 'hourly' : '',
     () => ScriptApp.newTrigger(ACCRUE_LATE_JOB).timeBased().everyHours(1).create());
+  scheduleAccrueExact_(s);
 }
 
 /** วันส่งถัดไป (วันนี้นับด้วย ถ้ายังไม่ถึงเวลาส่ง) เป็น ISO */
@@ -2760,7 +2878,7 @@ function readAccrueLog_(kind) {
 
 function accrueSettingsOut_() {
   const s = accrueSettings_();
-  return Object.assign({}, s, { triggerOn: accrueTriggerOn_(), lateOn: accrueTriggerOn_(ACCRUE_LATE_JOB),
+  return Object.assign({}, s, { triggerOn: accrueTriggerOn_() || accrueTriggerOn_(ACCRUE_EXACT_JOB), lateOn: accrueTriggerOn_(ACCRUE_LATE_JOB),
     lateFrom: ACCRUE_LATE_FROM, lateTo: ACCRUE_LATE_TO });
 }
 
@@ -2808,6 +2926,7 @@ function sendAccrueNow(token, y, m) {
   const user = requireUser_(token, true);
   y = Number(y); m = Number(m);
   if (!(m >= 1 && m <= 12) || !(y > 2000)) throw new Error('เดือนไม่ถูกต้อง');
+  if (accrueBusy_()) throw new Error('ระบบกำลังส่งอัตโนมัติอยู่ — รอสักครู่แล้วดูประวัติการส่งก่อนกดส่งอีกครั้ง');
   const res = withLock_(() => sendAccrue_(y, m, user.fullName || user.username));
   audit_(user.username, 'send_accrue', ACCRUE_LOG_SHEET, '', { y, m, sent: res.sent });
   return res;
@@ -3060,6 +3179,7 @@ function sendClearNow(token, y, m) {
   const user = requireUser_(token, true);
   y = Number(y); m = Number(m);
   if (!(m >= 1 && m <= 12) || !(y > 2000)) throw new Error('เดือนไม่ถูกต้อง');
+  if (accrueBusy_()) throw new Error('ระบบกำลังส่งอัตโนมัติอยู่ — รอสักครู่แล้วดูประวัติการส่งก่อนกดส่งอีกครั้ง');
   const res = withLock_(() => sendClear_(y, m, user.fullName || user.username));
   audit_(user.username, 'send_clear', ACCRUE_LOG_SHEET, '', { y, m, sent: res.sent, net: res.net || 0 });
   return res;
