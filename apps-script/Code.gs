@@ -642,6 +642,7 @@ function writeMonthlySummary_(ctx) {
 function afterLogSaved_(key, dates) {
   CacheService.getScriptCache().remove(DASH_CACHE_KEY);
   clearAppDataCache_(); // ตาราง EXAT / BEM เปลี่ยน → รายการล่าสุด ตัวเลือก
+  try { markAccrueChange_(dates); } catch (err) { console.error('markAccrueChange_ failed', err); } // ส่ง File Accrue ฉบับเพิ่มเติมให้เอง
   try {
     const only = { exat: [], bem: [] };
     only[key] = dates;
@@ -2575,14 +2576,35 @@ function logAccrue_(row) {
   range.setValues([row.map(longText_)]);
 }
 
-/** อีเมลแจ้ง — ครั้งแรกของเดือนตามรูปแบบเดิม · ส่งซ้ำเพราะข้อมูลเปลี่ยน = "RE: … แก้ไขเพิ่มเติม" ตามตัวอย่าง */
-function accrueEmail_(y, m, s, revised) {
+/** ส่ง File Accrue ของเดือนนี้สำเร็จไปแล้วกี่ครั้ง (นับจากแท็บประวัติการส่ง — ไม่นับ File Clear / ส่งไม่สำเร็จ / ระงับการส่ง) */
+function accrueSendCount_(y, m) {
+  const sh = spreadsheet_().getSheetByName(ACCRUE_LOG_SHEET);
+  if (!sh || sh.getLastRow() < 2) return 0;
+  const label = accrueMonthShort_(y, m);
+  return sh.getRange(2, 1, sh.getLastRow() - 1, ACCRUE_LOG_HEADERS.length).getDisplayValues()
+    .filter(r => String(r[1]).trim() === label && /^ส่งแล้ว/.test(String(r[8]).trim())).length;
+}
+
+/** ครั้งที่ของการส่งถัดไปในรอบเดือนนั้น (ฉบับแรก = 1) */
+function accrueNextNo_(y, m) {
+  const sent = !!PropertiesService.getScriptProperties().getProperty('ACCRUE_SENT_' + y + '_' + m);
+  return Math.max(accrueSendCount_(y, m) + 1, sent ? 2 : 1);
+}
+
+/** อีเมลแจ้ง — ครั้งแรกของเดือนตามรูปแบบเดิม · ส่งซ้ำเพราะข้อมูลเปลี่ยน = "RE: … (ส่งเพิ่มเติม ครั้งที่ N)" */
+function accrueEmail_(y, m, s, revised, no) {
   const label = accrueMonthShort_(y, m);
   const base = 'นำส่ง File Accrue ค่ารถคุ้มครอง เดือน' + label;
-  const subject = (revised ? 'RE: ' : '') + base;
+  const nth = revised && no > 1 ? ' ครั้งที่ ' + no : '';
+  const subject = revised ? 'RE: ' + base + ' (ส่งเพิ่มเติม' + nth + ')' : base;
   const lines = [['เรียน', s.greeting], ['สำเนา', s.ccLabel]];
-  if (revised) lines.push(['เรื่อง', 'นำส่ง File Accrue แก้ไขเพิ่มเติม ค่ารถคุ้มครอง เดือน' + label], ['', base + '  รายละเอียดตามไฟล์แนบ']);
-  else lines.push(['เรื่อง', base + '  รายละเอียดตามไฟล์แนบ']);
+  if (revised) {
+    lines.push(['เรื่อง', 'นำส่ง File Accrue ส่งเพิ่มเติม' + nth + ' ค่ารถคุ้มครอง เดือน' + label],
+      ['', 'มีการอัปเดตข้อมูลรถคุ้มครอง จึงส่งไฟล์ล่าสุดเพิ่มเติม' + (nth ? ' (เป็นการส่ง' + nth.trim() + ' ของรอบเดือน' + label + ')' : '')],
+      ['', base + '  รายละเอียดตามไฟล์แนบ']);
+  } else {
+    lines.push(['เรื่อง', base + '  รายละเอียดตามไฟล์แนบ']);
+  }
   const plain = lines.map(l => l[0] + '\t' + l[1]).join('\n') + '\n\n\t\t' + s.signOff;
   const esc = v => String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   const html = '<div style="font-family:Tahoma,sans-serif;font-size:14px;line-height:1.9">' +
@@ -2621,7 +2643,8 @@ function sendAccrue_(y, m, by, bucket) {
     logAccrue_([when, label, by, to.join(', '), cc.join(', '), '0', '0', '', 'ไม่ได้ส่ง — ไม่มีการใช้รถคุ้มครองในเดือนนี้']);
     return { sent: false, reason: 'ไม่มีการใช้รถคุ้มครองในเดือน ' + label };
   }
-  const mail = accrueEmail_(y, m, s, revised);
+  const no = accrueNextNo_(y, m);
+  const mail = accrueEmail_(y, m, s, revised, no);
   stage('ตรวจยอดกับชีท');
   // ตรวจก่อนส่ง (โค้ด): อ่านชีทใหม่แล้วเทียบยอด จำนวนรายการ และยอดรวมในไฟล์แนบ — ไม่ตรง = ระงับการส่ง + แจ้งผู้ดูแลระบบ
   const verify = verifySend_('accrue', y, m, {
@@ -2640,8 +2663,8 @@ function sendAccrue_(y, m, by, bucket) {
   props.setProperty('ACCRUE_SENT_' + y + '_' + m, when);
   props.setProperty('ACCRUE_HASH_' + y + '_' + m, accrueHash_(bucket));
   aiNotifyAdmins_(ai, 'ส่ง File Accrue ' + (revised ? 'ฉบับแก้ไขเพิ่มเติม ' : '') + 'ถึง ' + to.join(', ') + ' แล้ว เมื่อ ' + when, by, verify);
-  logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n'), revised ? 'ส่งแล้ว (แก้ไขเพิ่มเติม)' : 'ส่งแล้ว']);
-  return { sent: true, at: when, to, cc, subject: mail.subject, revised, files: files.map(f => ({ name: f.name, total: f.total, count: f.count })), ai: aiBrief_(ai) };
+  logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(bucket.exatTotal), String(bucket.bemTotal), files.map(f => f.name + ' ' + f.url).join('\n'), revised ? 'ส่งแล้ว (ส่งเพิ่มเติม ครั้งที่ ' + no + ')' : 'ส่งแล้ว (ครั้งที่ 1)']);
+  return { sent: true, at: when, to, cc, subject: mail.subject, revised, no, files: files.map(f => ({ name: f.name, total: f.total, count: f.count })), ai: aiBrief_(ai) };
 }
 
 /** วันที่ที่ตั้งให้ส่ง เช่น "19, 21, 25, 27, 30, 31" → [19, 21, 25, 27, 30, 31] */
@@ -2916,7 +2939,7 @@ function getAccrue(token, y, m) {
       return { m: x.m, exatCount: x.exat.length, exatTotal: x.exatTotal, bemCount: x.bem.length, bemTotal: x.bemTotal, sentAt,
         changed: !!(sentAt && last && last !== accrueHash_(x)) };
     }),
-    email: Object.assign(accrueEmail_(y, m, s, !!props.getProperty('ACCRUE_SENT_' + y + '_' + m)), { to: s.to, cc: s.cc }),
+    email: Object.assign(accrueEmail_(y, m, s, !!props.getProperty('ACCRUE_SENT_' + y + '_' + m), accrueNextNo_(y, m)), { to: s.to, cc: s.cc }),
     nextSend: nextAccrueDay_(s, now),
     settings: s,
     log: readAccrueLog_('accrue'),
@@ -3546,7 +3569,7 @@ function checkContext_(kind, y, m) {
     const mail = clearEmail_(y, m, s, data, !!props.getProperty('CLEAR_SENT_' + y + '_' + m));
     return { bucket, data, email: mail.plain, facts: clearFacts_(data) };
   }
-  const mail = accrueEmail_(y, m, s, !!props.getProperty('ACCRUE_SENT_' + y + '_' + m));
+  const mail = accrueEmail_(y, m, s, !!props.getProperty('ACCRUE_SENT_' + y + '_' + m), accrueNextNo_(y, m));
   return { bucket, email: mail.plain, facts: accrueFacts_(bucket) };
 }
 
@@ -4897,4 +4920,61 @@ function showAppVersionNow() {
   const v = appVersion_();
   console.log(JSON.stringify({ live: v, seen: PropertiesService.getScriptProperties().getProperty('APP_BUILD_SEEN') }));
   return v;
+}
+
+/* ------------------------------------------------------------------ */
+/* File Accrue ฉบับเพิ่มเติม: ส่งให้เองทันทีหลังข้อมูลรถคุ้มครองเปลี่ยน                       */
+/* ------------------------------------------------------------------ */
+// บันทึก / อนุมัติ / แก้ไข / ย้ายวันที่ / ยกเลิกการใช้รถ → ตาราง EXAT / BEM เปลี่ยน (afterLogSaved_)
+// → รอให้กรอกเสร็จ (ไม่มีการเปลี่ยนแปลงใหม่ราว 3 นาที) แล้วส่ง File Accrue ฉบับเพิ่มเติมของเดือนนั้นอัตโนมัติ
+// ส่งเฉพาะเดือนที่ส่งฉบับแรกไปแล้ว และยอดเปลี่ยนจากฉบับล่าสุด · หัวเรื่องบอก "ส่งเพิ่มเติม ครั้งที่ N" ของรอบเดือนนั้น
+// ไม่ต้องรอผู้ดูแลระบบกดส่ง · ปิดได้ด้วยการปิด "ส่งอัตโนมัติ" ในหน้า File Accrue
+
+const ACCRUE_CHANGE_JOB = 'accrueChangeJob';
+const ACCRUE_CHANGE_WAIT_MS = 3 * 60 * 1000;
+
+/** จดเดือนที่ข้อมูลเปลี่ยน แล้วตั้งเวลาส่งฉบับเพิ่มเติม (ไม่ส่งระหว่างที่ผู้ใช้รอผลการบันทึก) */
+function markAccrueChange_(dates) {
+  const s = accrueSettings_();
+  if (!s.autoSend) return;
+  const props = PropertiesService.getScriptProperties();
+  let list = [];
+  try { list = JSON.parse(props.getProperty('ACCRUE_DIRTY') || '[]'); } catch (err) { list = []; }
+  (dates || []).forEach(iso => {
+    const mm = /^(\d{4})-(\d{2})/.exec(String(iso || ''));
+    const k = mm ? mm[1] + '_' + Number(mm[2]) : '';
+    if (k && list.indexOf(k) < 0) list.push(k);
+  });
+  if (!list.length) return;
+  props.setProperty('ACCRUE_DIRTY', JSON.stringify(list));
+  props.setProperty('ACCRUE_CHANGE_AT', String(Date.now()));
+  scheduleAccrueChange_(ACCRUE_CHANGE_WAIT_MS);
+}
+
+function scheduleAccrueChange_(ms) {
+  if (ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === ACCRUE_CHANGE_JOB)) return; // ตั้งไว้แล้ว — ตอนทำงานจะตรวจเวลาเอง
+  ScriptApp.newTrigger(ACCRUE_CHANGE_JOB).timeBased().after(Math.max(60 * 1000, ms)).create();
+}
+
+function accrueChangeJob() {
+  const props = PropertiesService.getScriptProperties();
+  ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === ACCRUE_CHANGE_JOB).forEach(t => ScriptApp.deleteTrigger(t));
+  const s = accrueSettings_();
+  if (!s.autoSend) { props.deleteProperty('ACCRUE_DIRTY'); return; }
+  const quiet = Date.now() - Number(props.getProperty('ACCRUE_CHANGE_AT') || 0);
+  if (quiet < ACCRUE_CHANGE_WAIT_MS - 30 * 1000) { scheduleAccrueChange_(ACCRUE_CHANGE_WAIT_MS - quiet); return; } // ยังกรอกต่ออยู่
+  let error = null;
+  const ran = accrueLease_(() => {
+    let list = [];
+    try { list = JSON.parse(props.getProperty('ACCRUE_DIRTY') || '[]'); } catch (err) { list = []; }
+    props.deleteProperty('ACCRUE_DIRTY');
+    list.forEach(k => {
+      const [y, m] = k.split('_').map(Number);
+      if (!(y > 2000 && m >= 1 && m <= 12)) return;
+      if (!props.getProperty('ACCRUE_SENT_' + y + '_' + m)) return; // ยังไม่เคยส่งฉบับแรก — รอรอบตามวันที่กำหนด
+      try { accrueDailyCheck_(s, y, m, props, ''); } catch (err) { error = error || err; } // ยอดไม่เปลี่ยน = ไม่ส่ง
+    });
+  });
+  if (!ran) scheduleAccrueChange_(5 * 60 * 1000); // มีรอบส่งอื่นทำงานอยู่ — ลองใหม่
+  if (error) throw error;
 }
