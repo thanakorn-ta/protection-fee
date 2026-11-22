@@ -4320,17 +4320,20 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     renderPlaceList();
   });
 
-  // จุดที่ไป: แจ้งใช้รถ BEM เลือกได้เฉพาะจุดของ BEM · EXAT เฉพาะจุดของ EXAT (ฐานข้อมูลป้าย + ที่เคยบันทึกในตารางนั้น)
+  // จุดที่ไป: แจ้งใช้รถ BEM เลือกได้เฉพาะจุดของ BEM · EXAT เฉพาะจุดของ EXAT (ฐานข้อมูลป้าย + ที่เคยบันทึกในตารางนั้น) · จุดสายทางศรีรัชเลือกได้ทั้งสองแบบ
   // เจ้าของจุดตัดสินแบบเดียวกับ bookingToForms_ ใน Code.gs (เขตพื้นที่ขึ้นต้น BEM หรือ Media Site มี BECL / BEM)
   function locOwner(l) { return /^BEM/i.test(l.operator || '') || /BECL|BEM/i.test(l.mediaSite || '') ? 'BEM' : 'EXAT'; }
   function placeLoc(p) { return S.data.locations.find(function (l) { return l.area === p || (l.code && l.code === p); }); }
+  // รถคุ้มครองสายทางศรีรัชใช้ได้ทั้ง EXAT และ BEM — จุดสายทางนี้เลือกได้ทั้งสองแบบ (ตรงกับ placeAllowed_ ใน Code.gs)
+  var SHARED_WAY = 'ศรีรัช';
+  function locAllowed(l, provider) { return locOwner(l) === provider || norm(l.expressway || '') === norm(SHARED_WAY); }
   function otherOwnerText(loc, provider) {
-    return '“' + loc.area + '” เป็นจุดของ ' + locOwner(loc) + ' — แจ้งใช้รถ ' + provider + ' เลือกได้เฉพาะจุดของ ' + provider;
+    return '“' + loc.area + '” เป็นจุดของ ' + locOwner(loc) + ' — แจ้งใช้รถ ' + provider + ' เลือกได้เฉพาะจุดของ ' + provider + ' และจุดสายทาง' + SHARED_WAY;
   }
   function bookingPlaces(provider) {
     var other = {}, seen = {}, out = [];
-    S.data.locations.forEach(function (l) { if (locOwner(l) !== provider) other[l.area] = 1; });
-    S.data.locations.filter(function (l) { return locOwner(l) === provider; }).map(function (l) { return l.area; })
+    S.data.locations.forEach(function (l) { if (!locAllowed(l, provider)) other[l.area] = 1; });
+    S.data.locations.filter(function (l) { return locAllowed(l, provider); }).map(function (l) { return l.area; })
       .concat((provider === 'BEM' ? S.data.options.bemPlaces : S.data.options.exatPlaces) || [])
       .forEach(function (p) { if (p && !other[p] && !seen[p]) { seen[p] = 1; out.push(p); } });
     return out;
@@ -4342,7 +4345,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     var form = $('#bk-form');
     var loc = S.data.locations.find(function (l) { return l.area === v || l.code === v; });
     if (loc) {
-      if (locOwner(loc) !== form.provider.value) { toast(otherOwnerText(loc, form.provider.value), true); return pick.focus(); }
+      if (!locAllowed(loc, form.provider.value)) { toast(otherOwnerText(loc, form.provider.value), true); return pick.focus(); }
       v = loc.area;
       if (!S.bkAdd && !form.expressway.value && loc.expressway) form.expressway.value = loc.expressway;
       if (!S.bkAdd && !form.meetingPoint.value && loc.meetingPoint) { form.meetingPoint.value = loc.meetingPoint; syncPick(form, 'meetingPoint'); }
@@ -4371,7 +4374,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     if (!lines(data.places).length) return bad($('#bk-place-pick'), 'กรุณากรอกจุดที่ไปอย่างน้อย 1 จุด');
     // จุดที่อยู่ในการจองเดิมแล้วไม่ตรวจซ้ำ (จองก่อนมีการตรวจเจ้าของจุด) — ตรวจเฉพาะจุดที่เพิ่มใหม่ (ตรงกับ saveBooking ใน Code.gs)
     var known = S.bk && S.bk.provider === data.provider ? S.bkOrig.concat(lines(S.bk.loggedPlaces)) : [];
-    var wrong = minusPlaces(lines(data.places), known).map(placeLoc).find(function (l) { return l && locOwner(l) !== data.provider; });
+    var wrong = minusPlaces(lines(data.places), known).map(placeLoc).find(function (l) { return l && !locAllowed(l, data.provider); });
     if (wrong) return bad($('#bk-place-pick'), otherOwnerText(wrong, data.provider));
     var adding = S.bkAdd;
     var moved = !!S.bk && (data.date !== S.bk.date || String(data.time || '').trim() !== String(S.bk.time || '').trim());

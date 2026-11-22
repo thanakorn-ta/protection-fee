@@ -36,6 +36,18 @@ const PROJECTS = ['Flyover 2.0 EXAT', 'Flyover 2.0 BEM', 'Gateway EXAT', 'Gatewa
 // สายทางที่เลือกได้ — แถวเดิมในชีทที่ใช้ชื่ออื่นไม่ถูกแก้
 const EXPRESSWAYS = ['ศรีรัช', 'ฉลองรัช', 'เฉลิมมหานคร'];
 const BEM_EXPRESSWAY = 'ศรีรัช'; // แจ้งใช้รถ BEM เลือกได้สายเดียว
+// รถคุ้มครองสายทางศรีรัชใช้ได้ทั้ง EXAT และ BEM — จุดสายทางนี้ (ของเจ้าใดก็ได้) เลือกได้ทั้งแจ้งใช้รถ EXAT และ BEM
+const SHARED_EXPRESSWAY = 'ศรีรัช';
+
+/** เจ้าของจุดตามฐานข้อมูลป้าย: เขตพื้นที่ขึ้นต้น BEM หรือ Media Site มี BECL / BEM = BEM · นอกนั้น EXAT */
+function locOwner_(loc) {
+  return /^BEM/i.test(loc.operator || '') || /BECL|BEM/i.test(loc.mediaSite || '') ? 'BEM' : 'EXAT';
+}
+
+/** จุดนี้เลือกได้ในการแจ้งใช้รถ provider หรือไม่ — จุดของเจ้านั้นเอง หรือจุดสายทางศรีรัช */
+function placeAllowed_(loc, provider) {
+  return locOwner_(loc) === provider || norm_(loc.expressway) === norm_(SHARED_EXPRESSWAY);
+}
 const BEM_FEES = ['คิดค่ารถ 1 คืน', 'BEM ไม่ได้คิดค่ารถ'];
 const PAYMENT_STATUSES = ['รอออก PR', 'เรียบร้อย', 'ฟรี'];
 const EN_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -1029,8 +1041,9 @@ function saveBooking(token, form) {
   checkPlaces.forEach(p => {
     const np = norm_(p);
     const loc = locs.find(l => norm_(l.area) === np || (l.code && norm_(l.code) === np));
-    const owner = loc ? (/^BEM/i.test(loc.operator) || /BECL|BEM/i.test(loc.mediaSite) ? 'BEM' : 'EXAT') : '';
-    if (owner && owner !== f.provider) throw new Error('“' + loc.area + '” เป็นจุดของ ' + owner + ' — แจ้งใช้รถ ' + f.provider + ' เลือกได้เฉพาะจุดของ ' + f.provider);
+    if (loc && !placeAllowed_(loc, f.provider)) {
+      throw new Error('“' + loc.area + '” เป็นจุดของ ' + locOwner_(loc) + ' — แจ้งใช้รถ ' + f.provider + ' เลือกได้เฉพาะจุดของ ' + f.provider + ' และจุดสายทาง' + SHARED_EXPRESSWAY);
+    }
   });
   const id = String((form && form.id) || '').trim();
   let notice = ''; // แจ้งผู้ดูแลระบบหลังบันทึก: จองใหม่ หรือแก้แล้วส่งขออนุมัติใหม่
