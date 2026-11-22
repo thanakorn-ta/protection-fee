@@ -4710,7 +4710,28 @@ const GITHUB_RAW = 'https://raw.githubusercontent.com/thanakorn-ta/protection-fe
 const GITHUB_SYNC_JOB = 'githubSyncJob';
 
 /** กด Run ครั้งเดียว: ให้สิทธิ์ + ตั้งตัวตั้งเวลาทุก 5 นาที + ซิงก์ทันที */
+// สิทธิ์ที่การอัปเดตตัวเองต้องใช้ (Apps Script API) — Google อาจให้ผู้ใช้ติ๊กเลือกบางสิทธิ์ตอนอนุญาต
+const GITHUB_SYNC_SCOPES = [
+  'https://www.googleapis.com/auth/script.projects',
+  'https://www.googleapis.com/auth/script.deployments',
+  'https://www.googleapis.com/auth/script.external_request',
+  'https://www.googleapis.com/auth/script.scriptapp',
+];
+
+/** สิทธิ์ที่ยังไม่ได้อนุญาต ([] = ครบ) */
+function githubSyncMissingScopes_() {
+  try {
+    const info = ScriptApp.getAuthorizationInfo(ScriptApp.AuthMode.FULL, GITHUB_SYNC_SCOPES);
+    const have = info.getAuthorizedScopes ? info.getAuthorizedScopes() || [] : [];
+    return GITHUB_SYNC_SCOPES.filter(s => have.indexOf(s) < 0);
+  } catch (err) {
+    return [];
+  }
+}
+
 function setupGitHubSync() {
+  // ขึ้นหน้าขอสิทธิ์ของ Google สำหรับสิทธิ์ที่ยังขาด (กด Run จากตัวแก้ไข)
+  if (ScriptApp.requireScopes) ScriptApp.requireScopes(ScriptApp.AuthMode.FULL, GITHUB_SYNC_SCOPES);
   ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === GITHUB_SYNC_JOB).forEach(t => ScriptApp.deleteTrigger(t));
   ScriptApp.newTrigger(GITHUB_SYNC_JOB).timeBased().everyMinutes(5).create();
   const r = syncFromGitHub(true);
@@ -4719,6 +4740,11 @@ function setupGitHubSync() {
 }
 
 function githubSyncJob() {
+  const missing = githubSyncMissingScopes_();
+  if (missing.length) { // ยังไม่ได้อนุญาต — ไม่เรียก API ให้ผิดพลาดซ้ำทุก 5 นาที
+    PropertiesService.getScriptProperties().setProperty('GITHUB_SYNC_ERROR', nowText_() + ' ยังไม่ได้อนุญาตสิทธิ์: ' + missing.join(', ') + ' — กด Run setupGitHubSync');
+    return;
+  }
   try { syncFromGitHub(false); } catch (err) { console.error('githubSyncJob failed', err); }
 }
 
