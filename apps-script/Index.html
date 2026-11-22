@@ -163,6 +163,14 @@ td.empty { text-align: center; color: var(--muted); padding: 28px; }
 td select { height: 40px; padding: 0 8px; border: 1.5px solid var(--field); border-radius: 8px; background: #fff; font-size: 15px; }
 .temp-pass { font-family: var(--mono); font-size: 20px; background: var(--amber-soft); padding: 6px 12px; border-radius: 8px; display: inline-block; }
 
+#update-bar { position: fixed; left: 50%; top: 12px; transform: translateX(-50%); width: min(560px, calc(100% - 24px)); display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--card); border: 1px solid var(--green); box-shadow: 0 10px 30px rgba(0,0,0,.18); z-index: 30; }
+#update-bar[hidden] { display: none; }
+#update-bar .ub-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 14px; }
+#update-bar .ub-text b { color: var(--green-ink); font-size: 15px; }
+#update-bar .ub-text span { color: var(--muted); overflow-wrap: anywhere; }
+#update-bar .ub-acts { display: flex; gap: 8px; flex-shrink: 0; }
+#update-bar .btn.primary { font-size: 15px; }
+@media (max-width: 520px) { #update-bar { flex-direction: column; align-items: stretch; top: calc(8px + env(safe-area-inset-top)); } #update-bar .ub-acts .btn { flex: 1; min-height: 44px; } }
 #toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 12px 18px; border-radius: 12px; background: var(--ink); color: #fff; font-size: 15px; box-shadow: 0 8px 24px rgba(0,0,0,.2); z-index: 10; }
 #toast.err { background: var(--danger); }
 #loading { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(245,246,242,.7); z-index: 5; font-weight: 600; color: var(--green); }
@@ -1386,6 +1394,13 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
 </div>
 
 <div id="toast" role="status" aria-live="polite" hidden></div>
+<div id="update-bar" role="status" aria-live="polite" hidden>
+  <div class="ub-text"><b>มีระบบเวอร์ชันใหม่</b><span id="update-note"></span></div>
+  <div class="ub-acts">
+    <button type="button" class="btn sm" id="update-later">ภายหลัง</button>
+    <button type="button" class="btn sm primary" id="update-now">อัปเดตตอนนี้</button>
+  </div>
+</div>
 <div id="loading" hidden>กำลังโหลด…</div>
 <div id="sync-bar" aria-hidden="true"></div>
 
@@ -2134,6 +2149,60 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible' && Date.now() - S.refreshedAt > 30000) refreshNow(false);
   });
+
+  // ---------- ระบบเวอร์ชันใหม่: แถบ "อัปเดตตอนนี้" (ฟรี — เทียบเวอร์ชันกับ /api/version บน Vercel) ----------
+  // หน้าที่เปิดค้างไว้ (มือถือ / คอมพิวเตอร์) ตรวจเมื่อกลับมาที่แอป และทุก 10 นาที — มีเวอร์ชันใหม่ขึ้นแถบให้กดอัปเดต
+  // กดแล้วโหลดหน้าใหม่ในหน้าต่างเดิม (ไม่ต้องใช้ลิงก์ใหม่ ไม่ต้องเข้าสู่ระบบใหม่) · หน้าที่เปิดจาก Apps Script ตรง ๆ ไม่มีแถบนี้
+  var APP_BUILD = window.__APP_BUILD || null;
+  var updateState = { live: null, laterUntil: 0, checkedAt: 0 };
+  function checkUpdate(force) {
+    if (!APP_BUILD || !APP_BUILD.id || !window.fetch) return Promise.resolve(null);
+    if (!force && Date.now() - updateState.checkedAt < 60000) return Promise.resolve(updateState.live);
+    updateState.checkedAt = Date.now();
+    return fetch('/api/version?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (v) {
+        if (v && v.id && v.id !== APP_BUILD.id) { updateState.live = v; showUpdateBar(); }
+        return v;
+      })
+      .catch(function () { return null; });
+  }
+  function showUpdateBar() {
+    var v = updateState.live;
+    if (!v || Date.now() < updateState.laterUntil) return;
+    $('#update-note').textContent = v.note ? v.note : 'กดอัปเดตเพื่อใช้เวอร์ชันล่าสุด';
+    $('#update-bar').hidden = false;
+  }
+  async function applyUpdate() {
+    var dirty = !$('#bk-modal').hidden && !$('#bk-form').hidden;
+    if (dirty && !await askConfirm({ title: 'อัปเดตตอนนี้?', text: 'ข้อมูลที่กรอกในหน้าจองและยังไม่ได้บันทึกจะหายไป', ok: 'อัปเดต', cancel: 'กลับไปบันทึกก่อน' })) return;
+    $('#update-now').disabled = true;
+    $('#update-now').textContent = 'กำลังอัปเดต…';
+    try { sessionStorage.setItem('pf_updated', (updateState.live && updateState.live.note) || '1'); } catch (e) { /* ไม่เป็นไร */ }
+    var reg = null;
+    try { reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); if (reg) await reg.update(); } catch (e) { /* ไม่เป็นไร */ }
+    location.reload();
+  }
+  $('#update-now').addEventListener('click', applyUpdate);
+  $('#update-later').addEventListener('click', function () {
+    updateState.laterUntil = Date.now() + 30 * 60 * 1000; // เตือนอีกครั้งใน 30 นาที
+    $('#update-bar').hidden = true;
+  });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') checkUpdate(false); });
+  addEventListener('online', function () { checkUpdate(true); });
+  setInterval(function () { if (document.visibilityState === 'visible') checkUpdate(true); }, 10 * 60 * 1000);
+  setTimeout(function () { checkUpdate(true); }, 8000);
+  // เพิ่งอัปเดต (กดปุ่ม หรือแตะแจ้งเตือน) → บอกว่าได้เวอร์ชันล่าสุดแล้ว
+  (function () {
+    var done = '';
+    try { done = sessionStorage.getItem('pf_updated') || ''; sessionStorage.removeItem('pf_updated'); } catch (e) { done = ''; }
+    var viaPush = /[?&]updated=/.test(location.search);
+    if (viaPush) { try { history.replaceState(null, '', location.pathname + location.search.replace(/[?&]updated=[^&]*/, '').replace(/^&/, '?') + location.hash); } catch (e) { /* ไม่เป็นไร */ } }
+    if (done || viaPush) {
+      var note = done && done !== '1' ? done : (APP_BUILD && APP_BUILD.note) || '';
+      setTimeout(function () { toast('อัปเดตเป็นเวอร์ชันล่าสุดแล้ว' + (note ? ' — ' + note : '')); }, 1200);
+    }
+  })();
   setInterval(function () {
     if (document.visibilityState === 'visible' && Date.now() - S.refreshedAt >= REFRESH_EVERY) refreshNow(false);
   }, 15000);

@@ -1,5 +1,5 @@
 import { appsScriptUrl } from '@/lib/config';
-import { LEGACY_HTML } from '@/lib/generated/legacy-html';
+import { LEGACY_BUILD, LEGACY_HTML } from '@/lib/generated/legacy-html';
 
 export const dynamic = 'force-static';
 
@@ -78,7 +78,10 @@ const APP_HEAD = [
   '<meta name="application-name" content="Protection Fee">',
 ].join('\n');
 
-const HEAD = APP_HEAD + '\n' + PWA_SCRIPT + '\n' + SHIM;
+// เวอร์ชันของหน้านี้ — Index.html เทียบกับ /api/version เพื่อบอกว่ามีเวอร์ชันใหม่ (ขึ้นแถบ "อัปเดตตอนนี้")
+const BUILD_SCRIPT = '<script>window.__APP_BUILD = ' + JSON.stringify(LEGACY_BUILD).replace(/</g, '\\u003c') + ';</script>';
+
+const HEAD = APP_HEAD + '\n' + BUILD_SCRIPT + '\n' + PWA_SCRIPT + '\n' + SHIM;
 const PAGE = LEGACY_HTML.includes('<head>') ? LEGACY_HTML.replace('<head>', '<head>\n' + HEAD) : HEAD + LEGACY_HTML;
 
 export function GET() {

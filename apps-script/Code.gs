@@ -2799,6 +2799,7 @@ function accrueDailyCheck_(s, y, m, props, dayKey) {
  * ใช้ลายนิ้วมือข้อมูลชุดเดียวกับรอบรายวัน จึงไม่ส่งซ้ำกัน
  */
 function accrueLateJob() {
+  try { ensureUpdateWatch_(); } catch (err) { console.error('ensureUpdateWatch_ failed', err); } // ตัวตรวจเวอร์ชันใหม่ของระบบ
   const s = accrueSettings_();
   try { ensureAccrueTrigger_(s); } catch (err) { console.error('ensureAccrueTrigger_ failed', err); } // ตั้งเวลา 09:00 ของวันส่งถัดไป
   if (!s.autoSend) return;
@@ -4791,4 +4792,109 @@ function syncFromGitHub(force) {
   } finally {
     lock.releaseLock();
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* แจ้งสมาชิกทุกคนเมื่อระบบมีเวอร์ชันใหม่ (ฟรี)                                    */
+/* ------------------------------------------------------------------ */
+// หน้าเว็บบน Vercel บอกเวอร์ชันของตัวเองที่ /api/version (เปลี่ยนเมื่อ Index.html / Code.gs / release-notes.json เปลี่ยน)
+// ตัวตั้งเวลานี้ตรวจทุก 15 นาที — เวอร์ชันเปลี่ยน → ส่งแจ้งเตือน (Web Push) ถึงมือถือและคอมพิวเตอร์ของสมาชิกที่ใช้งานอยู่ทุกคน
+// กดแจ้งเตือนแล้วเปิดเวอร์ชันล่าสุดเลย · คนที่เปิดแอปค้างไว้จะเห็นแถบ "อัปเดตตอนนี้" ในแอป (ไม่ต้องส่งลิงก์ใหม่)
+
+const UPDATE_WATCH_JOB = 'updateWatchJob';
+
+/** สร้างตัวตั้งเวลาตรวจเวอร์ชัน (เรียกจากตัวตั้งเวลารายชั่วโมง — ไม่ต้องกด Run) */
+function ensureUpdateWatch_() {
+  if (ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === UPDATE_WATCH_JOB)) return;
+  ScriptApp.newTrigger(UPDATE_WATCH_JOB).timeBased().everyMinutes(15).create();
+}
+
+function updateWatchJob() {
+  try { checkAppUpdate_(); } catch (err) { console.error('checkAppUpdate_ failed', err); }
+}
+
+/** เวอร์ชันปัจจุบันของหน้าเว็บ { id, note, date } — อ่านไม่ได้คืน null */
+function appVersion_() {
+  const r = UrlFetchApp.fetch(appUrl_().replace(/\/+$/, '') + '/api/version?t=' + Date.now(), { muteHttpExceptions: true, headers: { 'Cache-Control': 'no-cache' } });
+  if (r.getResponseCode() !== 200) return null;
+  try {
+    const v = JSON.parse(r.getContentText());
+    return v && /^[a-f0-9]{6,40}$/.test(String(v.id || '')) ? v : null;
+  } catch (err) {
+    return null;
+  }
+}
+
+/** เวอร์ชันเปลี่ยนจากที่เคยเห็น → แจ้งสมาชิกทุกคน (ครั้งเดียวต่อเวอร์ชัน) · ครั้งแรกจำเวอร์ชันไว้เฉย ๆ */
+function checkAppUpdate_() {
+  const v = appVersion_();
+  if (!v) return { skipped: 'อ่านเวอร์ชันไม่ได้' };
+  const props = PropertiesService.getScriptProperties();
+  const seen = props.getProperty('APP_BUILD_SEEN');
+  if (seen === v.id) return { upToDate: v.id };
+  props.setProperty('APP_BUILD_SEEN', v.id);
+  if (!seen) return { first: v.id };
+  const users = readUsers_(usersSheet_()).filter(u => u.status === 'active').map(u => u.username);
+  const note = String(v.note || '').trim().slice(0, 140);
+  const res = pushToUsers_(users, (user, badge) => ({
+    title: 'Protection Fee อัปเดตเป็นเวอร์ชันใหม่',
+    body: [note, 'แตะเพื่อเปิดเวอร์ชันล่าสุด (ไม่ต้องใช้ลิงก์ใหม่)'].filter(Boolean).join('\n'),
+    badge, url: '/?updated=' + v.id, tag: 'pf-update',
+  }), 'app_update', 'system');
+  audit_('system', 'app_update_notify', PUSH_SHEET, '', { id: v.id, from: seen, note, users: users.length, sent: res.sent, failed: res.failed });
+  return Object.assign({ id: v.id }, res);
+}
+
+/** ส่งแจ้งเตือนข้อความเดียวกัน (สร้างต่อคนด้วย build(user, badge)) ถึงทุกเครื่องของผู้ใช้ตามรายชื่อ — ไม่โยนข้อผิดพลาด */
+function pushToUsers_(usernames, build, kind, by) {
+  const res = { sent: 0, failed: 0, removed: 0 };
+  try {
+    const want = {};
+    usernames.forEach(u => { want[u] = true; });
+    const sh = pushSheet_();
+    const subs = readPushSubs_(sh).filter(s => want[s.username] && PUSH_ENDPOINT_RE.test(s.endpoint));
+    if (!subs.length) return res;
+    const users = {};
+    readUsers_(usersSheet_()).forEach(u => { users[u.username] = u; });
+    const counts = pendingBadges_();
+    const keys = pushKeys_();
+    const cache = CacheService.getScriptCache();
+    const reqs = subs.map(s => {
+      const msg = build(users[s.username], badgeFor_(users[s.username], counts));
+      cache.put(pushMsgKey_(s.endpoint), JSON.stringify(msg), PUSH_MSG_SECONDS);
+      return {
+        url: s.endpoint, method: 'post', payload: '', muteHttpExceptions: true,
+        headers: { Authorization: vapidAuth_(s.endpoint, keys), TTL: '86400', Urgency: 'normal', Topic: 'pfupdate' },
+      };
+    });
+    const gone = [];
+    UrlFetchApp.fetchAll(reqs).forEach((r, i) => {
+      const code = r.getResponseCode();
+      if (code >= 200 && code < 300) res.sent++;
+      else { res.failed++; if (code === 404 || code === 410 || code === 403) gone.push(subs[i]); }
+    });
+    if (gone.length) {
+      withLock_(() => {
+        const ends = {};
+        gone.forEach(s => { ends[s.endpoint] = true; });
+        readPushSubs_(sh).filter(s => ends[s.endpoint]).reverse().forEach(s => sh.deleteRow(s.row));
+      });
+      res.removed = gone.length;
+    }
+  } catch (err) {
+    res.error = String((err && err.message) || err).slice(0, 300);
+  }
+  try {
+    if (res.sent || res.failed || res.error) audit_(by || 'system', 'push_' + kind, PUSH_SHEET, '', res);
+  } catch (err) {
+    console.error('push audit failed', err);
+  }
+  return res;
+}
+
+/** กด Run เพื่อทดสอบ: อ่านเวอร์ชันของหน้าเว็บตอนนี้ (ไม่ส่งแจ้งเตือน) */
+function showAppVersionNow() {
+  const v = appVersion_();
+  console.log(JSON.stringify({ live: v, seen: PropertiesService.getScriptProperties().getProperty('APP_BUILD_SEEN') }));
+  return v;
 }
