@@ -2319,7 +2319,7 @@ const ACCRUE_DEFAULTS = {
   checker: 'นายณัฐวุฒิ อู่ยายโสม', timeIn: '22', timeOut: '4',
   autoSend: true, sendDays: '19, 21, 25, 27, 30, 31', sendHour: 9,
   lateWatch: true, // วันที่ 22–30: ตรวจทุกชั่วโมง มีอัปเดตส่งฉบับแก้ไขทันที
-  clearAuto: true, clearDay: 25, // File Clear ของเดือนก่อนหน้า
+  clearAuto: true, clearDay: 20, // File Clear ของเดือนก่อนหน้า — ส่งวันที่ 20 ของเดือนถัดไป
 };
 const ACCRUE_JOB = 'accrueMonthlyJob';
 const ACCRUE_LATE_JOB = 'accrueLateJob';
@@ -2346,6 +2346,12 @@ function accrueSettings_() {
       props.setProperty(ACCRUE_PROP, JSON.stringify(saved));
     }
     props.setProperty('ACCRUE_DAY19_ADDED', nowText_());
+  }
+  // File Clear ย้ายจากวันที่ 25 มาเป็นวันที่ 20 ของเดือนถัดไป — เปลี่ยนค่าที่บันทึกไว้เดิมครั้งเดียว (ผู้ดูแลเปลี่ยนเองได้ภายหลัง)
+  if (saved.clearDay !== undefined && !props.getProperty('CLEAR_DAY20_SET')) {
+    saved.clearDay = 20;
+    props.setProperty(ACCRUE_PROP, JSON.stringify(saved));
+    props.setProperty('CLEAR_DAY20_SET', nowText_());
   }
   return Object.assign({}, ACCRUE_DEFAULTS, saved);
 }
@@ -2825,15 +2831,15 @@ function accrueLateJob() {
   try { ensureUpdateWatch_(); } catch (err) { console.error('ensureUpdateWatch_ failed', err); } // ตัวตรวจเวอร์ชันใหม่ของระบบ
   const s = accrueSettings_();
   try { ensureAccrueTrigger_(s); } catch (err) { console.error('ensureAccrueTrigger_ failed', err); } // ตั้งเวลา 09:00 ของวันส่งถัดไป
-  if (!s.autoSend) return;
   const t = accrueNow_();
   const props = PropertiesService.getScriptProperties();
   // วันส่งที่เลยเวลาแล้วแต่รอบวันนี้ยังไม่สำเร็จ (หมดเวลา / ผิดพลาด / ตัวตั้งเวลาไม่ทำงาน) → ลองใหม่
-  if (isAccrueDay_(s, t.y, t.m, t.d) && t.h >= Number(s.sendHour) && !props.getProperty('ACCRUE_DAY_' + t.y + '_' + t.m + '_' + t.d)) {
+  const accrueDue = s.autoSend && isAccrueDay_(s, t.y, t.m, t.d) && !props.getProperty('ACCRUE_DAY_' + t.y + '_' + t.m + '_' + t.d);
+  if (t.h >= Number(s.sendHour) && (accrueDue || clearPending_(s, t, props))) {
     accrueRunToday_('ลองใหม่');
     return;
   }
-  if (!s.lateWatch || t.d < ACCRUE_LATE_FROM || t.d > ACCRUE_LATE_TO) return;
+  if (!s.autoSend || !s.lateWatch || t.d < ACCRUE_LATE_FROM || t.d > ACCRUE_LATE_TO) return;
   accrueLease_(() => accrueDailyCheck_(s, t.y, t.m, props, ''));
 }
 
@@ -2844,7 +2850,7 @@ function nextAccrueMoment_(s, now) {
   for (let i = 0; i < 70; i++) {
     const last = new Date(y, m, 0).getDate();
     if (d > last) { d = 1; m++; if (m > 12) { m = 1; y++; } }
-    if (isAccrueDay_(s, y, m, d)) {
+    if ((s.autoSend && isAccrueDay_(s, y, m, d)) || isClearDay_(s, y, m, d)) {
       const iso = y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
       const at = Utilities.parseDate(iso + ' ' + String(s.sendHour).padStart(2, '0') + ':00', CONFIG.TIMEZONE, 'yyyy-MM-dd HH:mm');
       if (at.getTime() > now.getTime() + 60 * 1000) return { at, sig: iso + '@' + s.sendHour };
@@ -2858,7 +2864,7 @@ function nextAccrueMoment_(s, now) {
 function scheduleAccrueExact_(s) {
   const props = PropertiesService.getScriptProperties();
   const existing = ScriptApp.getProjectTriggers().filter(t => t.getHandlerFunction() === ACCRUE_EXACT_JOB);
-  const next = s.autoSend ? nextAccrueMoment_(s, new Date()) : null;
+  const next = s.autoSend || s.clearAuto ? nextAccrueMoment_(s, new Date()) : null;
   const sig = next ? next.sig : '';
   if (existing.length === (sig ? 1 : 0) && props.getProperty('ACCRUE_EXACT_AT') === sig) return;
   existing.forEach(t => ScriptApp.deleteTrigger(t));
@@ -2984,7 +2990,7 @@ function saveAccrueSettings(token, form) {
     sendHour: Math.min(23, Math.max(0, Math.floor(Number(form.sendHour === undefined ? s.sendHour : form.sendHour)))),
     lateWatch: form.lateWatch === undefined ? s.lateWatch : form.lateWatch === true || form.lateWatch === 'true' || form.lateWatch === 'on',
     clearAuto: form.clearAuto === undefined ? s.clearAuto : form.clearAuto === true || form.clearAuto === 'true' || form.clearAuto === 'on',
-    clearDay: Math.min(31, Math.max(1, Math.floor(Number(form.clearDay) || s.clearDay || 25))),
+    clearDay: Math.min(31, Math.max(1, Math.floor(Number(form.clearDay) || s.clearDay || 20))),
   };
   if (!next.to) throw new Error('กรุณากรอกอีเมลผู้รับ (ถึง)');
   PropertiesService.getScriptProperties().setProperty(ACCRUE_PROP, JSON.stringify(next));
@@ -3132,32 +3138,55 @@ function sendClear_(y, m, by) {
   });
   if (!verify.ok) verifyBlocked_(verify, by, [when, label, by, to.join(', '), cc.join(', '), String(f.data.net), '', f.name + ' ' + f.url]);
   // AI ตรวจเป็นความเห็นที่สอง — ไม่ขวาง ไม่เปลี่ยนยอดเช็ค
+  if (by === 'ส่งอัตโนมัติ') accrueStage_('File Clear: AI ตรวจ');
   const ai = aiCheck_('clear', y, m, by, { email: mail.plain, facts: verify.facts });
   const msg = { to: to.join(','), subject: mail.subject, body: mail.plain, htmlBody: mail.html, attachments: [f.blob] };
   if (cc.length) msg.cc = cc.join(',');
+  if (by === 'ส่งอัตโนมัติ') accrueStage_('File Clear: ส่งอีเมล');
   MailApp.sendEmail(msg);
+  props.setProperty('CLEAR_SENT_' + y + '_' + m, when); // จดทันทีหลังส่ง — ถ้าขั้นถัดไปหยุดกลางคัน รอบที่ลองใหม่จะไม่ส่งซ้ำ
   aiNotifyAdmins_(ai, 'ส่ง File Clear ' + (revised ? 'ฉบับแก้ไขเพิ่มเติม ' : '') + 'ถึง ' + to.join(', ') + ' แล้ว เมื่อ ' + when, by, verify);
   logAccrue_([when, label, by, to.join(', '), cc.join(', '), String(f.data.net), '', f.name + ' ' + f.url, revised ? 'ส่งแล้ว (แก้ไขเพิ่มเติม)' : 'ส่งแล้ว']);
-  props.setProperty('CLEAR_SENT_' + y + '_' + m, when);
   return { sent: true, at: when, to, cc, subject: mail.subject, revised, file: f.name, net: f.data.net, ai: aiBrief_(ai) };
 }
 
+/** วันส่ง File Clear ของเดือนนี้ (เดือนที่ไม่มีวันนั้น → วันสุดท้ายของเดือน) */
+function clearDayOf_(s, y, m) {
+  return Math.min(Number(s.clearDay) || 20, new Date(y, m, 0).getDate());
+}
+
+function isClearDay_(s, y, m, d) {
+  return !!s.clearAuto && d === clearDayOf_(s, y, m);
+}
+
+/** File Clear ของเดือนก่อนหน้ายังค้างส่ง (เลยวันส่งแล้ว ยังไม่ส่ง และวันนี้ยังลองไม่ครบ) */
+function clearPending_(s, t, props) {
+  if (!s.clearAuto || t.d < clearDayOf_(s, t.y, t.m)) return false;
+  const p = prevMonth_(t.y, t.m);
+  if (props.getProperty('CLEAR_SENT_' + p.y + '_' + p.m)) return false;
+  if (props.getProperty('CLEAR_DAY_' + t.y + '_' + t.m + '_' + t.d)) return false;
+  return Number(props.getProperty('CLEAR_TRY_' + t.y + '_' + t.m + '_' + t.d) || 0) < ACCRUE_MAX_TRIES;
+}
+
 /**
- * ตรวจรายวัน: ตั้งแต่วันที่ส่ง (ค่าเริ่มต้น 25) ของเดือนนี้ ถ้ายังไม่เคยส่ง File Clear ของเดือนก่อนหน้า → ส่ง (ครั้งเดียว)
- * ส่งไม่สำเร็จจะลองใหม่วันถัดไป
+ * ตรวจรายวัน: ตั้งแต่วันที่ส่ง (ค่าเริ่มต้น 20) ของเดือนนี้ ถ้ายังไม่เคยส่ง File Clear ของเดือนก่อนหน้า → ส่ง (ครั้งเดียว)
+ * เช่น 20 พ.ย. ส่ง File Clear เดือน ต.ค. · ไม่สำเร็จ (หมดเวลา / ผิดพลาด) ตัวตรวจรายชั่วโมงลองใหม่ สูงสุด 4 ครั้งต่อวัน แล้ววันถัดไปลองต่อ
  */
 function clearDailyCheck_(s, y, m, d, props) {
-  if (!s.clearAuto) return;
-  const last = new Date(y, m, 0).getDate();
-  if (d < Math.min(Number(s.clearDay) || 25, last)) return;
+  const t = { y, m, d };
+  if (!clearPending_(s, t, props)) return;
   const p = prevMonth_(y, m);
-  if (props.getProperty('CLEAR_SENT_' + p.y + '_' + p.m)) return;
   const dayKey = 'CLEAR_DAY_' + y + '_' + m + '_' + d;
-  if (props.getProperty(dayKey)) return;
-  props.setProperty(dayKey, nowText_());
+  const tryKey = 'CLEAR_TRY_' + y + '_' + m + '_' + d;
+  const tries = Number(props.getProperty(tryKey) || 0);
+  if (tries) audit_('system', 'clear_retry', ACCRUE_LOG_SHEET, '', { y: p.y, m: p.m, try: tries + 1, lastStage: props.getProperty('ACCRUE_STAGE') || '' });
+  props.setProperty(tryKey, String(tries + 1));
+  accrueStage_('File Clear ' + accrueMonthShort_(p.y, p.m) + ' ครั้งที่ ' + (tries + 1));
   try {
     const res = sendClear_(p.y, p.m, 'ส่งอัตโนมัติ');
     if (!res.sent) props.setProperty('CLEAR_SENT_' + p.y + '_' + p.m, 'ไม่มีรายการ ' + nowText_()); // ไม่ต้องตรวจซ้ำทุกวัน
+    props.setProperty(dayKey, nowText_());
+    props.deleteProperty('ACCRUE_STAGE');
   } catch (err) {
     logAccrue_([nowText_(), 'File Clear ' + accrueMonthShort_(p.y, p.m), 'ส่งอัตโนมัติ', s.to, s.cc, '', '', '', 'ส่งไม่สำเร็จ: ' + String(err && err.message || err)]);
     throw err;
@@ -3167,7 +3196,7 @@ function clearDailyCheck_(s, y, m, d, props) {
 /** วันส่ง File Clear ของเดือน y/m (วันที่ตั้งไว้ของเดือนถัดไป) เป็น ISO */
 function clearDueDate_(y, m, s) {
   const due = m === 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 };
-  const d = Math.min(Number(s.clearDay) || 25, new Date(due.y, due.m, 0).getDate());
+  const d = clearDayOf_(s, due.y, due.m);
   return due.y + '-' + String(due.m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
 }
 

@@ -1133,7 +1133,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     <div class="page-head">
       <div>
         <h1>File Clear ค่ารถคุ้มครอง</h1>
-        <p>สรุปค่ารถคุ้มครอง EXAT ของเดือนก่อนหน้า เพื่อสั่งจ่ายเช็คให้การทางพิเศษแห่งประเทศไทย — ส่งอีเมลอัตโนมัติวันที่ <span id="cl-day">25</span> ของเดือนถัดไป (ครั้งเดียวต่อเดือน)</p>
+        <p>สรุปค่ารถคุ้มครอง EXAT ของเดือนก่อนหน้า เพื่อสั่งจ่ายเช็คให้การทางพิเศษแห่งประเทศไทย — ส่งอีเมลอัตโนมัติวันที่ <span id="cl-day">20</span> ของเดือนถัดไป เวลา 09:00 น. (ครั้งเดียวต่อเดือน · กดส่งเองได้ด้วยปุ่ม “ส่ง File Clear ตอนนี้”)</p>
       </div>
       <div class="dash-ctl">
         <label class="field">ปี<select id="cl-year"></select></label>
@@ -4002,7 +4002,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     for (var yy = thisYear + 1; yy >= thisYear - 4; yy--) years.push(yy);
     $('#cl-year').innerHTML = years.map(function (y) { return '<option value="' + y + '"' + (y === d.y ? ' selected' : '') + '>พ.ศ. ' + be(y) + '</option>'; }).join('');
     $('#cl-month').innerHTML = TH_MONTHS_LONG.map(function (n, i) { return '<option value="' + (i + 1) + '"' + (i + 1 === d.m ? ' selected' : '') + '>' + n + '</option>'; }).join('');
-    $('#cl-day').textContent = st.clearDay || 25;
+    $('#cl-day').textContent = st.clearDay || 20;
 
     var status = d.sentAt ? 'ส่งแล้ว ' + stamp(d.sentAt) : (st.clearAuto ? 'จะส่งอัตโนมัติ ' + thaiDate(d.dueDate) + ' ' + st.sendHour + ':00 น.' : 'ปิดการส่งอัตโนมัติ');
     function kpi(cls, label, num, sub) {
@@ -4056,7 +4056,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     var f = $('#form-clear');
     if (!editingForm(f)) {
       f.clearAuto.checked = !!st.clearAuto;
-      f.clearDay.value = st.clearDay || 25;
+      f.clearDay.value = st.clearDay || 20;
     }
 
     $('#cl-log').innerHTML =
