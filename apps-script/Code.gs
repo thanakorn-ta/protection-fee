@@ -71,7 +71,7 @@ const API_FUNCTIONS = {
   register, login, logout, changePassword, requestPasswordReset, resetPasswordWithToken, getAppData, addLogEntry, addLogEntries, getDashboard, recalcCosts, listBookings, saveBooking, reviewBooking, cancelBooking, logBooking, uploadCancelFile, listCancelled, getCancelFile,
   getAccrue, downloadAccrue, sendAccrueNow, saveAccrueSettings, getClear, downloadClear, sendClearNow,
   listHolidays, saveHoliday, deleteHoliday,
-  addLocation, listUsers, updateUser, reviewUser, deleteUser, resetPassword, getNotifySettings, saveNotifySettings,
+  addLocation, listUsers, updateUser, reviewUser, deleteUser, unlockBookingEdits, resetPassword, getNotifySettings, saveNotifySettings,
   getPushConfig, savePushSub, removePushSub, pushInbox,
   aiCheckNow, getAiSettings, saveAiSettings, deleteAiKey, testAiKey, aiReviewBooking,
 };
@@ -829,6 +829,7 @@ const BOOKING_HEADERS = [
   'changeFrom', // JSON { places, placeTypes, date, time } ของรายการที่อนุมัติล่าสุด — ไม่อนุมัติการแก้ไข = กลับเป็นรายการนี้
   'changedBy', 'changedByName', 'changedAt', // ผู้แก้ไข / แทรกจุดที่ไปล่าสุดหลังอนุมัติ (ผู้ใช้คนใดก็ได้)
   'loggedDate', // วันที่ของแถวในตาราง EXAT / BEM ระหว่างรออนุมัติการย้ายวันที่ (ว่าง = ตรงกับ date)
+  'editQuota', // JSON { day, n, asked, askedBy } — ผู้ใช้แก้ไข / ย้ายวันที่ของการจองที่อนุมัติแล้วได้วันละ EDIT_LIMIT_PER_DAY ครั้ง
 ];
 
 // ประเภทงาน: เลือกหมวด + พิมพ์รายละเอียดเพิ่ม → บันทึกเป็นข้อความเดียว เช่น "งานติดตั้งสินค้า COM7"
@@ -921,6 +922,44 @@ function canAddBooking_(b, user) {
 // ผู้ใช้ที่แก้การจองที่อนุมัติแล้ว (หรือบันทึกลงตารางแล้ว) แก้ได้เฉพาะวันที่ เวลา จุดที่ไป ชนิดป้าย และหมายเหตุ
 const ADD_LOCKED_FIELDS = ['title', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'jobType', 'jobCategory', 'worker', 'phone'];
 
+// ผู้ใช้ (ไม่ใช่ผู้ดูแลระบบ) ส่งแก้ไข / แทรกจุด / ย้ายวันที่ของการจองที่อนุมัติแล้วได้วันละกี่ครั้งต่อการจอง (ทุกครั้งยังต้องรออนุมัติ)
+// ครบแล้ว → ต้องให้ผู้ดูแลระบบกด "อนุญาตให้แก้ไขเพิ่ม" ในการจองนั้นก่อน (ได้อีก EDIT_LIMIT_PER_DAY ครั้ง) · ผู้ดูแลระบบแก้ได้ไม่จำกัด
+const EDIT_LIMIT_PER_DAY = 5;
+
+function todayIso_() {
+  return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+}
+
+/** จำนวนครั้งที่แก้ไขวันนี้ของการจอง — ข้ามวันแล้วเริ่มนับใหม่ */
+function editQuota_(b) {
+  const today = todayIso_();
+  let q = {};
+  try { q = JSON.parse(b.editQuota || '{}') || {}; } catch (err) { q = {}; }
+  return q.day === today ? Object.assign({ n: 0 }, q, { n: Number(q.n) || 0 }) : { day: today, n: 0 };
+}
+
+/** ผู้ดูแลระบบอนุญาตให้แก้ไขการจองนี้เพิ่มได้อีก EDIT_LIMIT_PER_DAY ครั้งในวันนี้ */
+function unlockBookingEdits(token, id) {
+  const user = requireUser_(token, true);
+  let asked = '';
+  const b = withLock_(() => {
+    const sh = bookingsSheet_();
+    const cur = readBookings_(sh).find(x => x.id === String(id || ''));
+    if (!cur) throw new Error('ไม่พบการจองนี้');
+    const q = editQuota_(cur);
+    asked = q.askedBy || '';
+    cur.editQuota = JSON.stringify({ day: q.day, n: 0, unlockedBy: user.username, unlockedAt: nowText_() });
+    writeBooking_(sh, cur.row, cur);
+    return cur;
+  });
+  audit_(user.username, 'unlock_booking_edits', BOOKING_SHEET, b.row, { id: b.id, askedBy: asked });
+  if (asked) {
+    pushToUsers_([asked], (u, badge) => ({ title: 'อนุญาตให้แก้ไขการจองเพิ่มแล้ว', body: (b.jobType || b.title || '') + ' · ' + bookingDateShort_(b.date) + '\nแก้ไขได้อีก ' + EDIT_LIMIT_PER_DAY + ' ครั้งวันนี้',
+      badge, url: '/?booking=' + encodeURIComponent(b.id) + '&d=' + encodeURIComponent(b.date), tag: 'pf-' + b.id }), 'edit_unlocked', user.username);
+  }
+  return bookingOut_(b, user);
+}
+
 /** วันที่ของแถวในตาราง EXAT / BEM (ระหว่างรออนุมัติการย้าย แถวยังอยู่วันที่เดิม) */
 function rowDate_(b) {
   return b.loggedDate || b.date;
@@ -988,6 +1027,11 @@ function bookingOut_(b, user) {
   out.canAdd = canAddBooking_(b, user);
   out.loggedPlaces = loggedPlaces_(b).join('\n');
   out.moveFrom = b.status === 'cancelled' ? null : pendingMove_(b);
+  const quota = editQuota_(b);
+  out.editsToday = quota.n;
+  out.editLimit = EDIT_LIMIT_PER_DAY;
+  out.editBlocked = quota.n >= EDIT_LIMIT_PER_DAY;
+  out.editAsked = quota.asked === quota.day;
   out.canCancel = canCancelBooking_(b, user);
   out.cancelNeedsProof = cancelNeedsProof_(b);
   out.cancelFiles = cancelFilesOut_(b.cancelFiles);
@@ -1066,6 +1110,7 @@ function saveBooking(token, form) {
   });
   const id = String((form && form.id) || '').trim();
   let notice = ''; // แจ้งผู้ดูแลระบบหลังบันทึก: จองใหม่ หรือแก้แล้วส่งขออนุมัติใหม่
+  let limitHit = null;
   const saved = withLock_(() => {
     const sh = bookingsSheet_();
     const now = nowText_();
@@ -1088,6 +1133,18 @@ function saveBooking(token, form) {
       if (addOnly && b.status === 'approved' && !moved && !added.length && !removedNow.length && f.placeTypes === b.placeTypes && f.places === b.places && f.note === b.note) {
         throw new Error('ยังไม่ได้แก้ไข — ย้ายวันที่ หรือแก้ เพิ่ม แทรกจุดที่ไปอย่างน้อย 1 จุด');
       }
+      // จำกัดวันละ EDIT_LIMIT_PER_DAY ครั้งต่อการจอง (ผู้ใช้เท่านั้น) — ครบแล้วต้องให้ผู้ดูแลระบบอนุญาตก่อน
+      const quota = editQuota_(b);
+      const counts = addOnly && (moved || added.length || removedNow.length);
+      if (counts && quota.n >= EDIT_LIMIT_PER_DAY) {
+        limitHit = { b: Object.assign({}, b), notify: quota.asked !== quota.day };
+        if (limitHit.notify) {
+          b.editQuota = JSON.stringify(Object.assign(quota, { asked: quota.day, askedBy: user.username }));
+          writeBooking_(sh, b.row, b); // เปลี่ยนเฉพาะช่องนับครั้ง — ข้อมูลการจองไม่เปลี่ยน
+        }
+        return null;
+      }
+      if (counts) quota.n += 1;
       if (b.loggedRows && !b.loggedPlaces) b.loggedPlaces = oldPlaces.join('\n');
       const wasApproved = b.status === 'approved';
       const before = { places: b.places, placeTypes: b.placeTypes, date: b.date, time: b.time };
@@ -1100,6 +1157,7 @@ function saveBooking(token, form) {
         } catch (err) { /* ข้อมูลเดิมอ่านไม่ได้ — คงไว้ */ }
       }
       Object.assign(b, f, { updatedAt: now });
+      if (counts) b.editQuota = JSON.stringify(quota);
       if (b.loggedDate === b.date) b.loggedDate = ''; // ย้ายกลับมาวันที่เดิม = แถวตรงกันแล้ว
       const logged = placeLines_(b.loggedPlaces);
       if (b.loggedRows) {
@@ -1141,6 +1199,15 @@ function saveBooking(token, form) {
     }
     return b;
   });
+  if (limitHit) {
+    audit_(user.username, 'edit_limit_reached', BOOKING_SHEET, limitHit.b.row, { id: limitHit.b.id, limit: EDIT_LIMIT_PER_DAY });
+    if (limitHit.notify) { // แจ้งผู้ดูแลระบบครั้งเดียวต่อวัน
+      notifyAdmins_('editLimit', Object.assign({}, limitHit.b, { changedBy: user.username, changedByName: user.fullName || user.username }), user.username);
+      pushAdmins_('editLimit', Object.assign({}, limitHit.b, { changedByName: user.fullName || user.username }), user.username);
+    }
+    throw new Error('วันนี้แก้ไขการจองนี้ครบ ' + EDIT_LIMIT_PER_DAY + ' ครั้งแล้ว — ต้องให้ผู้ดูแลระบบกด “อนุญาตให้แก้ไขเพิ่ม” ในการจองนี้ก่อน' +
+      (limitHit.notify ? ' (แจ้งผู้ดูแลระบบให้แล้ว)' : ''));
+  }
   // ผู้ดูแลระบบย้ายวันที่ / แก้จุดที่ไปของการจองที่อนุมัติและบันทึกแล้ว → ปรับตารางทันที (ไม่ต้องอนุมัติซ้ำ)
   const out = user.role === 'admin' && saved.status === 'approved' && saved.loggedRows &&
     (saved.loggedDate || placeLines_(saved.addedPlaces).length || placeLines_(saved.removedPlaces).length)
@@ -1890,6 +1957,7 @@ const NOTIFY_TEXT = {
   pending: { tag: 'รอการอนุมัติ', intro: 'มีการจองรถคุ้มครองใหม่ รอผู้ดูแลระบบอนุมัติ', button: 'เปิดการจองเพื่ออนุมัติ' },
   resubmit: { tag: 'รอการอนุมัติ', intro: 'ผู้จองแก้ไขการจองที่ไม่อนุมัติ แล้วส่งขออนุมัติใหม่', button: 'เปิดการจองเพื่ออนุมัติ' },
   addition: { tag: 'รอการอนุมัติ', intro: 'มีการแก้ไข / แทรกจุดที่ไปในการจองที่อนุมัติแล้ว — รออนุมัติอีกครั้ง (อนุมัติแล้วระบบปรับตาราง EXAT / BEM ให้ตรง: บันทึกจุดใหม่ และนำจุดที่เอาออกออกจากตาราง)', button: 'เปิดการจองเพื่ออนุมัติ' },
+  editLimit: { tag: 'ขออนุญาตแก้ไขเพิ่ม', intro: 'ผู้ใช้แก้ไขการจองนี้ครบ ' + EDIT_LIMIT_PER_DAY + ' ครั้งในวันนี้แล้ว และต้องการแก้ไขเพิ่ม — เปิดการจองแล้วกด “อนุญาตให้แก้ไขเพิ่ม” (การแก้ไขทุกครั้งยังต้องให้ผู้ดูแลระบบอนุมัติ)', button: 'เปิดการจอง' },
   dateMove: { tag: 'รอการอนุมัติ', intro: 'มีการขอย้ายวันที่ใช้รถคุ้มครอง — รอผู้ดูแลระบบอนุมัติอีกครั้ง (อนุมัติแล้วระบบย้ายแถวในตาราง EXAT / BEM ไปวันที่ใหม่ให้เอง)', button: 'เปิดการจองเพื่ออนุมัติ' },
   changeRejected: { tag: 'ไม่อนุมัติการแก้ไข', intro: 'การย้ายวันที่ / แก้ไขจุดที่ไปไม่ได้รับการอนุมัติ — การจองกลับเป็นรายการเดิมที่อนุมัติแล้ว', button: 'ดูการจองในระบบ' },
   cancelled: { tag: 'ยกเลิก', intro: 'การจองรถคุ้มครองถูกยกเลิก', button: 'ดูเหตุผล รูป และวิดีโอในระบบ' },
@@ -2321,6 +2389,7 @@ const PUSH_TEXT = {
   pending: b => ({ title: 'จองรถคุ้มครองใหม่ — รออนุมัติ', body: 'โดย ' + (b.requestedByName || b.requestedBy) }),
   resubmit: b => ({ title: 'ส่งขออนุมัติใหม่', body: 'แก้ไขโดย ' + (b.requestedByName || b.requestedBy) }),
   addition: b => ({ title: 'แก้ไข / แทรกจุดที่ไป — รออนุมัติอีกครั้ง', body: 'โดย ' + (b.changedByName || b.requestedByName || b.requestedBy) + ' · เพิ่ม ' + placeLines_(b.addedPlaces).length + ' จุด' + (placeLines_(b.removedPlaces).length ? ' · เอาออก ' + placeLines_(b.removedPlaces).length + ' จุด' : '') }),
+  editLimit: b => ({ title: 'ขออนุญาตแก้ไขการจองเพิ่ม', body: (b.changedByName || '') + ' แก้ไขครบ ' + EDIT_LIMIT_PER_DAY + ' ครั้งวันนี้แล้ว — เปิดการจองเพื่ออนุญาต' }),
   dateMove: b => ({ title: 'ขอย้ายวันที่ — รออนุมัติอีกครั้ง', body: 'โดย ' + (b.changedByName || b.requestedByName || b.requestedBy) + ' · ' + moveText_(b) }),
   cancelled: b => ({ title: 'ยกเลิกการจองรถคุ้มครอง', body: 'โดย ' + (b.cancelledByName || b.cancelledBy || '') + (b.cancelReason ? ' · ' + b.cancelReason : '') }),
   approved: b => ({ title: 'อนุมัติการจองแล้ว ✓', body: b.reviewNote ? 'หมายเหตุ: ' + b.reviewNote : '' }),

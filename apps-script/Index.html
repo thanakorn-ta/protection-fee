@@ -477,6 +477,8 @@ input.upper::placeholder { text-transform: none; }
 .kv dt { color: var(--muted); }
 .kv dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .kv dd .place-edit-btn { display: flex; margin-top: 10px; min-height: 44px; white-space: normal; border-color: var(--green); color: var(--green-ink); font-weight: 600; }
+.kv dd .quota-note { display: block; margin-top: 6px; font-size: 13px; color: var(--muted); white-space: normal; }
+.kv dd .quota-note.full { color: var(--danger); font-weight: 600; }
 .msg-box { background: var(--blue-soft); border-radius: 12px; padding: 12px 14px; font-size: 14px; white-space: pre-wrap; line-height: 1.65; }
 .msg-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
 .history { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 2px; }
@@ -3216,6 +3218,15 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     var b = S.bk;
     $('#bk-form').hidden = true;
     $('#bk-view').hidden = false;
+    // ผู้ใช้แก้ไขการจองที่อนุมัติแล้วได้วันละ editLimit ครั้ง (ทุกครั้งยังต้องรออนุมัติ) — ครบแล้วรอผู้ดูแลระบบอนุญาต · ผู้ดูแลระบบไม่จำกัด
+    var isAdminUser = S.user.role === 'admin';
+    var limited = b.canAdd && !isAdminUser && !!b.editBlocked;
+    var editable = b.canAdd && !limited;
+    var quotaNote = b.canAdd && !isAdminUser && b.editLimit
+      ? '<small class="quota-note' + (limited ? ' full' : '') + '">' + (limited
+        ? 'วันนี้แก้ไขการจองนี้ครบ ' + esc(b.editLimit) + ' ครั้งแล้ว — ' + (b.editAsked ? 'แจ้งผู้ดูแลระบบแล้ว รอกด “อนุญาตให้แก้ไขเพิ่ม”' : 'ต้องให้ผู้ดูแลระบบอนุญาตก่อน')
+        : 'วันนี้แก้ไขแล้ว ' + esc(b.editsToday || 0) + '/' + esc(b.editLimit) + ' ครั้ง (ทุกครั้งต้องรอผู้ดูแลระบบอนุมัติ)') + '</small>'
+      : '';
     $('#bk-modal-title').textContent = b.jobType || b.title;
     $('#bk-modal-status').innerHTML = '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status] || b.status) + '</span>';
     var kv = [
@@ -3257,8 +3268,9 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     $('#bk-view').innerHTML =
       '<dl class="kv">' + kv.map(function (x) {
         // ปุ่มแก้ไข / แทรกจุดที่ไป อยู่ติดกับรายการจุดที่ไป (เห็นได้ทันทีโดยไม่ต้องเลื่อนลง)
-        var extra = x[0] === 'จุดที่ไป' && b.canAdd ? '<button type="button" class="btn sm place-edit-btn" id="bk-add-top">✎ แก้ไข / แทรกจุดที่ไป</button>'
-          : x[0] === 'วันที่' && b.canAdd ? '<button type="button" class="btn sm place-edit-btn" id="bk-move-top">✎ ย้ายวันที่</button>' : '';
+        var extra = x[0] === 'จุดที่ไป' && editable ? '<button type="button" class="btn sm place-edit-btn" id="bk-add-top">✎ แก้ไข / แทรกจุดที่ไป</button>' + quotaNote
+          : x[0] === 'จุดที่ไป' && limited ? quotaNote
+          : x[0] === 'วันที่' && editable ? '<button type="button" class="btn sm place-edit-btn" id="bk-move-top">✎ ย้ายวันที่</button>' : '';
         return '<dt>' + esc(x[0]) + '</dt><dd>' + esc(x[1]) + extra + '</dd>';
       }).join('') + '</dl>' +
       '<div><div class="msg-head"><span>ข้อความแจ้งการทาง</span><button type="button" class="btn sm" id="bk-copy">คัดลอก</button></div>' +
@@ -3267,7 +3279,8 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       review +
       '<div class="actions">' +
         (b.canEdit ? '<button type="button" class="btn" id="bk-edit">แก้ไข</button>' : '') +
-        (b.canAdd ? '<button type="button" class="btn" id="bk-add">✎ แก้ไข / แทรกจุดที่ไป</button>' : '') +
+        (editable ? '<button type="button" class="btn" id="bk-add">✎ แก้ไข / แทรกจุดที่ไป</button>' : '') +
+        (S.user.role === 'admin' && b.editBlocked ? '<button type="button" class="btn" id="bk-unlock">อนุญาตให้แก้ไขเพิ่มวันนี้ (ผู้ใช้แก้ครบ ' + esc(b.editLimit) + ' ครั้งแล้ว)</button>' : '') +
         (b.canLog ? '<button type="button" class="btn primary" id="bk-log">บันทึกลงตาราง ' + esc(b.provider) + '</button>' : '') +
         (b.canCancel ? '<button type="button" class="btn danger" id="bk-cancel">ยกเลิกการจอง</button>' : '') +
       '</div>' +
@@ -3300,6 +3313,20 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     if (btn.id === 'bk-edit') return openBookingForm(b);
     if (btn.id === 'bk-add' || btn.id === 'bk-add-top') return openBookingForm(b, null, 'add');
     if (btn.id === 'bk-move-top') return openBookingForm(b, null, 'move');
+    if (btn.id === 'bk-unlock') {
+      btn.disabled = true;
+      try {
+        var un = await api('unlockBookingEdits', S.token, b.id);
+        storeBooking(un);
+        S.bk = un;
+        renderBookingView();
+        toast('อนุญาตให้แก้ไขการจองนี้ได้อีก ' + un.editLimit + ' ครั้งวันนี้แล้ว');
+      } catch (err) {
+        toast(errText(err), true);
+        btn.disabled = false;
+      }
+      return;
+    }
     if (btn.id === 'bk-cancel') return renderCancelForm();
     if (btn.id === 'cx-back') { dropCxFiles(); return renderBookingView(); }
     if (btn.id === 'cx-submit') return submitCancel();
