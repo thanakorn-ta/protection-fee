@@ -1272,7 +1272,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
         </div>
       </section>
       <div class="add-banner" id="bk-add-banner" hidden>
-        <b>ย้ายวันที่ / แก้ไขจุดที่ไป</b> — เปลี่ยนวันที่และเวลาได้ที่ข้อ 1 · แก้ (✎) เอาออก (×) หรือแทรกจุดใหม่ได้ทุกตำแหน่ง รวมจุดที่บันทึกลงตารางแล้ว <span class="lock-ico">🔒</span> ·
+        <b>แก้ไขการจอง</b> — แก้ได้ทุกช่อง (วันที่ เวลา สายทาง จุดนัดพบ ประเภทงาน ผู้เข้างาน เบอร์ หมายเหตุ) ยกเว้นแจ้งใช้รถ EXAT / BEM · แก้ (✎) เอาออก (×) หรือแทรกจุดที่ไปได้ทุกตำแหน่ง รวมจุดที่บันทึกลงตารางแล้ว <span class="lock-ico">🔒</span> ·
         ส่งแล้วการจองจะกลับเป็น “รออนุมัติ” (อนุมัติได้เฉพาะผู้ดูแลระบบ) — อนุมัติแล้วระบบย้ายและปรับตาราง EXAT / BEM ให้ตรงเอง
       </div>
 
@@ -3249,7 +3249,8 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     }
     if (b.status === 'cancelled') hist.push('ยกเลิกเมื่อ ' + stamp(b.updatedAt));
     if (b.loggedRows) hist.push('บันทึกลงตาราง ' + b.loggedRows + ' เมื่อ ' + stamp(b.loggedAt));
-    if (b.changedAt) hist.push('แก้ไข / แทรกจุดที่ไปโดย ' + (b.changedByName || b.changedBy) + ' เมื่อ ' + stamp(b.changedAt));
+    if (b.changedAt) hist.push('แก้ไขการจองโดย ' + (b.changedByName || b.changedBy) + ' เมื่อ ' + stamp(b.changedAt));
+    if (b.status === 'pending' && (b.fieldChanges || []).length) hist.push('แก้ไขข้อมูล — รออนุมัติ: ' + b.fieldChanges.join(' · '));
     if (b.status === 'pending' && (b.addedPlaces || b.removedPlaces)) {
       hist.push('แก้ไข / แทรกจุดที่ไป — รออนุมัติอีกครั้ง' +
         (b.addedPlaces ? ' · จุดใหม่ ' + lines(b.addedPlaces).length + ' จุด: ' + lines(b.addedPlaces).join(', ') : '') +
@@ -3279,14 +3280,14 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       review +
       '<div class="actions">' +
         (b.canEdit ? '<button type="button" class="btn" id="bk-edit">แก้ไข</button>' : '') +
-        (editable ? '<button type="button" class="btn" id="bk-add">✎ แก้ไข / แทรกจุดที่ไป</button>' : '') +
+        (editable ? '<button type="button" class="btn" id="bk-add">✎ แก้ไขการจอง</button>' : '') +
         (S.user.role === 'admin' && b.editBlocked ? '<button type="button" class="btn" id="bk-unlock">อนุญาตให้แก้ไขเพิ่มวันนี้ (ผู้ใช้แก้ครบ ' + esc(b.editLimit) + ' ครั้งแล้ว)</button>' : '') +
         (b.canLog ? '<button type="button" class="btn primary" id="bk-log">บันทึกลงตาราง ' + esc(b.provider) + '</button>' : '') +
         (b.canCancel ? '<button type="button" class="btn danger" id="bk-cancel">ยกเลิกการจอง</button>' : '') +
       '</div>' +
       (b.status === 'pending' ? '<p class="sub">เมื่อผู้ดูแลระบบอนุมัติ ระบบจะบันทึกทุกจุดลงตาราง ' + esc(b.provider) + ' ในชีท และคิดค่าใช้จ่ายตามอัตราให้เอง</p>' : '') +
-      (b.canAdd && !b.canEdit ? '<p class="sub">' + (b.status === 'approved' ? 'อนุมัติแล้ว — ' : '') + 'ผู้ใช้ทุกคนย้ายวันที่ แก้ เอาออก หรือแทรกจุดที่ไปได้ (ต้องให้ผู้ดูแลระบบอนุมัติอีกครั้ง) · เปลี่ยนข้อมูลอื่นติดต่อผู้ดูแลระบบ</p>' : '') +
-      (b.loggedRows && b.canEdit && S.user.role === 'admin' ? '<p class="sub">บันทึกลงตารางแล้ว — ย้ายวันที่หรือแก้จุดที่ไประบบปรับตารางให้เอง · ถ้าแก้ข้อมูลอื่น ต้องแก้แถวในชีทเองด้วย</p>' : '');
+      (b.canAdd && !b.canEdit ? '<p class="sub">' + (b.status === 'approved' ? 'อนุมัติแล้ว — ' : '') + 'ผู้ใช้ทุกคนแก้ไขการจองได้ทุกช่อง ยกเว้นแจ้งใช้รถ EXAT / BEM (ต้องให้ผู้ดูแลระบบอนุมัติอีกครั้ง)</p>' : '') +
+      (b.loggedRows && b.canEdit && S.user.role === 'admin' ? '<p class="sub">บันทึกลงตารางแล้ว — แก้วันที่ จุดที่ไป สายทาง ประเภทงาน หรือผู้เข้างาน ระบบปรับแถวในตารางให้เอง · เปลี่ยนแจ้งใช้รถ EXAT / BEM ต้องยกเลิกแล้วจองใหม่</p>' : '');
   }
 
   /** ผลการบันทึกลงตาราง (หลังอนุมัติ หรือกด "บันทึกลงตาราง") */
@@ -4275,12 +4276,13 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     syncPick(form, 'meetingPoint');
     refreshWorkers(form);
     $$('input, select, textarea, [data-seg] button', form).forEach(function (el) {
-      el.disabled = S.bkAdd && !(el.name === 'note' || el.name === 'date' || el.name === 'time' || el.dataset.pick === 'time' || el.type === 'hidden' || el.closest('.place-add') || el.closest('#bk-place-list'));
+      // แก้การจองที่อนุมัติแล้ว: แก้ได้ทุกช่อง ยกเว้นแจ้งใช้รถ EXAT / BEM (แถวอยู่คนละตาราง)
+      el.disabled = S.bkAdd && !!el.closest('[data-seg="provider"]');
     });
     renderPlaceList(); // ปุ่มลบของจุดที่ล็อก
     $('#bk-add-banner').hidden = !S.bkAdd;
     $('[type="submit"]', form).textContent = S.bkAdd && S.user.role !== 'admin' ? 'ส่งขออนุมัติอีกครั้ง' : 'บันทึกการจอง';
-    $('#bk-modal-title').textContent = S.bkMove ? 'ย้ายวันที่' : S.bkAdd ? 'แก้ไข / แทรกจุดที่ไป' : b ? 'แก้ไขการจอง' : 'จองรถคุ้มครอง';
+    $('#bk-modal-title').textContent = S.bkMove ? 'ย้ายวันที่' : b ? 'แก้ไขการจอง' : 'จองรถคุ้มครอง';
     $('#bk-modal-status').innerHTML = b ? '<span class="status ' + esc(b.status) + '">' + esc(BK_STATUS[b.status]) + '</span>' : '';
     $('#bk-view').hidden = true;
     form.hidden = false;
@@ -4478,9 +4480,10 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
     if (S.bkMove && !moved && !minusPlaces(lines(data.places), S.bkOrig).length && !minusPlaces(S.bkOrig, lines(data.places)).length) {
       return bad(form.date, 'ยังไม่ได้เปลี่ยนวันที่ — เลือกวันที่ใหม่ที่ต้องการย้ายไป');
     }
-    if (adding && !moved && S.bk.status === 'approved' && !minusPlaces(lines(data.places), S.bkOrig).length && !minusPlaces(S.bkOrig, lines(data.places)).length &&
-      data.places === lines(S.bk.places).join('\n') && (data.placeTypes || '') === (S.bk.placeTypes || '') && (data.note || '') === (S.bk.note || '')) {
-      return bad($('#bk-place-pick'), 'ยังไม่ได้แก้ไข — ย้ายวันที่ หรือแก้ เอาออก แทรกจุดที่ไปอย่างน้อย 1 จุด');
+    var infoSame = ['meetingPoint', 'expressway', 'jobType', 'worker', 'phone', 'note'].every(function (k) { return norm(data[k] || '') === norm(S.bk[k] || ''); }) &&
+      (!S.bk.mediaType || data.mediaType === S.bk.mediaType);
+    if (adding && !moved && S.bk.status === 'approved' && infoSame && data.places === lines(S.bk.places).join('\n') && (data.placeTypes || '') === (S.bk.placeTypes || '')) {
+      return bad($('#bk-place-pick'), 'ยังไม่ได้แก้ไข — แก้ข้อมูล ย้ายวันที่ หรือแก้ เอาออก แทรกจุดที่ไปอย่างน้อย 1 อย่าง');
     }
     if (!data.worker.trim()) return bad(form.worker.hidden ? form.querySelector('[data-pick="worker"]') : form.worker, 'กรุณาเลือกหรือกรอกชื่อผู้เข้างาน');
     if (!data.phone.trim()) return bad(form.phone, 'กรุณากรอกเบอร์ติดต่อผู้เข้างาน');
@@ -4501,7 +4504,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
       closeModal(); // บันทึกสำเร็จ = ตกลง ปิดหน้าจอง
       if (!editing || !S.cal.range || res.date < S.cal.range[0] || res.date > S.cal.range[1]) await loadSchedule(true);
       else renderSchedule();
-      toast((adding && res.status === 'pending' ? (moved ? 'ส่งขอย้ายวันที่แล้ว' : 'ส่งแก้ไข / แทรกจุดที่ไปแล้ว') + ' — รอผู้ดูแลระบบอนุมัติอีกครั้ง'
+      toast((adding && res.status === 'pending' ? (moved ? 'ส่งขอย้ายวันที่แล้ว' : 'ส่งแก้ไขการจองแล้ว') + ' — รอผู้ดูแลระบบอนุมัติอีกครั้ง'
         : editing ? (moved ? 'ย้ายวันที่แล้ว' : 'บันทึกการแก้ไขแล้ว') + moveResultText(res) : 'ส่งคำขอจองแล้ว — รอผู้ดูแลระบบอนุมัติ') + notifyText(res.notify, 'ผู้ดูแลระบบ'),
         !!(res.move && (res.move.error || res.move.skipped.length)));
       reviewBookingByAi(res.id);

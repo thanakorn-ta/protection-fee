@@ -920,7 +920,22 @@ function canAddBooking_(b, user) {
 }
 
 // ผู้ใช้ที่แก้การจองที่อนุมัติแล้ว (หรือบันทึกลงตารางแล้ว) แก้ได้เฉพาะวันที่ เวลา จุดที่ไป ชนิดป้าย และหมายเหตุ
-const ADD_LOCKED_FIELDS = ['title', 'mediaType', 'provider', 'expressway', 'meetingPoint', 'jobType', 'jobCategory', 'worker', 'phone'];
+// (แจ้งใช้รถ EXAT / BEM เปลี่ยนไม่ได้ — แถวอยู่คนละตาราง ต้องยกเลิกแล้วจองใหม่)
+const ADD_LOCKED_FIELDS = ['provider'];
+// ข้อมูลอื่นที่ผู้ใช้แก้ได้หลังอนุมัติ (ต้องรออนุมัติ · ไม่อนุมัติ = กลับเป็นค่าเดิม)
+const BOOKING_INFO_FIELDS = [
+  ['meetingPoint', 'จุดนัดพบ'], ['expressway', 'สายทาง'], ['jobType', 'ประเภทงาน'], ['jobCategory', ''], ['title', ''],
+  ['worker', 'ผู้เข้างาน'], ['phone', 'เบอร์ติดต่อ'], ['mediaType', 'Media Type หลัก'], ['note', 'หมายเหตุ'],
+];
+
+/** ข้อมูลที่แก้ไขแล้วรออนุมัติ เช่น ["จุดนัดพบ: ด่าน A → ด่าน B"] (เทียบกับรายการที่อนุมัติล่าสุด) */
+function fieldChanges_(b) {
+  let from = null;
+  try { from = b.changeFrom ? JSON.parse(b.changeFrom) : null; } catch (err) { from = null; }
+  if (!from) return [];
+  return BOOKING_INFO_FIELDS.filter(([k, label]) => label && from[k] !== undefined && norm_(from[k] || '') !== norm_(b[k] || ''))
+    .map(([k, label]) => label + ': ' + (String(from[k] || '').trim() || '—') + ' → ' + (String(b[k] || '').trim() || '—'));
+}
 
 // ผู้ใช้ (ไม่ใช่ผู้ดูแลระบบ) ส่งแก้ไข / แทรกจุด / ย้ายวันที่ของการจองที่อนุมัติแล้วได้วันละกี่ครั้งต่อการจอง (ทุกครั้งยังต้องรออนุมัติ)
 // ครบแล้ว → ต้องให้ผู้ดูแลระบบกด "อนุญาตให้แก้ไขเพิ่ม" ในการจองนั้นก่อน (ได้อีก EDIT_LIMIT_PER_DAY ครั้ง) · ผู้ดูแลระบบแก้ได้ไม่จำกัด
@@ -1027,6 +1042,7 @@ function bookingOut_(b, user) {
   out.canAdd = canAddBooking_(b, user);
   out.loggedPlaces = loggedPlaces_(b).join('\n');
   out.moveFrom = b.status === 'cancelled' ? null : pendingMove_(b);
+  out.fieldChanges = b.status === 'pending' ? fieldChanges_(b) : [];
   const quota = editQuota_(b);
   out.editsToday = quota.n;
   out.editLimit = EDIT_LIMIT_PER_DAY;
@@ -1130,12 +1146,17 @@ function saveBooking(token, form) {
       const removedNow = minusPlaces_(oldPlaces, newPlaces);
       // ย้ายวันที่ / เวลา — แถวในตารางยังอยู่วันที่เดิมจนกว่าผู้ดูแลระบบจะอนุมัติ
       const moved = f.date !== b.date || f.time !== String(b.time || '').trim();
-      if (addOnly && b.status === 'approved' && !moved && !added.length && !removedNow.length && f.placeTypes === b.placeTypes && f.places === b.places && f.note === b.note) {
-        throw new Error('ยังไม่ได้แก้ไข — ย้ายวันที่ หรือแก้ เพิ่ม แทรกจุดที่ไปอย่างน้อย 1 จุด');
+      // ข้อมูลอื่น (จุดนัดพบ สายทาง ประเภทงาน ผู้เข้างาน เบอร์ Media Type ของจุด หมายเหตุ)
+      // (ไม่นับ jobCategory / title ที่คำนวณจากประเภทงาน · Media Type หลักของการจองเก่าที่ว่างไว้ไม่นับ)
+      const infoChanged = BOOKING_INFO_FIELDS.some(([k, label]) => label && !(k === 'mediaType' && !b.mediaType) &&
+        norm_(f[k] === undefined ? '' : f[k]) !== norm_(b[k] || '')) ||
+        String(f.placeTypes || '') !== String(b.placeTypes || '') || f.places !== b.places;
+      if (addOnly && b.status === 'approved' && !moved && !added.length && !removedNow.length && !infoChanged) {
+        throw new Error('ยังไม่ได้แก้ไข — แก้ข้อมูล ย้ายวันที่ หรือแก้ เพิ่ม แทรกจุดที่ไปอย่างน้อย 1 อย่าง');
       }
       // จำกัดวันละ EDIT_LIMIT_PER_DAY ครั้งต่อการจอง (ผู้ใช้เท่านั้น) — ครบแล้วต้องให้ผู้ดูแลระบบอนุญาตก่อน
       const quota = editQuota_(b);
-      const counts = addOnly && (moved || added.length || removedNow.length);
+      const counts = addOnly && (moved || added.length || removedNow.length || infoChanged);
       if (counts && quota.n >= EDIT_LIMIT_PER_DAY) {
         limitHit = { b: Object.assign({}, b), notify: quota.asked !== quota.day };
         if (limitHit.notify) {
@@ -1148,12 +1169,15 @@ function saveBooking(token, form) {
       if (b.loggedRows && !b.loggedPlaces) b.loggedPlaces = oldPlaces.join('\n');
       const wasApproved = b.status === 'approved';
       const before = { places: b.places, placeTypes: b.placeTypes, date: b.date, time: b.time };
+      BOOKING_INFO_FIELDS.forEach(([k]) => { before[k] = b[k] || ''; });
       if (b.loggedRows && f.date !== b.date && !b.loggedDate) b.loggedDate = b.date;
-      if (moved && b.changeFrom) {
-        // รายการแก้จุดที่ค้างอนุมัติจากก่อนมีการย้ายวันที่ — จำวันที่เดิมไว้ด้วย
+      if (b.changeFrom) {
+        // รายการแก้ไขที่ค้างอนุมัติจากรุ่นก่อน (จำแค่จุดที่ไป / วันที่) — เติมค่าเดิมของช่องที่ยังไม่ได้จำ (ค่าตอนนี้ยังเป็นค่าที่อนุมัติ)
         try {
           const prevFrom = JSON.parse(b.changeFrom);
-          if (prevFrom.date === undefined) b.changeFrom = JSON.stringify(Object.assign(prevFrom, { date: before.date, time: before.time }));
+          let patched = false;
+          Object.keys(before).forEach(k => { if (prevFrom[k] === undefined) { prevFrom[k] = before[k]; patched = true; } });
+          if (patched) b.changeFrom = JSON.stringify(prevFrom);
         } catch (err) { /* ข้อมูลเดิมอ่านไม่ได้ — คงไว้ */ }
       }
       Object.assign(b, f, { updatedAt: now });
@@ -1164,7 +1188,7 @@ function saveBooking(token, form) {
         b.addedPlaces = minusPlaces_(newPlaces, logged).join('\n');
         b.removedPlaces = minusPlaces_(logged, newPlaces).join('\n');
       }
-      const changed = moved || added.length || removedNow.length;
+      const changed = moved || added.length || removedNow.length || infoChanged;
       if (wasApproved && changed && !isAdmin) {
         b.status = 'pending'; // ย้ายวันที่ / แก้ไข / แทรกจุดที่ไป → อนุมัติอีกครั้ง (อนุมัติแล้วปรับตารางให้ตรง)
         b.reviewedAt = '';
@@ -1209,8 +1233,8 @@ function saveBooking(token, form) {
       (limitHit.notify ? ' (แจ้งผู้ดูแลระบบให้แล้ว)' : ''));
   }
   // ผู้ดูแลระบบย้ายวันที่ / แก้จุดที่ไปของการจองที่อนุมัติและบันทึกแล้ว → ปรับตารางทันที (ไม่ต้องอนุมัติซ้ำ)
-  const out = user.role === 'admin' && saved.status === 'approved' && saved.loggedRows &&
-    (saved.loggedDate || placeLines_(saved.addedPlaces).length || placeLines_(saved.removedPlaces).length)
+  // (รวมสายทาง ประเภทงาน ผู้เข้างาน Media Type ที่แก้ — แถวในตารางเปลี่ยนตาม)
+  const out = user.role === 'admin' && saved.status === 'approved' && saved.loggedRows
     ? syncApprovedPlaces_(saved, user) : bookingOut_(saved, user);
   if (notice) {
     out.notify = notifyAdmins_(notice, saved, user.username);
@@ -1237,6 +1261,7 @@ function reviewBooking(token, id, decision, note) {
       // ไม่อนุมัติการย้ายวันที่ / แก้ไข / แทรกจุด → กลับเป็นรายการเดิมที่อนุมัติแล้ว (ตารางไม่เปลี่ยน)
       Object.assign(b, { places: from.places || b.places, placeTypes: from.placeTypes || '', status: 'approved', addedPlaces: '', removedPlaces: '', changeFrom: '', changedBy: '', changedByName: '', changedAt: '' });
       if (from.date) Object.assign(b, { date: from.date, time: from.time === undefined ? b.time : from.time, loggedDate: '' });
+      BOOKING_INFO_FIELDS.forEach(([k]) => { if (from[k] !== undefined) b[k] = from[k]; });
       kind = 'changeRejected';
     } else {
       b.status = decision;
@@ -1351,7 +1376,60 @@ function syncPlacesAfterMove_(b, user) {
   const out = needLog ? logBookingSafe_(b, user) : bookingOut_(b, user);
   if (unlog) out.unlog = { removed: unlog.removed, skipped: unlog.skipped };
   if (replaced) out.replaced = replaced.rows;
+  // ข้อมูลที่แก้ (สายทาง ประเภทงาน ผู้เข้างาน Media Type) → แถวในตารางของการจองนี้ให้ตรง (เขียนเฉพาะช่องที่ต่าง)
+  try {
+    const fresh = readBookings_(bookingsSheet_()).find(x => x.id === b.id) || b;
+    const refreshed = fresh.loggedRows ? refreshLoggedRows_(fresh, user) : null;
+    if (refreshed) out.refreshed = refreshed;
+  } catch (err) {
+    console.error('refreshLoggedRows_ failed', err);
+  }
   return out;
+}
+
+/** แถวของการจองในตาราง EXAT / BEM: สายทาง โครงการ ประเภทงาน ผู้เข้างาน ให้ตรงกับการจอง — เลขลำดับ วันที่ ค่าอาหาร / ค่ารถ ไม่เปลี่ยน */
+function refreshLoggedRows_(b, user) {
+  const m = /^(EXAT|BEM)\s*ลำดับ\s*(.+)$/.exec(String(b.loggedRows || '').trim());
+  if (!m) return null;
+  const key = m[1].toLowerCase();
+  const built = bookingToForms_(b, false);
+  if (built.key !== key) return null;
+  const queue = {};
+  built.forms.forEach(f => { const k = norm_(f.place); (queue[k] = queue[k] || []).push(f); });
+  const nos = m[2].split(/[,\s]+/).map(Number).filter(n => isFinite(n) && n > 0);
+  const res = withLock_(() => {
+    const t = findTable_(key);
+    const sh = t.sheet;
+    const c = name => colIndex_(t.headers, name);
+    const noCol = c('ลำดับ'), dateCol = c('วันที่'), placeCol = c('สถานที่');
+    const start = t.headerRow + 1;
+    const lastRow = sh.getLastRow();
+    if (noCol < 0 || dateCol < 0 || placeCol < 0 || lastRow < start) return null;
+    const range = sh.getRange(start, 1, lastRow - start + 1, t.width);
+    const vals = range.getValues();
+    const disp = range.getDisplayValues();
+    const changes = [];
+    nos.forEach(no => {
+      const i = vals.findIndex(r => Number(r[noCol]) === no);
+      if (i < 0 || dateIsoOf_(vals[i][dateCol], disp[i][dateCol]) !== b.date) return;
+      const f = (queue[norm_(vals[i][placeCol])] || []).shift();
+      if (!f) return;
+      const warnings = [];
+      [['สายทาง', f.expressway], ['โครงการ', f.project], ['ประเภทงาน', f.jobType], ['ผู้เข้างาน', f.worker]].forEach(([name, value]) => {
+        const ci = c(name);
+        const v = text_(value);
+        if (ci < 0 || !v || norm_(disp[i][ci]) === norm_(v)) return;
+        writeCellValidated_(sh.getRange(start + i, ci + 1), v, t.rawHeaders[ci] || '', warnings);
+        changes.push(no + ' ' + name + ': ' + String(disp[i][ci]).trim() + ' → ' + v);
+      });
+    });
+    if (changes.length) SpreadsheetApp.flush();
+    return changes.length ? { key, changes } : null;
+  });
+  if (!res) return null;
+  afterLogSaved_(key, [b.date]); // สายทางเปลี่ยน → อัตราค่ารถอาจเปลี่ยน
+  audit_(user.username, 'refresh_logged_rows', BOOKING_SHEET, b.row, { id: b.id, changes: res.changes });
+  return res.changes;
 }
 
 /**
@@ -2029,6 +2107,7 @@ function bookingMail_(kind, b) {
     ['ประเภทงาน', job],
     ['วันที่ใช้รถ', bookingDateShort_(b.date) + (b.time ? ' เวลา ' + b.time + ' น.' : '')],
     ['ย้ายวันที่', isChange ? moveText_(b) : kind === 'approved' ? b.moveNote : ''],
+    ['แก้ไขข้อมูล', isChange ? fieldChanges_(b).join('\n') : ''],
     ['แจ้งใช้รถ', b.provider + ' · ' + mediaTypesText_(b)],
     ['สายทาง', b.expressway],
     ['จุดนัดพบ', b.meetingPoint],
