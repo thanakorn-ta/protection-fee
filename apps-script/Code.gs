@@ -86,8 +86,26 @@ function doPost(e) {
     out = { ok: true, result: result === undefined ? null : result };
   } catch (err) {
     out = { ok: false, error: String(err && err.message || err) };
+    logApiError_(e, out.error);
   }
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+// คำสั่งที่บันทึกไว้เมื่อไม่สำเร็จ (ไว้ตรวจย้อนหลังว่าผู้ใช้ทำอะไรไม่ได้ และเพราะอะไร) — ไม่เก็บข้อมูลที่กรอก / รหัสผ่าน
+const API_ERROR_LOG = { saveBooking: 1, reviewBooking: 1, cancelBooking: 1, logBooking: 1 };
+
+function logApiError_(e, message) {
+  try {
+    const req = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+    if (!API_ERROR_LOG[req.fn] || /^SESSION_EXPIRED/.test(message)) return;
+    const args = Array.isArray(req.args) ? req.args : [];
+    const username = CacheService.getScriptCache().get('sess_' + String(args[0] || '')) || '';
+    const form = args[1] && typeof args[1] === 'object' ? args[1] : {};
+    const id = String(form.id || (typeof args[1] === 'string' ? args[1] : '') || '').slice(0, 40);
+    audit_(username || 'unknown', 'api_error', BOOKING_SHEET, '', { fn: req.fn, id, error: String(message).slice(0, 300) });
+  } catch (err) {
+    console.error('logApiError_ failed', err);
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -1248,6 +1266,16 @@ function moveLoggedRows_(b, user) {
 
 function syncPlacesAfterMove_(b, user) {
   let unlog = null;
+  // จุดที่แก้ (เอาออก 1 + เพิ่ม 1) → เขียนจุดใหม่ทับแถวเดิมของการจองนี้ เลขลำดับและแถวอื่นในตารางไม่เปลี่ยน
+  let replaced = null;
+  if (b.loggedRows && placeLines_(b.removedPlaces).length && unloggedPlaces_(b).length) {
+    try {
+      replaced = replaceLoggedPlaces_(b, user);
+      if (replaced) b = readBookings_(bookingsSheet_()).find(x => x.id === b.id) || b;
+    } catch (err) {
+      console.error('replaceLoggedPlaces_ failed', err); // ใช้วิธีเดิม (นำออก + บันทึกใหม่) ต่อ
+    }
+  }
   if (b.loggedRows && placeLines_(b.removedPlaces).length) {
     unlog = unlogPlaces_(b, user);
     b = readBookings_(bookingsSheet_()).find(x => x.id === b.id) || b;
@@ -1255,7 +1283,78 @@ function syncPlacesAfterMove_(b, user) {
   const needLog = !b.loggedRows || unloggedPlaces_(b).length > 0;
   const out = needLog ? logBookingSafe_(b, user) : bookingOut_(b, user);
   if (unlog) out.unlog = { removed: unlog.removed, skipped: unlog.skipped };
+  if (replaced) out.replaced = replaced.rows;
   return out;
+}
+
+/**
+ * แถวของจุดที่ถูกแก้ (removedPlaces) → เขียนจุดใหม่ (จุดที่ยังไม่บันทึก) ทับในแถวเดิม ทีละคู่
+ * เปลี่ยนเฉพาะสถานที่ สายทาง โครงการ ประเภทงาน ผู้เข้างาน — เลขลำดับ วันที่ และค่าอาหาร / ค่ารถของแถวนั้นคงเดิม
+ * จุดที่เหลือ (เอาออกมากกว่าเพิ่ม / เพิ่มมากกว่าเอาออก) ใช้วิธีเดิม: นำแถวออก / บันทึกต่อท้าย
+ */
+function replaceLoggedPlaces_(b, user) {
+  const m = /^(EXAT|BEM)\s*ลำดับ\s*(.+)$/.exec(String(b.loggedRows || '').trim());
+  if (!m) return null;
+  const key = m[1].toLowerCase();
+  const built = bookingToForms_(b, true); // จุดที่ยังไม่ได้บันทึก (จุดใหม่) เรียงตามรายการจุดที่ไป
+  if (built.key !== key || !built.forms.length) return null;
+  const forms = built.forms.map(f => validateLogForm_(key, f));
+  const nos = m[2].split(/[,\s]+/).map(Number).filter(n => isFinite(n) && n > 0);
+  const removed = placeLines_(b.removedPlaces);
+  const res = withLock_(() => {
+    const t = findTable_(key);
+    const sh = t.sheet;
+    const c = name => colIndex_(t.headers, name);
+    const noCol = c('ลำดับ'), dateCol = c('วันที่'), placeCol = c('สถานที่');
+    const start = t.headerRow + 1;
+    const lastRow = sh.getLastRow();
+    if (noCol < 0 || dateCol < 0 || placeCol < 0 || lastRow < start) return null;
+    const range = sh.getRange(start, 1, lastRow - start + 1, t.width);
+    const vals = range.getValues();
+    const disp = range.getDisplayValues();
+    const locs = readLocations_();
+    const resolve = p => {
+      const np = norm_(p);
+      const loc = locs.find(l => norm_(l.area) === np) || locs.find(l => l.code && norm_(l.code) === np) || locs.find(l => np.length >= 6 && norm_(l.area).indexOf(np) >= 0);
+      return norm_(loc ? loc.area : p);
+    };
+    const mine = nos.map(no => ({ no, i: vals.findIndex(r => Number(r[noCol]) === no) }))
+      .filter(x => x.i >= 0 && dateIsoOf_(vals[x.i][dateCol], disp[x.i][dateCol]) === rowDate_(b));
+    const used = {};
+    const done = [];
+    removed.forEach(p => {
+      if (done.length >= forms.length) return;
+      const k = resolve(p);
+      const hit = mine.find(x => !used[x.no] && norm_(vals[x.i][placeCol]) === k);
+      if (!hit) return;
+      used[hit.no] = true;
+      const f = forms[done.length];
+      const row = start + hit.i;
+      const warnings = [];
+      [['สถานที่', text_(f.place)], ['สายทาง', text_(f.expressway)], ['โครงการ', text_(f.project)], ['ประเภทงาน', text_(f.jobType)], ['ผู้เข้างาน', text_(f.worker)]]
+        .forEach(([name, value]) => { const ci = c(name); if (ci >= 0) writeCellValidated_(sh.getRange(row, ci + 1), value, t.rawHeaders[ci] || '', warnings); });
+      done.push({ no: hit.no, from: p, to: String(f.place), warnings });
+    });
+    if (!done.length) return null;
+    // จดในการจอง: จุดเดิมที่ถูกแทน → ไม่ต้องนำออก · จุดใหม่ที่เขียนทับ → บันทึกแล้ว
+    const shB = bookingsSheet_();
+    const cur = readBookings_(shB).find(x => x.id === b.id);
+    if (cur) {
+      const fromList = done.map(d => d.from);
+      // จุดใหม่ในรายการจุดที่ไป (ชื่อตามที่ผู้ใช้เลือก) ที่ถูกเขียนลงแถว — นับตามลำดับของจุดที่ยังไม่บันทึก
+      const newNames = unloggedPlaces_(cur).slice(0, done.length);
+      cur.loggedPlaces = minusPlaces_(loggedPlaces_(cur), fromList).concat(newNames).join('\n');
+      cur.removedPlaces = minusPlaces_(placeLines_(cur.removedPlaces), fromList).join('\n');
+      cur.addedPlaces = minusPlaces_(placeLines_(cur.addedPlaces), newNames).join('\n');
+      writeBooking_(shB, cur.row, cur);
+    }
+    SpreadsheetApp.flush();
+    return { key, rows: done.map(d => ({ no: d.no, from: d.from, to: d.to })) };
+  });
+  if (!res) return null;
+  afterLogSaved_(key, [rowDate_(b)]);
+  audit_(user.username, 'replace_logged_places', BOOKING_SHEET, b.row, { id: b.id, rows: res.rows });
+  return res;
 }
 
 /**

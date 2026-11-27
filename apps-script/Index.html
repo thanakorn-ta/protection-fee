@@ -4220,6 +4220,7 @@ input[type="date"]::-webkit-date-and-time-value { text-align: left; }
   function openBookingForm(b, dateIso, mode) {
     var form = $('#bk-form');
     form.reset();
+    $('#bk-place-pos').value = ''; // form.reset() ตั้งเป็นตัวเลือกแรก ("แทรกเป็นลำดับที่ 1") — เริ่มที่ท้ายรายการเสมอ
     showError(form, '');
     S.bk = b;
     S.bkMove = !!b && mode === 'move';
